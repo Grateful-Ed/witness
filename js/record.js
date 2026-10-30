@@ -20,7 +20,7 @@
 (function () {
   'use strict';
 
-  var CHAT_URL = 'https://tms-spark-proxy.e-william-harris96.workers.dev/chat';
+  var CHAT_URL = 'https://witness.e-william-harris96.workers.dev/chat';
 
   var FIELDS = [
     { key: 'count_main',         label: 'Boxes in the main stack', type: 'number' },
