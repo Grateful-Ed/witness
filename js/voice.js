@@ -22,7 +22,7 @@
 (function () {
   'use strict';
 
-  var ASR_URL = 'https://tms-spark-proxy.e-william-harris96.workers.dev/asr';
+  var ASR_URL = 'https://witness.e-william-harris96.workers.dev/asr';
 
   var btn, label, statusEl, errorBox, transcriptBox, transcriptText;
   var stream = null, recorder = null, chunks = [], recording = false, busy = false;
