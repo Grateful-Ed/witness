@@ -113,5 +113,55 @@ h2 { margin: 0 0 4px; font-size: 20px; }
 .rows dd.unsaid { color: var(--dim); font-style: italic; }
 .rows dd ul { margin: 0; padding-left: 20px; }
 
+/* Test loads: tap to pick the load being scanned. The pick never
+   changes the scan — it only labels the shared text. */
+.load {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 8px;
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.load img { display: block; width: 100%; height: auto; border-radius: 8px; }
+.load-name { display: block; margin-top: 8px; font-size: 16px; font-weight: 700; }
+.load.selected { border-color: var(--accent); background: #16222f; }
+.load.selected .load-name::after { content: " — selected"; color: var(--accent); }
+.load:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.load-status { margin-bottom: 0; }
+
+/* Share: sits under the record, appears only once a record exists. */
+.share {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  margin-top: 14px;
+  border: 2px solid var(--accent);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.share[hidden] { display: none; }
+.share:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+.share-text {
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: 14px/1.5 ui-monospace, Menlo, Consolas, monospace;
+}
+
 .foot { color: var(--dim); font-size: 15px; margin-top: 26px; }
 .foot .small { font-size: 13px; }
