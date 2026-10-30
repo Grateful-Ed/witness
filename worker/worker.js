@@ -139,10 +139,18 @@ async function handleAsr(request, env) {
     return json(400, { error: 'missing audio file (form field "audio")' }, origin);
   }
 
+  /* Meta's one-shot endpoint takes exactly two parts — verified live
+     2026-10-30 against the endpoint's own error messages, after the
+     first phone test 400'd: a "request" part holding JSON (model,
+     mode, audioEncoding) and an "audio" part holding the bytes.
+     The page sends 16 kHz mono WAV, hence audioEncoding "WAV". */
   const out = new FormData();
-  out.append('file', audio, filename);
-  out.append('model', 'muse-voice-transcribe-1.0');
-  out.append('mode', 'PUSH_TO_TALK');
+  out.append('request', new Blob([JSON.stringify({
+    model: 'muse-voice-transcribe-1.0',
+    mode: 'PUSH_TO_TALK',
+    audioEncoding: 'WAV'
+  })], { type: 'application/json' }));
+  out.append('audio', audio, filename);
 
   let res;
   try {
