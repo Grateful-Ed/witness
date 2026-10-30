@@ -18,6 +18,23 @@
     dock. Release the button and your words become the receiving record.</p>
   </header>
 
+  <section id="loadsBox" class="panel">
+    <h2>Test loads</h2>
+    <p class="note">Two loads to practice on. Pick one, look it over from
+    all four sides, then hold the button below and say what you see —
+    before anyone tells you what's wrong with it. Picking a load only
+    labels your scan; you can also skip both and scan any real pallet.</p>
+    <button type="button" class="load" data-load="a" aria-pressed="false">
+      <img src="test-data/photos/load-a-container-cube.webp" alt="Load A — a cube of cartons on a pallet inside a container, shown from the front, right, back and left">
+      <span class="load-name">Load A — container cube</span>
+    </button>
+    <button type="button" class="load" data-load="b" aria-pressed="false">
+      <img src="test-data/photos/load-b-peaches-stack.webp" alt="Load B — a tall stack of peach cartons on a pallet, shown from the front, right, back and left">
+      <span class="load-name">Load B — peaches stack</span>
+    </button>
+    <p id="loadStatus" class="note load-status">No load picked. Pick one, or just scan the pallet in front of you.</p>
+  </section>
+
   <p id="status" class="status" role="status">Ready when you are.</p>
 
   <button id="talkBtn" class="talk" type="button" aria-pressed="false">
@@ -38,6 +55,13 @@
     <p class="note">Structured from your words only. A field you didn't
     speak to says <em>Not said</em> — nothing is filled in for you.</p>
     <dl id="recordRows" class="rows"></dl>
+    <button id="shareBtn" class="share" type="button" hidden>Share this scan</button>
+    <div id="shareFallback" hidden>
+      <p class="note">This browser can't share or copy directly — your
+      scan is written out below so you can select it and copy it
+      yourself.</p>
+      <textarea id="shareText" class="share-text" readonly rows="12"></textarea>
+    </div>
   </section>
 
   <footer class="foot">
