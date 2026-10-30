@@ -36,6 +36,19 @@
     { key: 'anything_else',      label: 'Anything else said',      type: 'list' }
   ];
 
+  /* Share + test-load state. lastTranscript/lastRecord are what the
+     share button sends; selectedLoad is the tester-picked test load
+     (null = none picked), used only to label a shared scan. */
+  var lastTranscript = '';
+  var lastRecord = null;
+  var selectedLoad = null;
+  var shareTimer = null;
+
+  var LOADS = {
+    a: 'Load A — container cube',
+    b: 'Load B — peaches stack'
+  };
+
   var SYSTEM_PROMPT = [
     'You turn a warehouse receiver\'s spoken description of one pallet into a structured receiving record.',
     '',
@@ -159,11 +172,149 @@
       row.appendChild(dd);
       rows.appendChild(row);
     });
+    lastRecord = rec;
     box.hidden = false;
+    var sb = document.getElementById('shareBtn');
+    if (sb) sb.hidden = false;
+  }
+
+  /* Format one field's value for the plain-text share, mirroring
+     renderRecord exactly: an unspoken field says "Not said", and a
+     list keeps every item. Nothing is added, nothing dropped. */
+  function fieldShareText(f, rec) {
+    var v = rec ? rec[f.key] : undefined;
+    if (f.type === 'list') {
+      var items = Array.isArray(v) ? v.filter(function (s) { return typeof s === 'string' && s.trim(); }) : [];
+      if (!items.length) return f.label + ': Not said';
+      if (items.length === 1) return f.label + ': ' + items[0];
+      var lines = [f.label + ':'];
+      items.forEach(function (s) { lines.push('  - ' + s); });
+      return lines.join('\n');
+    }
+    if (v == null || v === '') return f.label + ': Not said';
+    return f.label + ': ' + String(v);
+  }
+
+  /* The share payload: the picked load's label first when there is
+     one, then the spoken scan verbatim under its label, then every
+     record field with its label. */
+  function buildShareText() {
+    var transcript = lastTranscript;
+    if (!transcript) {
+      var t = document.getElementById('transcriptText');
+      transcript = t ? t.textContent : '';
+    }
+    if (!transcript || !lastRecord) return '';
+    var lines = [];
+    if (selectedLoad && LOADS[selectedLoad]) {
+      lines.push(LOADS[selectedLoad]);
+      lines.push('');
+    }
+    lines.push('Spoken scan (verbatim):');
+    lines.push(transcript);
+    lines.push('');
+    lines.push('Receiving record:');
+    FIELDS.forEach(function (f) { lines.push(fieldShareText(f, lastRecord)); });
+    return lines.join('\n');
+  }
+
+  function resetShare() {
+    var sb = document.getElementById('shareBtn');
+    if (sb) { sb.hidden = true; sb.textContent = 'Share this scan'; }
+    var fb = document.getElementById('shareFallback');
+    if (fb) fb.hidden = true;
+    var ta = document.getElementById('shareText');
+    if (ta) ta.value = '';
+    if (shareTimer) { clearTimeout(shareTimer); shareTimer = null; }
+  }
+
+  function flashCopied() {
+    var sb = document.getElementById('shareBtn');
+    if (!sb) return;
+    sb.textContent = 'Copied — send it on';
+    if (shareTimer) clearTimeout(shareTimer);
+    shareTimer = setTimeout(function () {
+      sb.textContent = 'Share this scan';
+      shareTimer = null;
+    }, 2000);
+  }
+
+  /* Last-resort share: no Web Share, no clipboard — write the text
+     into a selectable box and let the receiver copy it by hand. */
+  function showTextFallback(text) {
+    var fb = document.getElementById('shareFallback');
+    var ta = document.getElementById('shareText');
+    if (!fb || !ta) {
+      showError('This browser offers no way to share or copy the scan. The transcript and record above are on this screen only.');
+      return;
+    }
+    ta.value = text;
+    fb.hidden = false;
+    ta.focus();
+    try { ta.select(); } catch (e) {}
+  }
+
+  function copyScan(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(flashCopied, function () { showTextFallback(text); });
+    } else {
+      showTextFallback(text);
+    }
+  }
+
+  function shareScan() {
+    var text = buildShareText();
+    if (!text) return;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({ title: 'Witness — receiving scan', text: text }).then(function () {}, function (err) {
+        if (err && err.name === 'AbortError') return; /* the receiver cancelled — their call, not a failure */
+        copyScan(text);
+      });
+    } else {
+      copyScan(text);
+    }
+  }
+
+  /* Test-load picking: tapping a load marks it as the one being
+     scanned; tapping it again unpicks it. The pick never changes the
+     scan itself — it only labels the shared text, so samples come
+     back pre-labeled. */
+  function initLoads() {
+    var btns = document.querySelectorAll('.load[data-load]');
+    var status = document.getElementById('loadStatus');
+    if (!btns.length) return;
+    function paint() {
+      Array.prototype.forEach.call(btns, function (b) {
+        var on = b.getAttribute('data-load') === selectedLoad;
+        b.classList.toggle('selected', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      if (status) {
+        status.textContent = selectedLoad
+          ? LOADS[selectedLoad] + ' picked — hold the button below and say what you see.'
+          : 'No load picked. Pick one, or just scan the pallet in front of you.';
+      }
+    }
+    Array.prototype.forEach.call(btns, function (b) {
+      b.addEventListener('click', function () {
+        var key = b.getAttribute('data-load');
+        selectedLoad = (selectedLoad === key) ? null : key;
+        paint();
+      });
+    });
+    paint();
+  }
+
+  function initShare() {
+    var sb = document.getElementById('shareBtn');
+    if (sb) sb.addEventListener('click', shareScan);
   }
 
   /* Entry point, called by voice.js with the verbatim transcript. */
   function structure(transcript) {
+    lastTranscript = transcript;
+    lastRecord = null;
+    resetShare();
     document.getElementById('recordBox').hidden = true;
     setStatus('Building the record from your words…', 'busy');
     ask(transcript).then(function (rec) {
@@ -175,10 +326,23 @@
     });
   }
 
+  function init() { initLoads(); initShare(); }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else { init(); }
+  }
+
   window.WitnessRecord = {
     structure: structure,
     SYSTEM_PROMPT: SYSTEM_PROMPT,
     FIELDS: FIELDS,
-    _ask: ask
+    _ask: ask,
+    _buildShareText: buildShareText,
+    getSelectedLoad: function () {
+      return selectedLoad && LOADS[selectedLoad]
+        ? { key: selectedLoad, label: LOADS[selectedLoad] }
+        : null;
+    }
   };
 })();
