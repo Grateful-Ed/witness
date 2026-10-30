@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Witness — Step 1: Speak the load</title>
+<link rel="stylesheet" href="css/witness.css">
+</head>
+<body>
+<main class="wrap">
+
+  <header class="masthead">
+    <p class="kicker">Witness</p>
+    <h1>Step 1 — Speak the load</h1>
+    <p class="lede">Hold the button and describe the pallet in front of you:
+    how many boxes, how the stack sits, the wrap, anything damaged, anything
+    that needs doing. Say it the way you'd say it to the next person on the
+    dock. Release the button and your words become the receiving record.</p>
+  </header>
+
+  <p id="status" class="status" role="status">Ready when you are.</p>
+
+  <button id="talkBtn" class="talk" type="button" aria-pressed="false">
+    <span id="talkLabel">Hold to talk</span>
+  </button>
+  <p class="hint">Press and hold while you speak. Release to send.</p>
+
+  <div id="errorBox" class="error" role="alert" hidden></div>
+
+  <section id="transcriptBox" class="panel" hidden>
+    <h2>Your spoken scan</h2>
+    <p class="note">Exactly as transcribed — unedited. This is witness one.</p>
+    <p id="transcriptText" class="transcript"></p>
+  </section>
+
+  <section id="recordBox" class="panel" hidden>
+    <h2>Receiving record</h2>
+    <p class="note">Structured from your words only. A field you didn't
+    speak to says <em>Not said</em> — nothing is filled in for you.</p>
+    <dl id="recordRows" class="rows"></dl>
+  </section>
+
+  <footer class="foot">
+    <p>Step 1 of 2. The photo check comes next; the two scans are compared
+    before anything is signed off. The machine never signs off — a human
+    decides.</p>
+    <p class="small">Built for the Meta Global AI Developer Hackathon.
+    Transcription: Muse Voice Transcribe, through the project proxy.
+    Structuring: Muse Spark, through the same proxy. No API key lives in
+    this page.</p>
+  </footer>
+
+</main>
+<script src="js/voice.js"></script>
+<script src="js/record.js"></script>
+</body>
+</html>
