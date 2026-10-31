@@ -333,3 +333,18 @@ interactive is very buildable in our stack; two clean uses —
 segment, (b) a playable link from the repo/README for anyone who
 wants to try it. Honesty line: it presents as a concept simulation,
 clearly — it demonstrates the idea, it isn't the glasses product.
+
+## The glasses HUD — William's sketch (2026-10-31)
+
+Drawn by hand, in bed, mid-build. Subject to change, per his standing rule. Photo of the sketch saved with the project files (`glasses-hud-sketch-2026-10-31.jpg`, workspace copy).
+
+Two stacked panels:
+
+- **Top panel — YOUR transcript.** What the wearer just said, in their own words. Corner chips carry the live context: **Task #** and **Bin #**. The panel is **hideable**.
+- **Bottom panel — AI transcript.** What the building said back. When the topic is labor it carries an **available-employee card — their name and employee location**. A small tile: **"Recent capture goes here"** — the photo the glasses just took. An **option to expand when the user asks**.
+
+**The appearance rule (William, 2026-10-31): these panels are not always out and about. They only pop up when it's what the topic requires.** The view stays clear otherwise — the display is just-in-time, not a dashboard glued to your face.
+
+Design note (Faye): the two witnesses stay visually separate — your words above, the machine's below, never blended into one voice. The context chips mean the worker never recites numbers the system already knows. The capture tile puts the photo scan in the same glance as the conversation. The employee card is the labor layer surfacing only at the moment a labor question is live.
+
+Feeds the end-phase POV mock-up: the frames now have a real layout to render — clear view → the topic surfaces the panel → expand on ask.
