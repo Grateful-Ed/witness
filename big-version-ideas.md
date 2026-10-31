@@ -278,10 +278,21 @@ built + briefed slices):
   hazmat flags (module one's home turf); audit trail (records);
   labor basics (units, assignments, per-unit counts in the shift
   summary); dock doors with states.
-- THE GAP THAT FITS THE SCOPE RULE: replenishment (benchmark §7)
-  — min/max per pick bin and replenishment tasks. Named in §5 of
-  this notebook's queue but NOT in the engine or any brief yet.
-  Awaiting William's call on adding it to the deepen slice.
+- REPLENISHMENT (benchmark §7): RULED OUT for the competition
+  (William, 2026-10-31). His reasoning, kept: min/max
+  levels are product bookkeeping — in a real product it's inferred
+  that you'd have them; they don't use the models at all. His
+  frame for the whole contest: "this competition isn't who can
+  make the best WMS — it's who can implement using their API
+  models in the best way to make a big difference." THE TEST for
+  any remaining scope question in this window: does it put the
+  models to work at the moment of the work? Bookkeeping loses.
+  What matters instead is the loop at the bin: a worker brings
+  freight in, asks which bin, the system tells him (the engine
+  already suggests the bin at task generation), he confirms by
+  voice — and on the glasses, a picture at the bin as he puts it
+  up. That photo-confirm is the glasses layer's expression of the
+  photo scan the phone already proves.
 - CONSCIOUSLY OUT (unless William says otherwise): lot/serial/
   expiry tracking, location capacity and slotting, waves and pick
   paths, carton/label/tracking detail, returns, equipment, yard
