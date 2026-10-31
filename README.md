@@ -8,6 +8,8 @@ Built for the **Meta Global AI Developer Hackathon** (build window Oct 26 – No
 
 > **This README is the project's definition of record.** The project grew on Oct 31, 2026 — from a receiving-dock cross-check into the whole warehouse. Module one (the cross-check) is built and live; the rest of the building is being built in the open, in this repo, until submissions close Nov 4, 9:00 PM ET. If anything anywhere describes Witness as only a receiving app, this file supersedes it.
 
+> **One name note:** William and Ed are the same person — E. William Harris IV, this project's director. The Ship Safe repo's documents usually call him Ed; this repo calls him William. One person, one set of rulings — an approval under either name is his.
+
 ## The whole project
 
 The glasses only make sense if the whole warehouse runs through them — you can't sell them for one task. So Witness is the building, organized the way the work is:
