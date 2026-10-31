@@ -353,7 +353,7 @@ Feeds the end-phase POV mock-up: the frames now have a real layout to render —
 
 **HUD minimalism rulings (William, 2026-10-31, revising the mockup):**
 - **TWO LENSES.** The view is two lenses, left and right — that structure is very important to utilize for being able to see. Layout works with the binocular frame, not against it.
-- **Persistent chips: Task # and Bin # only.** Keep their color; INCREASE their opacity — the two anchors stay solid and glanceable while panels fade.
+- **Persistent chips: Task # and Bin # only.** Keep their color; make them EASIER to see through (his word "opacity" means see-through-ness — up = more transparent, never more solid). The chips fade like everything else; the color stays.
 - **Transcripts: first 2 lines only.** The full transcript lives in the phone app; the glasses are a glance surface, not a reading surface. A transcript can be HIDDEN but never EXPANDED — the Expand control is removed.
 - **No verdict detail in the glasses.** The Agree / Flag / Can't verify rows are too much information for the lens — they live in the phone app record. The two transcripts stay distinct by placement (the wearer knows which voice is theirs).
 - **The capture is just the picture.** When a photo is captured, the tile shows the picture and nothing else — no label, no description. Its only job is confirming the picture was taken.
