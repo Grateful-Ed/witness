@@ -61,11 +61,17 @@
         <p class="heard-label">What the system did</p>
         <div id="workerReply" class="heard-reply"></div>
       </div>
+      <label class="ask-label problem-label" for="problemInput">Or type a problem</label>
+      <div class="problem-row">
+        <input id="problemInput" class="ask-input" type="text" placeholder="Pallet spilled at Door 2">
+        <button id="problemBtn" class="share problem-btn" type="button">Report</button>
+      </div>
     </section>
 
     <section class="panel">
       <h2>Up next in your zone</h2>
       <div id="upNext"></div>
+      <div id="workerHolds"></div>
     </section>
 
   </div>
@@ -111,6 +117,52 @@
           <pre id="askEvidence" class="evidence"></pre>
         </details>
       </div>
+    </section>
+
+    <section class="panel">
+      <h2>Inbound</h2>
+      <p class="note">Every truck, where it is in the work. Tap
+      "Truck's here" when an expected truck backs in.</p>
+      <p id="inboundMsg" class="error" hidden></p>
+      <div id="inboundList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Outbound orders</h2>
+      <p class="note">Reserved against what's really in the bins. A line
+      that can't be filled says so.</p>
+      <div id="ordersList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Holds</h2>
+      <p class="note">Held stock isn't picked, moved or put away until
+      you release it. Workers see it.</p>
+      <div id="holdsList"></div>
+      <label class="ask-label" for="holdTarget">Hold a bin or a pallet</label>
+      <select id="holdTarget" class="ask-input"></select>
+      <label class="ask-label" for="holdReason">Why</label>
+      <input id="holdReason" class="ask-input" type="text" placeholder="Pallet leaning">
+      <button id="holdBtn" class="share" type="button">Put on hold</button>
+      <p id="holdMsg" class="status wh-status"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Add an update to a task</h2>
+      <p class="note">Records stay open. If a load goes bad after the
+      scan, the update rides the same task.</p>
+      <label class="ask-label" for="updateTask">Task</label>
+      <select id="updateTask" class="ask-input"></select>
+      <label class="ask-label" for="updateText">What happened</label>
+      <input id="updateText" class="ask-input" type="text" placeholder="Forklift down in B">
+      <button id="updateBtn" class="share" type="button">Add update</button>
+      <p id="updateMsg" class="status wh-status"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Shift summary</h2>
+      <p class="note">Counted from the records. Nobody writes this up.</p>
+      <div id="shiftSummary"></div>
     </section>
 
     <section class="panel">
