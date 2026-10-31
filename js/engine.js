@@ -457,8 +457,34 @@
     };
   }
 
+  /* ---------- problems reported mid-task ------------------------------ */
+  /* A worker says something is wrong. The note is pinned to the task
+     in hand (task.notes) and logged in the records — the task stays
+     with the worker, open. Nothing is completed or moved: a problem
+     report never touches the counts. With no task in hand the report
+     still lands in the records, so nothing said is lost. */
+  function reportProblem(state, unitId, note) {
+    var unit = unitById(state, unitId);
+    var text = String(note || '').trim();
+    if (!unit || !text) return null;
+    var task = null;
+    if (unit.currentTaskId) {
+      var t = taskById(state, unit.currentTaskId);
+      if (t && t.status === 'assigned') task = t;
+    }
+    var entry = { ts: new Date().toISOString(), by: unit.id, text: text };
+    if (task) {
+      task.notes = task.notes || [];
+      task.notes.push(entry);
+    }
+    addRecord(state, 'Problem reported by ' + unit.name +
+      (task ? ' on "' + task.title + '"' : ' (no task in hand)') + ': ' + text);
+    return { task: task, entry: entry };
+  }
+
   var api = {
     STORAGE_KEY: STORAGE_KEY,
+    reportProblem: reportProblem,
     seedWorld: seedWorld,
     loadState: loadState,
     saveState: saveState,
