@@ -260,6 +260,38 @@ industry. The target per area is the high-level basic that WORKS —
 the same discipline as the hackathon build: narrow claim set,
 checked deeply.
 
+## The WMS benchmark (William, 2026-10-31)
+
+William pasted a 15-section list of what a basic WMS tracks and
+ruled: "We won't do this entire list. This is just what a basic
+WMS has. So we need to use this as a benchmark." Full list saved
+at docs/wms-benchmark.md in this repo. Coverage map (against the
+built + briefed slices):
+
+- COVERED by what's built/briefed: inventory basics (item, qty,
+  bin, status via holds); receiving (PO/ASN as inbound shipments,
+  door, expected vs received, damages/shortages = module one);
+  putaway (task, worker, suggested bin, timestamps); orders and
+  picks (lines, allocation, short picks stated plainly, voice
+  completion as the confirmation); pack/ship spine (staged →
+  shipped; the BOL itself in slice 3); holds and quarantine;
+  hazmat flags (module one's home turf); audit trail (records);
+  labor basics (units, assignments, per-unit counts in the shift
+  summary); dock doors with states.
+- THE GAP THAT FITS THE SCOPE RULE: replenishment (benchmark §7)
+  — min/max per pick bin and replenishment tasks. Named in §5 of
+  this notebook's queue but NOT in the engine or any brief yet.
+  Awaiting William's call on adding it to the deepen slice.
+- CONSCIOUSLY OUT (unless William says otherwise): lot/serial/
+  expiry tracking, location capacity and slotting, waves and pick
+  paths, carton/label/tracking detail, returns, equipment, yard
+  dwell, kitting/labeling as named services, recalls/lot trace,
+  and the full metrics suite (the shift summary is the seed).
+- The benchmark's closing tip — everything fits in items,
+  locations, inventory, orders, tasks, users — is already the
+  shape of the engine's state. The foundation thought in the
+  right tables from day one.
+
 ## The playable presentation (William, 2026-10-31)
 
 A short game-like interactive for the presentation: you're looking
