@@ -30,8 +30,8 @@ never around it.
 ## Your slice: the conversational layer (areas 7–8)
 
 William's example dialogues are the spec (his words, from the
-design session — full text in big-version-ideas.md in Faye's
-workspace; ask William for it if you don't have it):
+design session — full text in
+big-version-ideas.md at this repo's root):
 
 - WORKER (by voice, hands-free): "Hey Muse, what's up next? I just
   got done with my task." → the current task is marked completed and
