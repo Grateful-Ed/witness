@@ -9,6 +9,7 @@
   'use strict';
 
   var E = window.WitnessEngine;
+  var C = window.WitnessConverse; /* the conversational layer */
 
   var state = E.loadState();
   if (!state) {
@@ -61,6 +62,7 @@
     for (var i = 0; i < chips.length; i++) {
       chips[i].addEventListener('click', function () {
         selectedUnitId = this.getAttribute('data-unit');
+        clearWorkerTalk();
         render();
       });
     }
@@ -90,6 +92,9 @@
       '<p class="task-type">' + esc(task.type) + ' · Zone ' + esc(task.zone || '—') + '</p>' +
       '<p class="task-title">' + esc(task.title) + '</p>' +
       '<p class="task-detail">' + esc(task.detail) + '</p>';
+    (task.notes || []).forEach(function (n) {
+      html += '<p class="task-note">Problem noted: “' + esc(n.text) + '”</p>';
+    });
     if (task.type === 'receive' && task.link) {
       html += '<a class="crosscheck-btn" href="' + esc(task.link) + '">Open the cross-check</a>' +
         '<p class="note">Run the receiving cross-check there first — then come back and mark this done.</p>';
@@ -129,6 +134,67 @@
     E.nextTaskFor(state, unit);
     persist();
     render();
+  }
+
+  /* ---------- worker voice: "done — what's next?" ------------------- */
+  /* The transcript is shown first, then what was done with it. The
+     intent is matched locally (converse.js) — no model decides what a
+     worker meant, and an unrecognised sentence does nothing. */
+
+  function clearWorkerTalk() {
+    $('workerHeard').hidden = true;
+    $('workerTalkError').hidden = true;
+    $('workerTalkStatus').textContent = '';
+  }
+
+  function talkButton(btnId, labelId, mode, idleText) {
+    var btn = $(btnId);
+    btn.classList.toggle('recording', mode === 'listening');
+    btn.setAttribute('aria-pressed', mode === 'listening' ? 'true' : 'false');
+    $(labelId).textContent = mode === 'listening' ? 'Listening… let go to send' :
+      mode === 'sending' ? 'Working…' : idleText;
+  }
+
+  function onWorkerHeard(text) {
+    var unit = selectedUnit();
+    var match = C.matchIntent(text);
+    var turn = C.workerTurn(E, state, unit, match);
+    if (turn.acted) persist();
+    $('workerHeardText').textContent = '“' + text + '”';
+    var html = '';
+    turn.lines.forEach(function (l) { html += '<p class="reply-line">' + esc(l) + '</p>'; });
+    $('workerReply').innerHTML = html;
+    $('workerHeard').hidden = false;
+    $('workerTalkStatus').textContent = '';
+    render();
+  }
+
+  if (window.WitnessMic) {
+    window.WitnessMic.attach($('workerTalk'), {
+      onListening: function () {
+        clearWorkerTalk();
+        talkButton('workerTalk', 'workerTalkLabel', 'listening', 'Hold to talk');
+        $('workerTalkStatus').textContent = 'Listening.';
+      },
+      onSending: function () {
+        talkButton('workerTalk', 'workerTalkLabel', 'sending', 'Hold to talk');
+        $('workerTalkStatus').textContent = 'Getting your words…';
+      },
+      onText: function (text) {
+        talkButton('workerTalk', 'workerTalkLabel', 'idle', 'Hold to talk');
+        onWorkerHeard(text);
+      },
+      onError: function (msg) {
+        talkButton('workerTalk', 'workerTalkLabel', 'idle', 'Hold to talk');
+        $('workerTalkStatus').textContent = '';
+        $('workerTalkError').textContent = msg;
+        $('workerTalkError').hidden = false;
+      },
+      onIdle: function () {
+        talkButton('workerTalk', 'workerTalkLabel', 'idle', 'Hold to talk');
+        $('workerTalkStatus').textContent = '';
+      }
+    });
   }
 
   /* ---------- manager view ------------------------------------------ */
@@ -201,6 +267,117 @@
     box.innerHTML = html;
   }
 
+  /* ---------- manager: ask the building ------------------------------ */
+  /* The question and the live numbers go to Muse Spark through the
+     Worker's /chat. The answer is shown with the numbers behind it,
+     and a check of which numbers in it are — and aren't — in the
+     data. A spoken question only fills the box; the manager reads it
+     and taps Ask. */
+
+  var asking = false;
+
+  function clearAnswer() {
+    $('askAnswer').hidden = true;
+    $('askError').hidden = true;
+    $('askStatus').textContent = '';
+  }
+
+  function renderAskZones(facts) {
+    var html = '<table class="ask-table"><thead><tr><th>Zone</th><th>Waiting</th><th>Units</th>' +
+      '<th>Per unit</th><th>Coming</th></tr></thead><tbody>';
+    facts.zones.forEach(function (z) {
+      var flag = facts.bottleneck && facts.bottleneck.zone === z.zone;
+      html += '<tr' + (flag ? ' class="hot"' : '') + '><td>' + esc(z.zone) + (flag ? ' ⚠' : '') + '</td><td>' + z.waiting +
+        '</td><td>' + z.workers + '</td><td>' + esc(z.loadPerWorker) + '</td><td>' + z.incomingPallets + ' pallets</td></tr>';
+    });
+    html += '</tbody></table>';
+    var b = facts.bottleneck;
+    html += '<p class="ask-engine">Engine check: ' + (b
+      ? 'Zone ' + esc(b.zone) + ' backing up — ' + b.pending + ' waiting, ' + b.workers + ' units. Engine would move ' +
+        esc(b.suggestion.unitName) + ' from Zone ' + esc(b.suggestion.fromZone) + '.'
+      : 'no zone meets the backing-up rule right now.') + '</p>';
+    return html;
+  }
+
+  function checkLine(check) {
+    if (!check.found.length && !check.missing.length) return 'This answer quotes no numbers. Check the table above.';
+    if (!check.missing.length) {
+      return 'Numbers check: every number in this answer (' + check.found.join(', ') +
+        ') appears in the building\'s data. Check each one is the right one in the table.';
+    }
+    return 'Not in the data: ' + check.missing.join(', ') + '. May be the AI\'s own math — check before you act.';
+  }
+
+  function ask() {
+    if (asking) return;
+    var q = $('askInput').value.trim();
+    clearAnswer();
+    if (!q) { $('askError').textContent = 'Type or say a question first.'; $('askError').hidden = false; return; }
+    asking = true;
+    $('askBtn').disabled = true;
+    $('askStatus').textContent = 'Asking… this can take up to a minute.';
+    $('askStatus').className = 'status wh-status busy';
+    C.askManager({ engine: E, state: state, question: q, fetch: window.fetch.bind(window) }).then(function (res) {
+      $('askAsked').textContent = q;
+      var lines = res.answer.split(/\n+/).filter(function (l) { return l.trim(); });
+      $('askText').innerHTML = lines.map(function (l) { return '<p class="reply-line">' + esc(l.trim()) + '</p>'; }).join('');
+      $('askZones').innerHTML = renderAskZones(res.summary.facts);
+      $('askCheck').textContent = checkLine(res.check);
+      $('askCheck').className = 'ask-check' + (res.check.missing.length ? ' warn' : '');
+      $('askEvidence').textContent = res.summary.text;
+      $('askAnswer').hidden = false;
+      var now = new Date();
+      $('askStatus').textContent = 'Answered at ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
+        ' from the numbers at that moment.' + (res.attempts > 1 ? ' (Took a second try.)' : '');
+      $('askStatus').className = 'status wh-status done';
+    }).catch(function (e) {
+      $('askStatus').textContent = '';
+      $('askStatus').className = 'status wh-status';
+      $('askError').textContent = (e && e.userMessage) || 'No answer — something went wrong. Nothing was guessed.';
+      $('askError').hidden = false;
+    }).then(function () {
+      asking = false;
+      $('askBtn').disabled = false;
+    });
+  }
+
+  $('askBtn').addEventListener('click', ask);
+  $('exampleQ').addEventListener('click', function () {
+    $('askInput').value = this.textContent;
+    $('askInput').focus();
+  });
+
+  if (window.WitnessMic) {
+    window.WitnessMic.attach($('managerTalk'), {
+      onListening: function () {
+        talkButton('managerTalk', 'managerTalkLabel', 'listening', 'Hold to say it');
+        $('askError').hidden = true;
+        $('askStatus').textContent = 'Listening.';
+        $('askStatus').className = 'status wh-status busy';
+      },
+      onSending: function () {
+        talkButton('managerTalk', 'managerTalkLabel', 'sending', 'Hold to say it');
+        $('askStatus').textContent = 'Getting your words…';
+      },
+      onText: function (text) {
+        talkButton('managerTalk', 'managerTalkLabel', 'idle', 'Hold to say it');
+        $('askInput').value = text;
+        $('askStatus').textContent = 'Check your question, then tap Ask.';
+        $('askStatus').className = 'status wh-status';
+      },
+      onError: function (msg) {
+        talkButton('managerTalk', 'managerTalkLabel', 'idle', 'Hold to say it');
+        $('askStatus').textContent = '';
+        $('askError').textContent = msg;
+        $('askError').hidden = false;
+      },
+      onIdle: function () {
+        talkButton('managerTalk', 'managerTalkLabel', 'idle', 'Hold to say it');
+        $('askStatus').textContent = '';
+      }
+    });
+  }
+
   /* ---------- wire-up ------------------------------------------------ */
 
   function render() {
@@ -223,6 +400,8 @@
     var first = null;
     state.labor.forEach(function (u) { if (!first && u.role === 'worker') first = u; });
     selectedUnitId = first ? first.id : null;
+    clearWorkerTalk();
+    clearAnswer();
     render();
   });
 
