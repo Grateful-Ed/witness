@@ -359,6 +359,7 @@
           ? LOADS[selectedLoad] + ' picked — hold the button below and say what you see.'
           : 'No load picked. Pick one, or just scan the pallet in front of you.';
       }
+      if (window.WitnessPhoto && window.WitnessPhoto.refresh) window.WitnessPhoto.refresh();
     }
     Array.prototype.forEach.call(btns, function (b) {
       b.addEventListener('click', function () {
@@ -387,8 +388,10 @@
       setStatus(flags.length
         ? 'Flagged. Check it against the pallet — you are the one who signs off.'
         : 'Nothing flagged in this scan. You are the one who signs off.', 'done');
+      if (window.WitnessPhoto && window.WitnessPhoto.refresh) window.WitnessPhoto.refresh();
     }).catch(function (e) {
       renderFlagsUnavailable();
+      if (window.WitnessPhoto && window.WitnessPhoto.refresh) window.WitnessPhoto.refresh();
       setStatus('Transcribed. Flags unavailable for this scan.', '');
       showError((e && e.userMessage) || 'The flagging step failed for a reason this page could not read. Your spoken scan above is transcribed and safe.');
     });
@@ -412,6 +415,7 @@
         ? { key: selectedLoad, label: LOADS[selectedLoad] }
         : null;
     },
-    getLastFlags: function () { return lastFlags; }
+    getLastFlags: function () { return lastFlags; },
+    getLastTranscript: function () { return lastTranscript; }
   };
 })();
