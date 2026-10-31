@@ -185,3 +185,66 @@ h2 { margin: 0 0 4px; font-size: 20px; }
 
 .foot { color: var(--dim); font-size: 15px; margin-top: 26px; }
 .foot .small { font-size: 13px; }
+
+/* Step 2 — photo flags grouped by side, the comparison's verdicts,
+   and the OS&D report. Same plain language as Step 1: bands and
+   landmarks first, colour never the only signal (every verdict chip
+   carries its word). */
+.subhead { margin: 20px 0 6px; font-size: 18px; }
+
+.side-group { margin-top: 12px; }
+.side-name {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 2px;
+  font-weight: 700;
+}
+.flags .photo-flag, #photoFlags .flag {
+  padding: 9px 0 9px 12px;
+  border-top: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  margin-top: 9px;
+}
+.flag-detail { margin: 0; }
+
+.verdict {
+  padding: 10px 0 10px 12px;
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+}
+.verdict-head { margin: 0 0 4px; }
+.verdict-point { font-weight: 700; margin-left: 8px; }
+.verdict-line { margin: 0 0 2px; color: var(--text); }
+.verdict-note { margin: 0; color: var(--dim); font-size: 15px; }
+
+.chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  color: var(--text);
+  vertical-align: 2px;
+}
+.chip-agree { background: #17301d; border-color: var(--ok); color: var(--ok); }
+.chip-flag { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+.chip-cant-verify { background: #2e2a17; border-color: #d8b93e; color: #d8b93e; }
+.verdict-flag { border-left: 3px solid var(--danger); padding-left: 12px; }
+.verdict-agree { border-left: 3px solid var(--ok); padding-left: 12px; }
+.verdict-cant-verify { border-left: 3px solid #d8b93e; padding-left: 12px; }
+
+.osd {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0;
+  font: 14px/1.55 ui-monospace, Menlo, Consolas, monospace;
+}
