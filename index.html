@@ -51,11 +51,16 @@
   </section>
 
   <section id="recordBox" class="panel" hidden>
-    <h2>Receiving record</h2>
-    <p class="note">Structured from your words only. A field you didn't
-    speak to says <em>Not said</em> — nothing is filled in for you.</p>
-    <dl id="recordRows" class="rows"></dl>
-    <button id="shareBtn" class="share" type="button" hidden>Share this scan</button>
+    <h2>Flags from your scan</h2>
+    <p class="note">Everything in your words that sounds like it belongs
+    in a receiving report — flagged, not sorted into fixed boxes. Each
+    flag quotes you exactly; nothing is added and nothing is filled in
+    for you.</p>
+    <div id="flagsList" class="flags"></div>
+    <p id="flagsEmpty" class="note" hidden>Nothing flagged in this scan.</p>
+    <p id="flagsUnavailable" class="note" hidden>Flags unavailable for
+    this scan. Your spoken scan above is still the record.</p>
+    <button id="saveBtn" class="share" type="button" hidden>Save this scan</button>
     <div id="shareFallback" hidden>
       <p class="note">This browser can't share or copy directly — your
       scan is written out below so you can select it and copy it
