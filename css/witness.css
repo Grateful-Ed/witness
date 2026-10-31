@@ -163,5 +163,25 @@ h2 { margin: 0 0 4px; font-size: 20px; }
   font: 14px/1.5 ui-monospace, Menlo, Consolas, monospace;
 }
 
+/* Flags: each report-worthy item from the transcript — a short plain
+   label over the speaker's exact words, quoted. */
+.flags .flag {
+  padding: 9px 0 9px 12px;
+  border-top: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  margin-top: 9px;
+}
+.flags .flag:first-child { margin-top: 0; }
+.flag-label {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 2px;
+}
+.flag-quote { margin: 0; }
+.flag-quote::before { content: "“"; }
+.flag-quote::after { content: "”"; }
+
 .foot { color: var(--dim); font-size: 15px; margin-top: 26px; }
 .foot .small { font-size: 13px; }
