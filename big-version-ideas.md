@@ -357,3 +357,5 @@ Feeds the end-phase POV mock-up: the frames now have a real layout to render —
 - **Transcripts: first 2 lines only.** The full transcript lives in the phone app; the glasses are a glance surface, not a reading surface. A transcript can be HIDDEN but never EXPANDED — the Expand control is removed.
 - **No verdict detail in the glasses.** The Agree / Flag / Can't verify rows are too much information for the lens — they live in the phone app record. The two transcripts stay distinct by placement (the wearer knows which voice is theirs).
 - **The capture is just the picture.** When a photo is captured, the tile shows the picture and nothing else — no label, no description. Its only job is confirming the picture was taken.
+
+**Glasses workflow ruling (William, 2026-10-31):** design the glasses layer in the artifact mockup first, as close to final as we can get it there, THEN move it to the repo — it will be much touchier in there. The artifact is the sketchpad; the repo is the load-bearing wall. (`glasses-hud-mockup` artifact is the current design surface.)
