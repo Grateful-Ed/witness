@@ -21,7 +21,11 @@
   /* What gets done first when a worker asks for work: freight at a
      door waits on nobody, orders have a truck behind them, putaway
      clears the dock, breakdowns and marriages are housekeeping. */
-  var TYPE_PRIORITY = { receive: 0, pick: 1, putaway: 2, breakdown: 3, consolidate: 4 };
+  var TYPE_PRIORITY = { receive: 0, load: 1, pick: 1, putaway: 2, breakdown: 3, consolidate: 4 };
+
+  /* Where picked freight waits for its truck when an order names no
+     door: the building's loading door. */
+  var DEFAULT_OUTBOUND_DOOR = 'Door 4';
 
   var SEED = null;
   if (typeof root !== 'undefined' && root.WitnessWorldSeed) SEED = root.WitnessWorldSeed;
@@ -142,8 +146,84 @@
     return best;
   }
 
-  function addRecord(state, text) {
-    state.records.push({ ts: new Date().toISOString(), text: text });
+  /* A record is {ts, text}, plus optional fields that say what kind
+     of thing happened (kind: complete / incident / hold / release /
+     arrive / ship) so the shift summary can count from the records
+     instead of anyone writing it up by hand. */
+  function addRecord(state, text, extra) {
+    var r = { ts: new Date().toISOString(), text: text };
+    if (extra) Object.keys(extra).forEach(function (k) { r[k] = extra[k]; });
+    state.records.push(r);
+    return r;
+  }
+
+  function isHeldBin(bin) { return !!bin && bin.status === 'hold'; }
+  function stagingById(state, id) {
+    for (var i = 0; i < state.staging.length; i++) if (state.staging[i].id === id) return state.staging[i];
+    return null;
+  }
+  function orderById(state, id) {
+    for (var i = 0; i < state.outbound.length; i++) if (state.outbound[i].id === id) return state.outbound[i];
+    return null;
+  }
+  function shipmentById(state, id) {
+    for (var i = 0; i < state.inbound.length; i++) if (state.inbound[i].id === id) return state.inbound[i];
+    return null;
+  }
+  function unitName(state, unitId) {
+    var u = unitId ? unitById(state, unitId) : null;
+    return u ? u.name : 'someone not on the labor list';
+  }
+
+  /* ---------- outbound allocation ------------------------------------ */
+  /* A line is reserved against real bin quantities: what's in the bin
+     minus what other unpicked, already-reserved lines are counting on.
+     Held bins are never allocated from. The line's own bin is tried
+     first, then any other usable bin holding enough of the item
+     (lowest id first). A line is never split across bins and never
+     silently shorted: if no single bin can fill it, it is marked short
+     with the numbers, and tried again on the next pass. */
+  function reservedQty(state, binId, desc, exceptLine) {
+    var q = 0;
+    state.outbound.forEach(function (o) {
+      o.lines.forEach(function (l) {
+        if (l === exceptLine || l.done || !l.allocated) return;
+        if (l.binId === binId && l.desc === desc) q += l.qty;
+      });
+    });
+    return q;
+  }
+  function freeQty(state, bin, desc, exceptLine) {
+    if (!bin || isHeldBin(bin)) return 0;
+    return Math.max(0, qtyInBin(bin, desc) - reservedQty(state, bin.id, desc, exceptLine));
+  }
+
+  function allocateOrders(state) {
+    state.outbound.forEach(function (o) {
+      if (o.status === 'staged at door' || o.status === 'shipped' || o.status === 'picked') return;
+      o.lines.forEach(function (line) {
+        if (line.done || line.allocated) return;
+        var own = binById(state, line.binId);
+        var pick = (own && freeQty(state, own, line.desc, line) >= line.qty) ? own : null;
+        if (!pick) {
+          state.bins.slice().sort(function (a, b) { return a.id < b.id ? -1 : 1; }).forEach(function (b) {
+            if (!pick && freeQty(state, b, line.desc, line) >= line.qty) pick = b;
+          });
+        }
+        if (pick) {
+          line.binId = pick.id;
+          line.allocated = true;
+          line.short = null;
+        } else {
+          var best = 0;
+          state.bins.forEach(function (b) { best = Math.max(best, freeQty(state, b, line.desc, line)); });
+          line.short = { want: line.qty, free: best };
+        }
+      });
+      var anyDone = o.lines.some(function (l) { return l.done; });
+      var anyShort = o.lines.some(function (l) { return !l.done && !l.allocated; });
+      o.status = anyDone ? 'picking' : (anyShort ? 'allocating' : 'allocated');
+    });
   }
 
   /* ---------- task generation -------------------------------------- */
@@ -159,6 +239,7 @@
     state.staging.forEach(function (p) {
       var id = 't-putaway-' + p.id;
       if (haveTask(state, id)) return;
+      if (p.hold) return; /* a held pallet waits; released, it gets its task */
       var door = doorById(state, p.door);
       var zone = door ? door.zone : null;
       var target = zone ? emptiestBin(state, zone, null) : null;
@@ -175,6 +256,7 @@
        bins. Smallest pile moves onto the biggest. */
     var byDesc = {};
     state.bins.forEach(function (b) {
+      if (isHeldBin(b)) return; /* held stock is not a consolidation candidate */
       b.contents.forEach(function (c) {
         if (c.qty < FULL_PALLET_QTY) {
           (byDesc[c.desc] = byDesc[c.desc] || []).push({ binId: b.id, zone: b.zone, qty: c.qty });
@@ -201,7 +283,7 @@
 
     /* Breakdown: stored pallets flagged to come apart. */
     state.bins.forEach(function (b) {
-      if (!b.needsBreakdown || !b.contents.length) return;
+      if (!b.needsBreakdown || !b.contents.length || isHeldBin(b)) return;
       var id = 't-breakdown-' + b.id;
       if (haveTask(state, id)) return;
       var c = b.contents[0];
@@ -214,11 +296,13 @@
       });
     });
 
-    /* Pick: one task per open order line. */
+    /* Pick: one task per order line that allocation could reserve.
+       A short line gets no task until stock is there to pick. */
+    allocateOrders(state);
     state.outbound.forEach(function (o) {
-      if (o.status === 'picked') return;
+      if (o.status === 'picked' || o.status === 'staged at door' || o.status === 'shipped') return;
       o.lines.forEach(function (line) {
-        if (line.done) return;
+        if (line.done || !line.allocated) return;
         var id = 't-pick-' + o.id + '-' + line.binId;
         if (haveTask(state, id)) return;
         var bin = binById(state, line.binId);
@@ -229,6 +313,23 @@
           orderId: o.id, binId: line.binId, desc: line.desc, qty: line.qty,
           status: 'open', assignee: null
         });
+      });
+    });
+
+    /* Load: a fully picked order staged at its door goes on the truck. */
+    state.outbound.forEach(function (o) {
+      if (o.status !== 'staged at door') return;
+      var id = 't-load-' + o.id;
+      if (haveTask(state, id)) return;
+      var door = doorById(state, o.door || DEFAULT_OUTBOUND_DOOR);
+      var total = 0;
+      o.lines.forEach(function (l) { total += l.pickedQty || 0; });
+      state.tasks.push({
+        id: id, type: 'load', zone: door ? door.zone : null,
+        title: 'Load ' + o.id + ' at ' + (door ? door.id : (o.door || DEFAULT_OUTBOUND_DOOR)),
+        detail: total + ' picked: ' + o.lines.map(function (l) { return (l.pickedQty || 0) + ' × ' + l.desc; }).join(', ') + '.',
+        orderId: o.id,
+        status: 'open', assignee: null
       });
     });
 
@@ -260,7 +361,7 @@
       if (current && current.status === 'assigned') return current;
       unit.currentTaskId = null;
     }
-    var open = state.tasks.filter(function (t) { return t.status === 'open'; });
+    var open = state.tasks.filter(function (t) { return t.status === 'open' && !blockedBy(state, t); });
     if (!open.length) return null;
     open.sort(function (a, b) {
       var az = a.zone === unit.zone ? 0 : 1;
@@ -277,11 +378,37 @@
     return task;
   }
 
+  /* ---------- holds block work ------------------------------------------ */
+  /* The bins and pallets a task would touch. */
+  function taskTouches(task) {
+    var bins = [], pallets = [];
+    if (task.type === 'putaway') { if (task.toBinId) bins.push(task.toBinId); pallets.push(task.stagingId); }
+    else if (task.type === 'consolidate') { bins.push(task.fromBinId, task.toBinId); }
+    else if (task.type === 'breakdown' || task.type === 'pick') { bins.push(task.binId); }
+    return { bins: bins, pallets: pallets };
+  }
+
+  /* Why a task can't be worked right now, in plain words — or null. */
+  function blockedBy(state, task) {
+    if (!task || task.status === 'done') return null;
+    var t = taskTouches(task);
+    for (var i = 0; i < t.bins.length; i++) {
+      var b = binById(state, t.bins[i]);
+      if (isHeldBin(b)) return 'Bin ' + b.id + ' is on hold' + (b.hold && b.hold.reason ? ' — ' + b.hold.reason : '') + '.';
+    }
+    for (var j = 0; j < t.pallets.length; j++) {
+      var p = stagingById(state, t.pallets[j]);
+      if (p && p.hold) return 'Pallet ' + p.id + ' is on hold' + (p.hold.reason ? ' — ' + p.hold.reason : '') + '.';
+    }
+    return null;
+  }
+
   /* ---------- completion: the books must balance --------------------- */
 
   function completeTask(state, taskId) {
     var task = taskById(state, taskId);
     if (!task || task.status === 'done') return false;
+    if (blockedBy(state, task)) return false; /* held stock is not touched */
     var text = null;
 
     if (task.type === 'putaway') {
@@ -295,6 +422,9 @@
       if (!bin) return false;
       addToBin(bin, pallet.desc, pallet.qty);
       state.staging.splice(idx, 1);
+      var pdoor = doorById(state, pallet.door);
+      if (pdoor && pdoor.state === 'staged' && !pdoor.shipmentId &&
+          !state.staging.some(function (q) { return q.door === pdoor.id; })) pdoor.state = 'empty';
       text = 'Put away ' + pallet.qty + ' × ' + pallet.desc + ' — ' + pallet.door + ' → bin ' + bin.id + '.';
     }
 
@@ -346,27 +476,58 @@
       state.outbound.forEach(function (o) { if (o.id === task.orderId) order = o; });
       if (order) {
         order.lines.forEach(function (line) {
-          if (line.binId === task.binId && line.desc === task.desc) line.done = true;
+          if (line.binId === task.binId && line.desc === task.desc && !line.done) {
+            line.done = true;
+            line.pickedQty = task.qty;
+          }
         });
         var allDone = order.lines.every(function (l) { return l.done; });
-        order.status = allDone ? 'picked' : 'picking';
+        if (allDone) {
+          order.door = order.door || DEFAULT_OUTBOUND_DOOR;
+          order.status = 'staged at door';
+        } else {
+          order.status = 'picking';
+        }
       }
       text = 'Picked ' + task.qty + ' × ' + task.desc + ' from ' + pbin.id + ' for ' + task.orderId +
-             (order && order.status === 'picked' ? ' — order fully picked.' : '.');
+             (order && order.status === 'staged at door' ? ' — order fully picked, staged at ' + order.door + '.' : '.');
     }
 
     else if (task.type === 'receive') {
-      state.inbound.forEach(function (s) {
-        if (s.id === task.shipmentId) s.status = 'received';
-      });
-      var door2 = doorById(state, (state.inbound.filter(function (s) {
-        return s.id === task.shipmentId;
-      })[0] || {}).door);
+      var ship = shipmentById(state, task.shipmentId);
+      if (ship) ship.status = 'received';
+      /* What was received becomes staged pallets at the door — one per
+         pallet on the bill of lading — and putaway is generated from
+         those, never typed in. */
+      var stagedNow = 0, casesNow = 0;
+      if (ship && ship.lines) {
+        ship.lines.forEach(function (line) {
+          for (var n = 0; n < line.pallets; n++) {
+            stagedNow++;
+            casesNow += line.perPallet;
+            state.staging.push({ id: 'STG-' + ship.id + '-' + stagedNow, door: ship.door, desc: line.desc,
+              qty: line.perPallet, shipmentId: ship.id });
+          }
+        });
+      }
+      var door2 = doorById(state, ship ? ship.door : null);
       if (door2 && door2.shipmentId === task.shipmentId) {
-        door2.state = 'empty';
+        door2.state = stagedNow ? 'staged' : 'empty';
         door2.shipmentId = null;
       }
-      text = 'Received ' + task.shipmentId + ' — cross-check run in the receiving app, freight accepted.';
+      text = 'Received ' + task.shipmentId + ' — cross-check run in the receiving app, freight accepted.' +
+        (stagedNow ? ' ' + stagedNow + ' pallets (' + casesNow + ' cases/bags) staged at ' + ship.door + ' for putaway.' : '');
+    }
+
+    else if (task.type === 'load') {
+      var lorder = orderById(state, task.orderId);
+      if (!lorder || lorder.status !== 'staged at door') return false;
+      lorder.status = 'shipped';
+      var shippedQty = 0;
+      lorder.lines.forEach(function (l) { shippedQty += l.pickedQty || 0; });
+      lorder.shippedQty = shippedQty;
+      text = 'Shipped ' + lorder.id + ' from ' + lorder.door + ' — ' + shippedQty + ' loaded: ' +
+        lorder.lines.map(function (l) { return (l.pickedQty || 0) + ' × ' + l.desc; }).join(', ') + '.';
     }
 
     else {
@@ -374,12 +535,14 @@
     }
 
     task.status = 'done';
+    task.doneBy = task.assignee || null;
+    task.doneAt = new Date().toISOString();
     if (task.assignee) {
       var unit = unitById(state, task.assignee);
       if (unit && unit.currentTaskId === task.id) unit.currentTaskId = null;
       task.assignee = null;
     }
-    if (text) addRecord(state, text);
+    if (text) addRecord(state, text, { kind: 'complete', taskId: task.id, type: task.type, zone: task.zone, by: task.doneBy });
     return true;
   }
 
@@ -457,12 +620,32 @@
     };
   }
 
+  /* ---------- incident updates: records are never frozen ------------- */
+  /* William's standing design: a load fine at scan can go bad while it
+     is moved, and the update rides the same record. Any task — open,
+     in hand, or done — takes an update in plain words. It is pinned to
+     the task (task.notes) and written to the records with who and
+     when. It moves nothing and closes nothing. Returns the record
+     entry, or null when there is no such task or no words. */
+  function addTaskUpdate(state, taskId, text, byUnit) {
+    var task = taskById(state, taskId);
+    var words = String(text || '').trim();
+    if (!task || !words) return null;
+    var by = byUnit && unitById(state, byUnit) ? byUnit : null;
+    var ts = new Date().toISOString();
+    task.notes = task.notes || [];
+    task.notes.push({ ts: ts, by: by, text: words });
+    var r = addRecord(state, 'Update on "' + task.title + '" from ' + unitName(state, by) + ': ' + words,
+      { kind: 'incident', taskId: task.id, zone: task.zone, by: by });
+    r.ts = ts;
+    return r;
+  }
+
   /* ---------- problems reported mid-task ------------------------------ */
-  /* A worker says something is wrong. The note is pinned to the task
-     in hand (task.notes) and logged in the records — the task stays
-     with the worker, open. Nothing is completed or moved: a problem
-     report never touches the counts. With no task in hand the report
-     still lands in the records, so nothing said is lost. */
+  /* The conversational layer's problem intent. A worker says something
+     is wrong: with a task in hand, this is addTaskUpdate on that task.
+     With no task in hand the report still lands in the records, so
+     nothing said is lost. Returns { task, entry } or null. */
   function reportProblem(state, unitId, note) {
     var unit = unitById(state, unitId);
     var text = String(note || '').trim();
@@ -472,19 +655,212 @@
       var t = taskById(state, unit.currentTaskId);
       if (t && t.status === 'assigned') task = t;
     }
-    var entry = { ts: new Date().toISOString(), by: unit.id, text: text };
     if (task) {
-      task.notes = task.notes || [];
-      task.notes.push(entry);
+      var r = addTaskUpdate(state, task.id, text, unit.id);
+      return { task: task, entry: task.notes[task.notes.length - 1], record: r };
     }
-    addRecord(state, 'Problem reported by ' + unit.name +
-      (task ? ' on "' + task.title + '"' : ' (no task in hand)') + ': ' + text);
-    return { task: task, entry: entry };
+    var rec = addRecord(state, 'Problem reported by ' + unit.name + ' (no task in hand): ' + text,
+      { kind: 'incident', taskId: null, zone: unit.zone, by: unit.id });
+    return { task: null, entry: { ts: rec.ts, by: unit.id, text: text }, record: rec };
+  }
+
+  /* ---------- inbound: the truck arrives -------------------------------- */
+  /* An expected shipment arrives at its door. The door must not be
+     holding another shipment. Returns { ok, reason }. */
+  function arriveShipment(state, shipmentId, byUnit) {
+    var ship = shipmentById(state, shipmentId);
+    if (!ship) return { ok: false, reason: 'No shipment ' + shipmentId + '.' };
+    if (ship.status === 'staged at door' || ship.status === 'received') {
+      return { ok: false, reason: ship.id + ' is already here.' };
+    }
+    var door = doorById(state, ship.door);
+    if (!door) return { ok: false, reason: ship.id + ' has no door assigned.' };
+    if (door.shipmentId && door.shipmentId !== ship.id) {
+      return { ok: false, reason: door.id + ' is busy with ' + door.shipmentId + '. Receive that one first.' };
+    }
+    ship.status = 'staged at door';
+    door.state = 'unloading';
+    door.shipmentId = ship.id;
+    addRecord(state, ship.id + ' arrived at ' + door.id + ' — ' + ship.pallets + ' pallets. Logged by ' +
+      unitName(state, byUnit) + '.', { kind: 'arrive', shipmentId: ship.id, by: byUnit || null });
+    return { ok: true, reason: null };
+  }
+
+  /* ---------- holds --------------------------------------------------------- */
+  /* A manager puts a bin or a staged pallet on hold, or releases it.
+     target is { binId } or { stagingId }. A task someone has in hand
+     that touches the held stock goes back to the queue (the worker is
+     freed), and it can't be assigned or completed until release.
+     Returns { ok, reason, freed: [unit names] }. */
+  function holdTarget(state, target) {
+    if (target && target.binId) {
+      var b = binById(state, target.binId);
+      return b ? { kind: 'bin', obj: b, label: 'Bin ' + b.id } : null;
+    }
+    if (target && target.stagingId) {
+      var p = stagingById(state, target.stagingId);
+      return p ? { kind: 'pallet', obj: p, label: 'Pallet ' + p.id + ' (' + p.qty + ' × ' + p.desc + ', ' + p.door + ')' } : null;
+    }
+    return null;
+  }
+
+  function placeHold(state, target, byUnit, reason) {
+    var h = holdTarget(state, target);
+    if (!h) return { ok: false, reason: 'Nothing like that to hold.', freed: [] };
+    var already = h.kind === 'bin' ? h.obj.status === 'hold' : !!h.obj.hold;
+    if (already) return { ok: false, reason: h.label + ' is already on hold.', freed: [] };
+    var why = String(reason || '').trim();
+    var info = { by: byUnit || null, reason: why, ts: new Date().toISOString() };
+    if (h.kind === 'bin') { h.obj.status = 'hold'; h.obj.hold = info; }
+    else { h.obj.hold = info; }
+    var freed = [];
+    state.tasks.forEach(function (t) {
+      if (t.status !== 'assigned' || !blockedBy(state, t)) return;
+      var u = unitById(state, t.assignee);
+      if (u && u.currentTaskId === t.id) { u.currentTaskId = null; freed.push(u.name); }
+      t.status = 'open';
+      t.assignee = null;
+    });
+    addRecord(state, h.label + ' put on hold by ' + unitName(state, byUnit) + (why ? ': ' + why : '') + '.' +
+      (freed.length ? ' Back to the queue from ' + freed.join(', ') + '.' : ''),
+      { kind: 'hold', target: target, by: byUnit || null });
+    return { ok: true, reason: null, freed: freed };
+  }
+
+  function releaseHold(state, target, byUnit) {
+    var h = holdTarget(state, target);
+    if (!h) return { ok: false, reason: 'Nothing like that to release.' };
+    var held = h.kind === 'bin' ? h.obj.status === 'hold' : !!h.obj.hold;
+    if (!held) return { ok: false, reason: h.label + ' is not on hold.' };
+    if (h.kind === 'bin') h.obj.status = 'ok';
+    delete h.obj.hold;
+    addRecord(state, h.label + ' released from hold by ' + unitName(state, byUnit) + '.',
+      { kind: 'release', target: target, by: byUnit || null });
+    return { ok: true, reason: null };
+  }
+
+  function currentHolds(state) {
+    var out = [];
+    state.bins.forEach(function (b) {
+      if (b.status === 'hold') out.push({ target: { binId: b.id }, label: 'Bin ' + b.id, zone: b.zone,
+        reason: b.hold ? b.hold.reason : '', by: b.hold ? unitName(state, b.hold.by) : null,
+        ts: b.hold ? b.hold.ts : null });
+    });
+    state.staging.forEach(function (p) {
+      if (p.hold) out.push({ target: { stagingId: p.id }, label: 'Pallet ' + p.id + ' at ' + p.door,
+        zone: (doorById(state, p.door) || {}).zone || null, reason: p.hold.reason, by: unitName(state, p.hold.by), ts: p.hold.ts });
+    });
+    return out;
+  }
+
+  /* ---------- stages, in the words the work uses ------------------------ */
+
+  function inboundStage(state, ship) {
+    if (ship.status === 'staged at door') {
+      var rt = taskById(state, 't-receive-' + ship.id);
+      if (rt && rt.status === 'assigned') {
+        return { key: 'receiving', words: 'Being received at ' + ship.door + ' — ' + unitName(state, rt.assignee) + '.' };
+      }
+      return { key: 'arrived', words: 'At ' + ship.door + ' — waiting to be received.' };
+    }
+    if (ship.status === 'received') {
+      var total = 0;
+      (ship.lines || []).forEach(function (l) { total += l.pallets; });
+      var left = state.staging.filter(function (p) { return p.shipmentId === ship.id; }).length;
+      if (left) return { key: 'putaway', words: 'Received — putting away: ' + left + ' of ' + total + ' pallets still at ' + ship.door + '.' };
+      return { key: 'closed', words: 'Closed — received, all ' + total + ' pallets in bins.' };
+    }
+    return { key: 'expected', words: 'Expected ' + String(ship.status).replace(/^expected\s*/, '') + ' — ' + ship.door + '.' };
+  }
+
+  function orderStage(state, o) {
+    var n = o.lines.length;
+    var picked = o.lines.filter(function (l) { return l.done; }).length;
+    if (o.status === 'shipped') return { key: 'shipped', words: 'Shipped from ' + o.door + ' — ' + (o.shippedQty || 0) + ' loaded.' };
+    if (o.status === 'staged at door' || o.status === 'picked') {
+      var lt = taskById(state, 't-load-' + o.id);
+      if (lt && lt.status === 'assigned') return { key: 'loading', words: 'Loading at ' + o.door + ' — ' + unitName(state, lt.assignee) + '.' };
+      return { key: 'staged', words: 'Picked, staged at ' + (o.door || DEFAULT_OUTBOUND_DOOR) + ' — waiting to load.' };
+    }
+    var shorts = o.lines.filter(function (l) { return !l.done && !l.allocated; });
+    if (shorts.length) {
+      return { key: 'allocating', words: 'Allocating — ' + shorts.length + ' of ' + n + ' line' + (n === 1 ? '' : 's') + ' short: ' +
+        shorts.map(function (l) {
+          return 'wants ' + l.qty + ' × ' + l.desc + ', ' + (l.short ? l.short.free : 0) + ' free in any one usable bin';
+        }).join('; ') + '.' };
+    }
+    if (picked) return { key: 'picking', words: 'Picking — ' + picked + ' of ' + n + ' lines picked.' };
+    return { key: 'allocated', words: 'Allocated — ' + n + ' line' + (n === 1 ? '' : 's') + ' reserved, waiting to pick.' };
+  }
+
+  /* ---------- shift summary: computed, never hand-written --------------- */
+
+  function shiftSummary(state) {
+    var byType = {}, byZone = {}, byUnit = {}, done = 0;
+    state.tasks.forEach(function (t) {
+      if (t.status !== 'done') return;
+      done++;
+      byType[t.type] = (byType[t.type] || 0) + 1;
+      var z = t.zone || '—';
+      byZone[z] = (byZone[z] || 0) + 1;
+      var who = t.doneBy || '(not assigned)';
+      byUnit[who] = (byUnit[who] || 0) + 1;
+    });
+    var perUnit = state.labor.filter(function (u) { return u.role === 'worker'; }).map(function (u) {
+      return { id: u.id, name: u.name, zone: u.zone, done: byUnit[u.id] || 0 };
+    });
+    if (byUnit['(not assigned)']) perUnit.push({ id: null, name: 'Not assigned to anyone', zone: null, done: byUnit['(not assigned)'] });
+    var incidents = state.records.filter(function (r) { return r.kind === 'incident'; });
+    var holdEvents = state.records.filter(function (r) { return r.kind === 'hold' || r.kind === 'release'; });
+    return {
+      tasksDone: done,
+      doneByType: byType,
+      doneByZone: byZone,
+      perUnit: perUnit,
+      bottleneck: bottleneck(state),
+      incidents: incidents,
+      holdEvents: holdEvents,
+      holdsNow: currentHolds(state),
+      ordersShipped: state.outbound.filter(function (o) { return o.status === 'shipped'; })
+        .map(function (o) { return { id: o.id, qty: o.shippedQty || 0, door: o.door }; }),
+      shipmentsReceived: state.inbound.filter(function (s) { return s.status === 'received'; })
+        .map(function (s) { return { id: s.id, pallets: s.pallets, door: s.door }; })
+    };
+  }
+
+  /* ---------- saved state from before this slice ------------------------- */
+  /* A browser that saved the warehouse before bills of lading and
+     outbound doors existed gets them filled in from the seed, by id.
+     Nothing that happened is changed. */
+  function upgradeState(state) {
+    if (!state || !SEED) return state;
+    state.inbound.forEach(function (s) {
+      if (s.lines) return;
+      SEED.inbound.forEach(function (x) { if (x.id === s.id && x.lines) s.lines = deepCopy(x.lines); });
+    });
+    state.outbound.forEach(function (o) {
+      if (!o.door) o.door = DEFAULT_OUTBOUND_DOOR;
+      if (o.status === 'picked') o.status = 'staged at door';
+      o.lines.forEach(function (l) { if (l.done && l.pickedQty == null) l.pickedQty = l.qty; });
+    });
+    return state;
   }
 
   var api = {
     STORAGE_KEY: STORAGE_KEY,
     reportProblem: reportProblem,
+    addTaskUpdate: addTaskUpdate,
+    arriveShipment: arriveShipment,
+    placeHold: placeHold,
+    releaseHold: releaseHold,
+    currentHolds: currentHolds,
+    blockedBy: blockedBy,
+    inboundStage: inboundStage,
+    orderStage: orderStage,
+    shiftSummary: shiftSummary,
+    upgradeState: upgradeState,
+    orderById: orderById,
+    shipmentById: shipmentById,
     seedWorld: seedWorld,
     loadState: loadState,
     saveState: saveState,
