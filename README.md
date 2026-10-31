@@ -46,7 +46,7 @@ In the whole-warehouse picture, this module is how **inbound freight gets receiv
 ## Status
 
 - **Module one (receiving cross-check): built and live**, proven end to end on real hardware — voice scan → flags → photo scan → comparison → OS&D report saved.
-- **The warehouse build (areas 1–12): in progress**, in this repo, until Nov 4, 9:00 PM ET. This README updates as areas land; anything not listed here as built is planned or in build, and is labeled that way wherever it appears.
+- **The warehouse foundation: live** at https://grateful-ed.github.io/witness/warehouse.html — a seeded demonstration building (4 dock doors, zones A/B/C × 8 bins, 6 labor units and a manager, inbound and outbound orders) with a working task queue: putaway, consolidation, breakdown, pick and receive tasks are generated from the building's own state, assigned per labor unit, and completed with quantities reconciled — nothing created, nothing destroyed. Worker and manager views included; the manager's bottleneck panel names the backed-up zone and proposes a labor move with its numbers showing. The remaining areas deepen from this foundation until Nov 4, 9:00 PM ET; anything not listed here as built is planned or in build, and is labeled that way wherever it appears.
 - **The glasses layer: last, by design** (see area 11).
 
 ## Test data
