@@ -407,3 +407,12 @@ What it requires (briefed as briefs/claude-brief-desk-phone.md):
   silently dropped. Slice 3 now depends on the desk-phone brief's Step 1.
 - Open, William's nod required: whether /save persists the photo itself
   (default: flags only, photo not stored).
+
+## PlayStation controller as a prototype input for the glasses (William, 2026-10-31)
+
+William's idea: integrate a PlayStation controller as a PROTOTYPE tool for
+the glasses layer — the joystick controls things on the HUD. It stands in
+for hands-busy glasses input while there is no real glasses hardware: a
+worker who can't tap a screen can still nudge, point, and confirm. Belongs
+to the glasses phase (last), alongside the settled HUD design and the
+playable sim.
