@@ -125,6 +125,12 @@
 
     if (match.intent === 'done') {
       if (current) {
+        var held = E.blockedBy ? E.blockedBy(state, current) : null;
+        if (held) {
+          out.lines.push('Can\'t close "' + current.title + '" — ' + held);
+          out.lines.push('Leave it be. Tell your manager.');
+          return out;
+        }
         if (!E.completeTask(state, current.id)) {
           out.lines.push('Could not close "' + current.title + '" — the counts would not balance.');
           out.lines.push('It stays with you. Tell your manager.');
@@ -138,6 +144,7 @@
       }
     }
 
+    E.generateTasks(state); /* what this turn made possible (putaway after receiving, a load after the last pick) */
     var next = E.nextTaskFor(state, unit);
     if (next) {
       out.acted = true;
@@ -221,25 +228,37 @@
     L.push('INBOUND:');
     state.inbound.forEach(function (s) {
       var z = doorZone(state, s.door);
-      facts.incoming.push({ id: s.id, door: s.door, zone: z, pallets: s.pallets, status: s.status });
-      L.push(s.id + ' — ' + s.door + ' (Zone ' + z + ') — ' + s.pallets + ' pallets — ' + s.status);
+      var st = E.inboundStage(state, s);
+      facts.incoming.push({ id: s.id, door: s.door, zone: z, pallets: s.pallets, status: s.status, stage: st.words });
+      L.push(s.id + ' — ' + s.door + ' (Zone ' + z + ') — ' + s.pallets + ' pallets — ' + s.status + ' — stage: ' + st.words);
     });
 
     L.push('');
     L.push('STAGED AT DOORS, waiting for putaway:');
     if (!state.staging.length) L.push('Nothing staged.');
     state.staging.forEach(function (p) {
-      facts.staged.push({ id: p.id, door: p.door, desc: p.desc, qty: p.qty });
-      L.push(p.id + ' — ' + p.door + ' (Zone ' + doorZone(state, p.door) + ') — ' + p.qty + ' × ' + p.desc);
+      facts.staged.push({ id: p.id, door: p.door, desc: p.desc, qty: p.qty, held: !!p.hold });
+      L.push(p.id + ' — ' + p.door + ' (Zone ' + doorZone(state, p.door) + ') — ' + p.qty + ' × ' + p.desc + (p.hold ? ' — ON HOLD' : ''));
+    });
+
+    L.push('');
+    L.push('HOLDS (held stock is not picked, moved or put away until released):');
+    var holds = E.currentHolds(state);
+    facts.holds = holds;
+    if (!holds.length) L.push('No holds.');
+    holds.forEach(function (h) {
+      L.push(h.label + (h.zone ? ' (Zone ' + h.zone + ')' : '') + ' — on hold' + (h.reason ? ': ' + h.reason : '') + (h.by ? ' — by ' + h.by : ''));
     });
 
     L.push('');
     L.push('OUTBOUND ORDERS:');
     state.outbound.forEach(function (o) {
       var left = o.lines.filter(function (l) { return !l.done; });
-      facts.orders.push({ id: o.id, status: o.status, linesLeft: left.length });
+      var os = E.orderStage(state, o);
+      facts.orders.push({ id: o.id, status: o.status, linesLeft: left.length, stage: os.words });
       L.push(o.id + ' — ' + o.status + ' — ' + left.length + ' of ' + o.lines.length + ' lines left to pick' +
-        (left.length ? ': ' + left.map(function (l) { return l.qty + ' × ' + l.desc + ' from ' + l.binId; }).join('; ') : ''));
+        (left.length ? ': ' + left.map(function (l) { return l.qty + ' × ' + l.desc + ' from ' + l.binId; }).join('; ') : '') +
+        ' — stage: ' + os.words);
     });
 
     return { text: L.join('\n'), facts: facts };
