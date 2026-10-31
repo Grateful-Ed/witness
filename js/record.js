@@ -1,48 +1,46 @@
 /* =====================================================================
-   record.js — Witness Step 1, second half: transcript -> record.
+   record.js — Witness Step 1, second half: transcript -> flags -> save.
 
    The transcript (the receiver's own words, shown verbatim by voice.js)
-   goes to Muse Spark through the project proxy's /chat route — the same
-   OpenAI-shaped call Ship Safe's AI review makes — with the structuring
-   prompt below. Spark returns one JSON object; this file renders it as
-   labeled rows, exactly as returned.
+   goes to Muse Spark through the Witness Worker's /chat route with the
+   flagging prompt below. Spark returns a JSON list of FLAGS: every item
+   in the transcript that sounds like it belongs in a receiving / OS&D
+   report, each flag carrying a short plain label and the speaker's
+   exact words quoted verbatim.
 
-   THE RULE the prompt carries: the record captures JUDGMENTS and ACTIONS,
-   not only observations — a segregation call, a rewrap call, a routing
-   decision are record content. And nothing is invented: a field the
-   speaker didn't address comes back null / empty and renders as
-   "Not said". That rule comes straight out of Foundation Sample 001
-   (William's spoken scan of Test Load 001, 2026-10-28).
+   FLAGS, NOT FIELDS (William's ruling, 2026-10-30): there are no fixed
+   field names, no predefined slots, and no "Not said" placeholders.
+   Categories are built later, bottom-up, from the flags that actually
+   accumulate across samples. If nothing in a scan flags, the page says
+   so plainly. If the flagging step fails or answers in a shape this
+   page cannot read, the page says "flags unavailable" — the transcript
+   itself is shown above either way and is never lost.
 
-   The API key is never in this page. It lives in the Cloudflare Worker
-   behind the proxy.
+   SAVE (2026-10-30): the primary path is the "Save this scan" button,
+   which POSTs {load, transcript, flags, savedAt} to the Worker's /save
+   route. The saved transcript is the verbatim ASR transcript, exactly
+   as returned — not a formatted copy. Until the Worker's scan storage
+   is connected, /save answers 501 storage-not-connected and the button
+   falls back to the previous share/copy behaviour, labeled clearly, so
+   a tester is never blocked.
+
+   The API key is never in this page. It lives in the Cloudflare Worker.
    ===================================================================== */
 (function () {
   'use strict';
 
-  var CHAT_URL = 'https://witness.e-william-harris96.workers.dev/chat';
+  var WORKER_BASE = 'https://witness.e-william-harris96.workers.dev';
+  var CHAT_URL = WORKER_BASE + '/chat';
+  var SAVE_URL = WORKER_BASE + '/save';
 
-  var FIELDS = [
-    { key: 'count_main',         label: 'Boxes in the main stack', type: 'number' },
-    { key: 'odd_units',          label: 'Odd / extra units',       type: 'list' },
-    { key: 'stack_state',        label: 'How the stack sits',      type: 'text' },
-    { key: 'security',           label: 'Secure for handling?',    type: 'text' },
-    { key: 'hazards_noticed',    label: 'Hazards noticed',         type: 'list' },
-    { key: 'segregation_action', label: 'Separation call',         type: 'text' },
-    { key: 'wrap_state',         label: 'Wrap',                    type: 'text' },
-    { key: 'rewrap_action',      label: 'Rewrap',                  type: 'text' },
-    { key: 'temperature_notes',  label: 'Temperature',             type: 'text' },
-    { key: 'disposition',        label: 'Goes to',                 type: 'text' },
-    { key: 'anything_else',      label: 'Anything else said',      type: 'list' }
-  ];
-
-  /* Share + test-load state. lastTranscript/lastRecord are what the
-     share button sends; selectedLoad is the tester-picked test load
-     (null = none picked), used only to label a shared scan. */
+  /* Save + test-load state. lastTranscript is the verbatim ASR
+     transcript; lastFlags is the flags array (null = flags unavailable,
+     [] = nothing flagged); selectedLoad is the tester-picked test load
+     (null = none picked), used only to label a saved scan. */
   var lastTranscript = '';
-  var lastRecord = null;
+  var lastFlags = null;
   var selectedLoad = null;
-  var shareTimer = null;
+  var saveTimer = null;
 
   var LOADS = {
     a: 'Load A — container cube',
@@ -50,29 +48,22 @@
   };
 
   var SYSTEM_PROMPT = [
-    'You turn a warehouse receiver\'s spoken description of one pallet into a structured receiving record.',
+    'You read a warehouse receiver\'s spoken description of one pallet and FLAG everything in it that sounds like it belongs in a receiving or OS&D (overage, shortage & damage) report.',
     '',
     'The input is a speech transcript. It is one person describing what they see and what they have decided about the load — counts, condition, judgments and actions mixed together, the way people actually talk on a dock.',
     '',
-    'Return ONLY a JSON object with exactly these fields, no prose, no code fences:',
+    'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
+    '{"flags":[{"label":"...","quote":"..."}]}',
     '',
-    '- "count_main": the number of boxes/cartons the speaker counted in the main stack — a number, or null. Odd units the speaker named separately do NOT go in this number.',
-    '- "odd_units": extra or non-standard units the speaker named apart from the main count (for example a long carton lying across the top, a loose pail), as an array of short strings. Empty array if none.',
-    '- "stack_state": how the stack sits — leaning, crooked, straight, cattywampus — in the speaker\'s own wording where you can. String or null.',
-    '- "security": the speaker\'s judgment of whether the load is secure and stable for handling. String or null.',
-    '- "hazards_noticed": hazards or hazard mixes the speaker noticed (for example different dangerous goods on one pallet), as an array of short strings. Empty array if none.',
-    '- "segregation_action": any judgment or action the speaker stated about goods needing to be separated. String or null.',
-    '- "wrap_state": the state of the wrap — intact, broken, partial, missing. String or null.',
-    '- "rewrap_action": any stated need or plan to rewrap. String or null.',
-    '- "temperature_notes": anything the speaker said about temperature control, or about mixing temperature-controlled and non-controlled goods. String or null.',
-    '- "disposition": where the speaker said the load goes next (for example "to repackaging"). String or null.',
-    '- "anything_else": any other real content from the description that fits none of the fields above, as an array of short strings. Empty array if none.',
+    'Each flag is one report-worthy item from the transcript:',
+    '- "label": a short, plain label for the item, in ordinary dock words (for example "Leak", "Damaged wrap", "Count", "Leaning stack", "Needs rewrap", "Send to repackaging"). Invent the label from what was actually said — there is no fixed list of labels to choose from.',
+    '- "quote": the speaker\'s exact words for that item, copied verbatim from the transcript. Do not tidy, paraphrase, correct, or complete them.',
     '',
     'Rules:',
-    '1. Capture judgments and actions, not only observations. If the speaker decided something — goods need separating, the load needs rewrap, it moves to repackaging — that decision belongs in the record.',
-    '2. A field the speaker did not address is null (or an empty array for a list). Never invent, infer, or complete a field from general knowledge.',
-    '3. Do not count anything yourself. If the speaker gave no number for the main stack, "count_main" is null.',
-    '4. Stay close to the speaker\'s words. Light tidying of filler ("um", "uh") is fine; changing a meaning is not.',
+    '1. Flag observations, judgments, and actions alike. If the speaker decided something — goods need separating, the load needs rewrap, it moves to repackaging — that decision gets a flag too.',
+    '2. Flag only what is actually in the transcript. Never invent, infer, or add an item from general knowledge. If a sentence is ambiguous, flag it with its exact words rather than resolving it.',
+    '3. One flag per distinct item. The same words are not flagged twice.',
+    '4. If nothing in the transcript sounds like it belongs in a report, return {"flags":[]}.',
     '5. Output the JSON object only.'
   ].join('\n');
 
@@ -94,9 +85,28 @@
     }
   }
 
-  /* Ask Spark to structure the transcript. Resolves with the parsed
-     record object; rejects with an Error whose .userMessage is the
-     plain-words failure to show the receiver. */
+  /* Validate and normalise whatever came back into a flags array.
+     Returns null when the shape is not one this page can trust. */
+  function normaliseFlags(parsed) {
+    var raw = null;
+    if (Array.isArray(parsed)) raw = parsed;
+    else if (parsed && Array.isArray(parsed.flags)) raw = parsed.flags;
+    if (!raw) return null;
+    var out = [];
+    raw.forEach(function (f) {
+      if (!f || typeof f !== 'object') return;
+      var label = typeof f.label === 'string' ? f.label.trim() : '';
+      var quote = typeof f.quote === 'string' ? f.quote.trim() : '';
+      if (label && quote) out.push({ label: label, quote: quote });
+    });
+    return out;
+  }
+
+  /* Ask Spark to flag the transcript. Resolves with a flags array
+     (possibly empty); rejects with an Error whose .userMessage is the
+     plain-words failure to show the receiver. A reply that is not
+     readable JSON in the flags shape rejects as 'unparseable' — the
+     caller renders "flags unavailable" and the transcript stands. */
   function ask(transcript) {
     return fetch(CHAT_URL, {
       method: 'POST',
@@ -116,12 +126,12 @@
     }).then(function (r) {
       if (r.status === 429) {
         var cap = new Error('cap');
-        cap.userMessage = 'The structuring step is unavailable — today\'s call cap at the proxy is reached. Your spoken scan above is transcribed and safe; the record could not be built from it right now.';
+        cap.userMessage = 'The flagging step is unavailable — today\'s call cap at the proxy is reached. Your spoken scan above is transcribed and safe.';
         throw cap;
       }
       if (!r.ok) {
         var http = new Error('http ' + r.status);
-        http.userMessage = 'The structuring step could not be reached (the proxy answered with an error, HTTP ' + r.status + '). Your spoken scan above is transcribed and safe; no record was built.';
+        http.userMessage = 'The flagging step could not be reached (the proxy answered with an error, HTTP ' + r.status + '). Your spoken scan above is transcribed and safe.';
         throw http;
       }
       return r.json();
@@ -129,82 +139,76 @@
       var text = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
       if (!text) {
         var empty = new Error('empty');
-        empty.userMessage = 'The structuring step answered with nothing usable. Your spoken scan above is transcribed and safe; no record was built.';
+        empty.userMessage = 'The flagging step answered with nothing usable. Your spoken scan above is transcribed and safe.';
         throw empty;
       }
       var cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      var parsed;
       try {
-        return JSON.parse(cleaned);
+        parsed = JSON.parse(cleaned);
       } catch (e) {
         var bad = new Error('unparseable');
-        bad.userMessage = 'The structuring step answered, but not in the record shape this page can read. Your spoken scan above is transcribed and safe; no record was built.';
+        bad.userMessage = 'The flagging step answered, but not in a shape this page can read, so no flags could be pulled from it. Your spoken scan above is transcribed and safe.';
         throw bad;
       }
+      var flags = normaliseFlags(parsed);
+      if (!flags) {
+        var wrong = new Error('unparseable');
+        wrong.userMessage = 'The flagging step answered, but not in the flags shape this page can read. Your spoken scan above is transcribed and safe.';
+        throw wrong;
+      }
+      return flags;
     });
   }
 
-  function renderRecord(rec) {
+  function renderFlags(flags) {
     var box = document.getElementById('recordBox');
-    var rows = document.getElementById('recordRows');
-    rows.innerHTML = '';
-    FIELDS.forEach(function (f) {
-      var v = rec ? rec[f.key] : undefined;
-      var row = el('div', 'row');
-      row.appendChild(el('dt', null, f.label));
-      var dd;
-      if (f.type === 'list') {
-        var items = Array.isArray(v) ? v.filter(function (s) { return typeof s === 'string' && s.trim(); }) : [];
-        if (!items.length) {
-          dd = el('dd', 'unsaid', 'Not said');
-        } else if (items.length === 1) {
-          dd = el('dd', null, items[0]);
-        } else {
-          dd = el('dd');
-          var ul = el('ul');
-          items.forEach(function (s) { ul.appendChild(el('li', null, s)); });
-          dd.appendChild(ul);
-        }
-      } else if (v == null || v === '') {
-        dd = el('dd', 'unsaid', 'Not said');
-      } else {
-        dd = el('dd', null, String(v));
-      }
-      row.appendChild(dd);
-      rows.appendChild(row);
+    var list = document.getElementById('flagsList');
+    var empty = document.getElementById('flagsEmpty');
+    var unavail = document.getElementById('flagsUnavailable');
+    list.innerHTML = '';
+    flags.forEach(function (f) {
+      var item = el('div', 'flag');
+      item.appendChild(el('p', 'flag-label', f.label));
+      item.appendChild(el('p', 'flag-quote', f.quote));
+      list.appendChild(item);
     });
-    lastRecord = rec;
+    if (empty) empty.hidden = flags.length !== 0;
+    if (unavail) unavail.hidden = true;
+    lastFlags = flags;
     box.hidden = false;
-    var sb = document.getElementById('shareBtn');
+    var sb = document.getElementById('saveBtn');
     if (sb) sb.hidden = false;
   }
 
-  /* Format one field's value for the plain-text share, mirroring
-     renderRecord exactly: an unspoken field says "Not said", and a
-     list keeps every item. Nothing is added, nothing dropped. */
-  function fieldShareText(f, rec) {
-    var v = rec ? rec[f.key] : undefined;
-    if (f.type === 'list') {
-      var items = Array.isArray(v) ? v.filter(function (s) { return typeof s === 'string' && s.trim(); }) : [];
-      if (!items.length) return f.label + ': Not said';
-      if (items.length === 1) return f.label + ': ' + items[0];
-      var lines = [f.label + ':'];
-      items.forEach(function (s) { lines.push('  - ' + s); });
-      return lines.join('\n');
-    }
-    if (v == null || v === '') return f.label + ': Not said';
-    return f.label + ': ' + String(v);
+  /* The flagging step failed: the transcript above is the record.
+     Say so plainly, and still offer Save — the raw transcript is
+     exactly what needs saving. */
+  function renderFlagsUnavailable() {
+    var box = document.getElementById('recordBox');
+    var list = document.getElementById('flagsList');
+    var empty = document.getElementById('flagsEmpty');
+    var unavail = document.getElementById('flagsUnavailable');
+    if (list) list.innerHTML = '';
+    if (empty) empty.hidden = true;
+    if (unavail) unavail.hidden = false;
+    lastFlags = null;
+    box.hidden = false;
+    var sb = document.getElementById('saveBtn');
+    if (sb) sb.hidden = false;
   }
 
-  /* The share payload: the picked load's label first when there is
-     one, then the spoken scan verbatim under its label, then every
-     record field with its label. */
+  /* The plain-text form of a scan, used ONLY by the share/copy
+     fallback (when storage is not connected yet): the picked load's
+     label first when there is one, then the spoken scan verbatim,
+     then the flags with their verbatim quotes. */
   function buildShareText() {
     var transcript = lastTranscript;
     if (!transcript) {
       var t = document.getElementById('transcriptText');
       transcript = t ? t.textContent : '';
     }
-    if (!transcript || !lastRecord) return '';
+    if (!transcript) return '';
     var lines = [];
     if (selectedLoad && LOADS[selectedLoad]) {
       lines.push(LOADS[selectedLoad]);
@@ -213,39 +217,45 @@
     lines.push('Spoken scan (verbatim):');
     lines.push(transcript);
     lines.push('');
-    lines.push('Receiving record:');
-    FIELDS.forEach(function (f) { lines.push(fieldShareText(f, lastRecord)); });
+    if (lastFlags === null) {
+      lines.push('Flags: unavailable for this scan.');
+    } else if (!lastFlags.length) {
+      lines.push('Flags: Nothing flagged in this scan.');
+    } else {
+      lines.push('Flags:');
+      lastFlags.forEach(function (f) { lines.push('- ' + f.label + ': "' + f.quote + '"'); });
+    }
     return lines.join('\n');
   }
 
-  function resetShare() {
-    var sb = document.getElementById('shareBtn');
-    if (sb) { sb.hidden = true; sb.textContent = 'Share this scan'; }
+  function resetSave() {
+    var sb = document.getElementById('saveBtn');
+    if (sb) { sb.hidden = true; sb.disabled = false; sb.textContent = 'Save this scan'; }
     var fb = document.getElementById('shareFallback');
     if (fb) fb.hidden = true;
     var ta = document.getElementById('shareText');
     if (ta) ta.value = '';
-    if (shareTimer) { clearTimeout(shareTimer); shareTimer = null; }
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   }
 
-  function flashCopied() {
-    var sb = document.getElementById('shareBtn');
+  function flashSaveButton(text) {
+    var sb = document.getElementById('saveBtn');
     if (!sb) return;
-    sb.textContent = 'Copied — send it on';
-    if (shareTimer) clearTimeout(shareTimer);
-    shareTimer = setTimeout(function () {
-      sb.textContent = 'Share this scan';
-      shareTimer = null;
-    }, 2000);
+    sb.textContent = text;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      sb.textContent = 'Save this scan';
+      saveTimer = null;
+    }, 3000);
   }
 
-  /* Last-resort share: no Web Share, no clipboard — write the text
+  /* Last-resort copy: no Web Share, no clipboard — write the text
      into a selectable box and let the receiver copy it by hand. */
   function showTextFallback(text) {
     var fb = document.getElementById('shareFallback');
     var ta = document.getElementById('shareText');
     if (!fb || !ta) {
-      showError('This browser offers no way to share or copy the scan. The transcript and record above are on this screen only.');
+      showError('This browser offers no way to share or copy the scan. The transcript and flags above are on this screen only.');
       return;
     }
     ta.value = text;
@@ -256,12 +266,15 @@
 
   function copyScan(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(flashCopied, function () { showTextFallback(text); });
+      navigator.clipboard.writeText(text).then(function () { flashSaveButton('Copied — send it on'); }, function () { showTextFallback(text); });
     } else {
       showTextFallback(text);
     }
   }
 
+  /* The pre-storage share behaviour, kept whole as the fallback:
+     Web Share where it exists, clipboard behind it, selectable text
+     behind that. */
   function shareScan() {
     var text = buildShareText();
     if (!text) return;
@@ -275,9 +288,61 @@
     }
   }
 
+  /* Save: POST the scan to the Worker's /save route. The transcript
+     sent is lastTranscript — the verbatim ASR output, exactly as it
+     came back, never the formatted share text. */
+  function saveScan() {
+    var transcript = lastTranscript;
+    if (!transcript) {
+      var t = document.getElementById('transcriptText');
+      transcript = t ? t.textContent : '';
+    }
+    if (!transcript) return;
+    var sb = document.getElementById('saveBtn');
+    var payload = {
+      load: (selectedLoad && LOADS[selectedLoad]) ? LOADS[selectedLoad] : null,
+      transcript: transcript,
+      flags: lastFlags || [],
+      savedAt: new Date().toISOString()
+    };
+    if (sb) { sb.disabled = true; sb.textContent = 'Saving…'; }
+    fetch(SAVE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (j) {
+        return { status: r.status, ok: r.ok, body: j };
+      });
+    }).then(function (res) {
+      if (sb) sb.disabled = false;
+      if (res.status === 200 && res.body && res.body.ok) {
+        flashSaveButton('Saved.');
+        setStatus('Saved.', 'done');
+        return;
+      }
+      if (res.status === 501 || (res.body && res.body.error === 'storage-not-connected')) {
+        /* Storage is not connected yet — never block the tester:
+           fall back to share/copy and label it for what it is. */
+        if (sb) sb.textContent = "Storage isn't connected yet — copy instead";
+        setStatus("Storage isn't connected yet — copy instead.", '');
+        shareScan();
+        return;
+      }
+      showError('Saving failed (the storage route answered HTTP ' + res.status + '). Your scan is on this screen — use the copy below so it is not lost.');
+      showTextFallback(buildShareText());
+      flashSaveButton('Save this scan');
+    }).catch(function () {
+      if (sb) sb.disabled = false;
+      showError('Saving failed — the storage route could not be reached. Your scan is on this screen — use the copy below so it is not lost.');
+      showTextFallback(buildShareText());
+      flashSaveButton('Save this scan');
+    });
+  }
+
   /* Test-load picking: tapping a load marks it as the one being
      scanned; tapping it again unpicks it. The pick never changes the
-     scan itself — it only labels the shared text, so samples come
+     scan itself — it only labels the saved scan, so samples come
      back pre-labeled. */
   function initLoads() {
     var btns = document.querySelectorAll('.load[data-load]');
@@ -305,28 +370,31 @@
     paint();
   }
 
-  function initShare() {
-    var sb = document.getElementById('shareBtn');
-    if (sb) sb.addEventListener('click', shareScan);
+  function initSave() {
+    var sb = document.getElementById('saveBtn');
+    if (sb) sb.addEventListener('click', saveScan);
   }
 
   /* Entry point, called by voice.js with the verbatim transcript. */
   function structure(transcript) {
     lastTranscript = transcript;
-    lastRecord = null;
-    resetShare();
+    lastFlags = null;
+    resetSave();
     document.getElementById('recordBox').hidden = true;
-    setStatus('Building the record from your words…', 'busy');
-    ask(transcript).then(function (rec) {
-      renderRecord(rec);
-      setStatus('Record built. Check it against the pallet — you are the one who signs off.', 'done');
+    setStatus('Flagging what belongs in the report…', 'busy');
+    ask(transcript).then(function (flags) {
+      renderFlags(flags);
+      setStatus(flags.length
+        ? 'Flagged. Check it against the pallet — you are the one who signs off.'
+        : 'Nothing flagged in this scan. You are the one who signs off.', 'done');
     }).catch(function (e) {
-      setStatus('Transcribed. The record could not be built.', '');
-      showError((e && e.userMessage) || 'The structuring step failed for a reason this page could not read. Your spoken scan above is transcribed and safe; no record was built.');
+      renderFlagsUnavailable();
+      setStatus('Transcribed. Flags unavailable for this scan.', '');
+      showError((e && e.userMessage) || 'The flagging step failed for a reason this page could not read. Your spoken scan above is transcribed and safe.');
     });
   }
 
-  function init() { initLoads(); initShare(); }
+  function init() { initLoads(); initSave(); }
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', init);
@@ -336,13 +404,14 @@
   window.WitnessRecord = {
     structure: structure,
     SYSTEM_PROMPT: SYSTEM_PROMPT,
-    FIELDS: FIELDS,
     _ask: ask,
     _buildShareText: buildShareText,
+    _saveScan: saveScan,
     getSelectedLoad: function () {
       return selectedLoad && LOADS[selectedLoad]
         ? { key: selectedLoad, label: LOADS[selectedLoad] }
         : null;
-    }
+    },
+    getLastFlags: function () { return lastFlags; }
   };
 })();
