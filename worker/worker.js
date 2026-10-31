@@ -211,10 +211,15 @@ async function handleSave(request, env) {
   const loadLabel = (typeof body.load === 'string' && body.load) || 'no-load';
   const scan = {
     load: (typeof body.load === 'string' && body.load) || null,
+    /* kind: "scan" (a Step 1 spoken scan — the default, and what
+       every pre-Step-2 save is) or "osd" (a Step 2 OS&D report, whose
+       transcript is the report text and whose verdicts ride along). */
+    kind: body.kind === 'osd' ? 'osd' : 'scan',
     transcript: body.transcript,
     flags: Array.isArray(body.flags) ? body.flags : [],
     savedAt: savedAt
   };
+  if (Array.isArray(body.verdicts)) scan.verdicts = body.verdicts;
   const key = savedAt + '__' + loadLabel;
   try {
     await env.SCANS.put(key, JSON.stringify(scan));
