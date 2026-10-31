@@ -85,23 +85,31 @@
     ],
 
     /* Inbound: what is expected at the doors. IN-1001 is at Door 1
-       now — staged for a receiving task. */
+       now — staged for a receiving task. lines are what the bill of
+       lading says is on the truck: pallets × cases (or bags) per
+       pallet. Receiving turns each pallet into a staged pallet at the
+       door, so putaway is driven by what was received. */
     inbound: [
-      { id: 'IN-1001', door: 'Door 1', desc: 'Peach truck — Blue Ridge Freight', pallets: 6, status: 'staged at door' },
-      { id: 'IN-1002', door: 'Door 3', desc: 'Household goods — Southeast Line', pallets: 10, status: 'expected today' },
-      { id: 'IN-1003', door: 'Door 2', desc: 'Paper goods — Blue Ridge Freight', pallets: 8, status: 'expected tomorrow' }
+      { id: 'IN-1001', door: 'Door 1', desc: 'Peach truck — Blue Ridge Freight', pallets: 6, status: 'staged at door',
+        lines: [{ desc: 'Canned peaches — cases', pallets: 6, perPallet: 40 }] },
+      { id: 'IN-1002', door: 'Door 3', desc: 'Household goods — Southeast Line', pallets: 10, status: 'expected today',
+        lines: [{ desc: 'Laundry detergent — cases', pallets: 4, perPallet: 30 },
+                { desc: 'Paper towels — cases', pallets: 6, perPallet: 20 }] },
+      { id: 'IN-1003', door: 'Door 2', desc: 'Paper goods — Blue Ridge Freight', pallets: 8, status: 'expected tomorrow',
+        lines: [{ desc: 'Paper towels — cases', pallets: 8, perPallet: 24 }] }
     ],
 
-    /* Outbound: orders to pick from the bins. */
+    /* Outbound: orders to pick from the bins. door is where picked
+       freight is staged and loaded — Door 4 is the loading door. */
     outbound: [
-      { id: 'ORD-501', status: 'open', lines: [
+      { id: 'ORD-501', status: 'open', door: 'Door 4', lines: [
         { binId: 'B-04', desc: 'Rice — bags', qty: 10 },
         { binId: 'A-08', desc: 'Bottled water — cases', qty: 12 }
       ] },
-      { id: 'ORD-502', status: 'open', lines: [
+      { id: 'ORD-502', status: 'open', door: 'Door 4', lines: [
         { binId: 'C-02', desc: 'Green beans — cases', qty: 8 }
       ] },
-      { id: 'ORD-503', status: 'open', lines: [
+      { id: 'ORD-503', status: 'open', door: 'Door 4', lines: [
         { binId: 'B-02', desc: 'Tomato sauce — cases', qty: 6 },
         { binId: 'C-08', desc: 'Cereal — cases', qty: 10 }
       ] }
