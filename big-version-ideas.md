@@ -361,3 +361,9 @@ Feeds the end-phase POV mock-up: the frames now have a real layout to render —
 **Glasses workflow ruling (William, 2026-10-31):** design the glasses layer in the artifact mockup first, as close to final as we can get it there, THEN move it to the repo — it will be much touchier in there. The artifact is the sketchpad; the repo is the load-bearing wall. (`glasses-hud-mockup` artifact is the current design surface.)
 
 - Clarification on the two lenses (William, same hour): a wearer fuses the two lenses into one view in real life — but in the design the two lenses are DISTINGUISHED: two explicit panes, elements placed per lens, so what sits in front of each eye is a deliberate choice, never a blend.
+
+**HUD round 2 (William, 2026-10-31, screenshot batch review):**
+- **User transcript: bottom of the LEFT lens, first 2 lines, literally nothing else** — no heading, no speaker tag, no timestamp. (Chips stay at the top of the left lens.)
+- **Hide is SPOKEN, never a control.** The user just speaks to hide the panels; they can't select hide, so no Hide button exists in the HUD at all.
+- **Employee: name, location, and status — no avatar, no card.** Status reads like "available" or "available in 5 min". Bare floating text when labor is the topic.
+- **No boxes.** No panel backgrounds or borders anywhere in the lens; the words float over the scene. META's side is just "META:" + the reply's first 2 lines.
