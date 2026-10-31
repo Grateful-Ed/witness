@@ -1,0 +1,122 @@
+/* Warehouse page additions — witness.css carries the base theme;
+   this file adds only the warehouse landmarks: role cards, name
+   chips, the task card, zone cards, and plain ledger rows. Bands
+   and borders do the separating; colour is never the only signal. */
+
+.backlink { color: var(--accent); font-weight: 700; text-decoration: none; }
+.backlink:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Role pick: two big tappable cards. */
+.rolepick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rolecard {
+  padding: 16px 12px;
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.rolecard .role-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--dim);
+}
+.rolecard.selected { border-color: var(--accent); background: #16222f; }
+.rolecard:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Chips: names and doors share one quiet shape. */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.namechip {
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.namechip.selected { border-color: var(--accent); background: #16222f; }
+.namechip:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.zone-tag { color: var(--dim); font-size: 13px; font-weight: 400; }
+
+.doorchip {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 15px;
+}
+
+/* The worker's task card: one job, big words. */
+.taskcard {
+  border-left: 3px solid var(--accent);
+  padding: 4px 0 4px 12px;
+}
+.task-type {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 2px;
+}
+.task-title { font-size: 21px; font-weight: 700; margin: 0 0 4px; line-height: 1.3; }
+.task-detail { margin: 0; color: var(--text); }
+.task-none { font-size: 18px; margin: 0; }
+
+.crosscheck-btn {
+  display: block;
+  margin-top: 12px;
+  padding: 13px;
+  border: 2px solid var(--ok);
+  border-radius: 12px;
+  color: var(--ok);
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+.crosscheck-btn:focus-visible { outline: 3px solid var(--ok); outline-offset: 2px; }
+
+.upnext-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.upnext-row:first-child { border-top: none; }
+.upnext-row .task-type { margin-right: 6px; }
+
+/* Manager bands. */
+.bottleneck-line { font-size: 18px; margin: 0; line-height: 1.5; }
+
+.zonecard {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 12px 14px;
+  margin: 0 0 10px;
+}
+.zone-head {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 6px;
+}
+.zone-line { margin: 0 0 2px; color: var(--dim); }
+.zone-line strong { color: var(--text); }
+
+.labor-row, .record-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.labor-row:first-child, .record-row:first-child { border-top: none; }
+.labor-now { color: var(--dim); font-size: 15px; }
+.record-row { font-size: 15px; }
