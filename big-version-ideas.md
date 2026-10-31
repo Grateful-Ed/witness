@@ -350,3 +350,10 @@ Design note (Faye): the two witnesses stay visually separate — your words abov
 Feeds the end-phase POV mock-up: the frames now have a real layout to render — clear view → the topic surfaces the panel → expand on ask.
 
 **See-through rule (William, 2026-10-31, with reference photos — `glasses-reference-seethrough-1.png` / `-2.png`, workspace copies):** the wearer must be able to see THROUGH the information. These are warehouse employees working in a warehouse — a display that blocks vision is dangerous, not impressive. So panel size and opacity are SAFETY specs, not styling: compact patches (like the small floating display in the Meta Display through-lens photo), genuinely translucent — the pallet and the aisle stay visible through the text — and the center of the view stays clear for the work. The two-panel layout from the sketch stands; its rendering obeys this rule.
+
+**HUD minimalism rulings (William, 2026-10-31, revising the mockup):**
+- **TWO LENSES.** The view is two lenses, left and right — that structure is very important to utilize for being able to see. Layout works with the binocular frame, not against it.
+- **Persistent chips: Task # and Bin # only.** Keep their color; INCREASE their opacity — the two anchors stay solid and glanceable while panels fade.
+- **Transcripts: first 2 lines only.** The full transcript lives in the phone app; the glasses are a glance surface, not a reading surface. A transcript can be HIDDEN but never EXPANDED — the Expand control is removed.
+- **No verdict detail in the glasses.** The Agree / Flag / Can't verify rows are too much information for the lens — they live in the phone app record. The two transcripts stay distinct by placement (the wearer knows which voice is theirs).
+- **The capture is just the picture.** When a photo is captured, the tile shows the picture and nothing else — no label, no description. Its only job is confirming the picture was taken.
