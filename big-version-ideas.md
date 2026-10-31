@@ -293,6 +293,19 @@ built + briefed slices):
   voice — and on the glasses, a picture at the bin as he puts it
   up. That photo-confirm is the glasses layer's expression of the
   photo scan the phone already proves.
+  GENERALIZED (William, 2026-10-31): the test applies to
+  the whole benchmark list. If an item is bookkeeping that won't
+  be graded (his example: min/max), skip it. But breadth of
+  PROCESS is wanted: the more warehouse processes he can hit by
+  SAYING something to the system — through the glasses or the
+  phone — the better. So the benchmark's real use is as a process
+  checklist for conversational coverage: which processes get a
+  sayable, demonstrable moment (a worker intent, an ask-the-
+  building answer, a glasses beat), not which tables get built.
+  Cheap breadth candidates noted (not briefed; his pick): cycle
+  count by voice ("count this bin"), order status by ask ("where's
+  order 503?"), door/trailer status by ask, a bin-to-bin move
+  requested by voice. Data-model depth stays out.
 - CONSCIOUSLY OUT (unless William says otherwise): lot/serial/
   expiry tracking, location capacity and slotting, waves and pick
   paths, carton/label/tracking detail, returns, equipment, yard
