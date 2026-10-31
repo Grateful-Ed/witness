@@ -55,9 +55,15 @@ camera SEES (photo scan).
    comparison against the load's fixture data, labeled as such.
 4. **Save:** the BOL read can be saved alongside the load's record
    through the existing POST /save (additive fields only — a `bol`
-   object on the scan entry; kind stays "scan"). Worker change is
-   expected to be zero; if /save needs a tweak, flag it to Faye
-   BEFORE touching worker/* (frozen by default).
+   object on the scan entry; kind stays "scan").
+   CORRECTED 2026-10-31 (Faye): the original "Worker change expected
+   zero" was wrong — /save rebuilds each record from named fields, so
+   a `bol` object would have been silently dropped, and /chat's
+   60,000-char body cap strangles camera images. Both fixes now land
+   in briefs/claude-brief-desk-phone.md, Step 1 (William approved,
+   2026-10-31). **This slice depends on that brief's Step 1 being
+   built and deployed first.** Keep js/bol.js free of page code, so
+   the read logic can move into the phone surface unchanged.
 5. **Entry point:** ONE masthead link on index.html ("Read the BOL
    →"), the same one-line pattern as the warehouse link. That is
    the only permitted touch to a frozen file, and only in that
