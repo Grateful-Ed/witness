@@ -169,6 +169,15 @@ working piece of it.
 ### 2. Inbound (orders coming in)
 - What's expected: the shipment/BOL known ahead (email/EDI), door
   assignment, appointment times.
+- BOL recognition on the glasses (William, 2026-10-31,
+  to-do note): a worker wearing the glasses picks up the paper bill
+  of lading; the glasses read it and match it to the shipment
+  already in the building, so the expected contents load on the
+  spot and the worker repeats nothing. Identity from the paperwork
+  itself — module one's "identity comes from a scan" law, with the
+  camera doing the reading. Lives with the glasses layer (§11);
+  the cross-check then compares three things: what was expected,
+  what the worker says, what the camera sees.
 - Receiving: the two-witness cross-check ✓ (voice scan + photo scan,
   verdicts, OS&D report) — module one, built and live.
 - Putaway: where each pallet goes (which bin), issued as a task.
