@@ -47,6 +47,22 @@
       <button id="nextBtn" class="share" type="button">What's next?</button>
     </section>
 
+    <section class="panel" id="workerTalkBox">
+      <h2>Talk to the queue</h2>
+      <p class="note">Hold the button and talk. Say "done — what's
+      next?", "what's next?", or say what the problem is. The buttons
+      above still do the same thing.</p>
+      <button id="workerTalk" class="talk wh-talk" type="button" aria-pressed="false"><span id="workerTalkLabel">Hold to talk</span></button>
+      <p id="workerTalkStatus" class="status wh-status"></p>
+      <p id="workerTalkError" class="error" hidden></p>
+      <div id="workerHeard" class="heard" hidden>
+        <p class="heard-label">You said</p>
+        <p id="workerHeardText" class="heard-text"></p>
+        <p class="heard-label">What the system did</p>
+        <div id="workerReply" class="heard-reply"></div>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>Up next in your zone</h2>
       <div id="upNext"></div>
@@ -65,6 +81,36 @@
     <section class="panel" id="bottleneckBox">
       <h2>Bottleneck watch</h2>
       <p id="bottleneckText" class="bottleneck-line"></p>
+    </section>
+
+    <section class="panel" id="askBox">
+      <h2>Ask the building</h2>
+      <p class="note">Ask in your own words. The answer comes only from
+      this building's live numbers — they're shown under it. It
+      proposes. You decide.</p>
+      <button type="button" class="example-q" id="exampleQ">What's a bottleneck that's coming up soon, and how can I move labor to fix it?</button>
+      <label class="ask-label" for="askInput">Your question</label>
+      <textarea id="askInput" class="ask-input" rows="3" placeholder="Where's it backing up? Who should I move?"></textarea>
+      <div class="ask-row">
+        <button id="askBtn" class="share ask-btn" type="button">Ask</button>
+        <button id="managerTalk" class="share ask-talk" type="button" aria-pressed="false"><span id="managerTalkLabel">Hold to say it</span></button>
+      </div>
+      <p id="askStatus" class="status wh-status"></p>
+      <p id="askError" class="error" hidden></p>
+      <div id="askAnswer" class="ask-answer" hidden>
+        <p class="heard-label">You asked</p>
+        <p id="askAsked" class="heard-text"></p>
+        <p class="heard-label">Answer</p>
+        <div id="askText" class="ask-text"></div>
+        <p class="heard-label">The numbers behind it</p>
+        <div id="askZones" class="ask-zones"></div>
+        <p id="askCheck" class="ask-check"></p>
+        <p class="ask-law">A proposal, not a decision. Nothing was moved.</p>
+        <details class="ask-evidence">
+          <summary>Everything it was given</summary>
+          <pre id="askEvidence" class="evidence"></pre>
+        </details>
+      </div>
     </section>
 
     <section class="panel">
@@ -104,6 +150,8 @@
 </main>
 <script src="data/world.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/converse.js"></script>
+<script src="js/warehouse-mic.js"></script>
 <script src="js/warehouse-ui.js"></script>
 </body>
 </html>
