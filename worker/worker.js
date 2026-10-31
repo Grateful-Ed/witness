@@ -42,7 +42,15 @@ const ALLOWED_ORIGINS = [
 ];
 
 const CHAT_MODEL = 'muse-spark-1.3';
-const MAX_TOKENS_CEILING = 3000;   /* Spark reasons in tokens before it speaks; Ship Safe measured an empty reply at 900. */
+/* Spark reasons in tokens before it speaks, and the reasoning is
+   billed against the same budget as the reply. Measured on real
+   calls (2026-10-31): Step 1 flagging fits in 3000, but a Step 2
+   comparison of a real phone scan burned 8,628 reasoning tokens —
+   at a 3000 ceiling it returned finish_reason "length" with null
+   content, which is the failure William hit on his phone (photo
+   scan fine, comparison silent, no OS&D button). Ceiling is 16000
+   so the page can ask for what each step actually needs. */
+const MAX_TOKENS_CEILING = 16000;
 const MAX_CHAT_BODY_CHARS = 60000;
 
 function originAllowed(origin) {
