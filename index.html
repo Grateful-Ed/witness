@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Witness — Step 1: Speak the load</title>
+<title>Witness — the receiving cross-check</title>
 <link rel="stylesheet" href="css/witness.css">
 </head>
 <body>
@@ -69,18 +69,42 @@
     </div>
   </section>
 
+  <section id="step2Box" class="panel" hidden>
+    <h2>Step 2 — Photo scan &amp; comparison</h2>
+    <p class="note">The second witness. The photo scan reads the same
+    load from all four sides and flags what it sees; then the two scans
+    are compared, point by point. Agreements are trusted. Disagreements
+    and things neither scan can settle become the OS&amp;D report —
+    and a human settles those.</p>
+    <p id="photoStatus" class="note">Waiting for your spoken scan —
+    Step 2 compares it against the photos.</p>
+    <button id="photoBtn" class="share" type="button">Run the photo scan</button>
+    <div id="photoFlags" hidden></div>
+    <div id="verdicts" hidden></div>
+    <div id="osdBox" hidden>
+      <h3 class="subhead">OS&amp;D exception report</h3>
+      <pre id="osdText" class="osd"></pre>
+      <button id="osdSaveBtn" class="share" type="button">Save the OS&amp;D report</button>
+      <div id="osdFallback" hidden>
+        <p class="note">Saving didn't reach storage — the report is
+        written out below so you can select it and copy it yourself.</p>
+        <textarea id="osdTextCopy" class="share-text" readonly rows="14"></textarea>
+      </div>
+    </div>
+  </section>
+
   <footer class="foot">
-    <p>Step 1 of 2. The photo check comes next; the two scans are compared
-    before anything is signed off. The machine never signs off — a human
-    decides.</p>
+    <p>Two scans, compared, before anything is signed off. The machine
+    never signs off — a human decides.</p>
     <p class="small">Built for the Meta Global AI Developer Hackathon.
     Transcription: Muse Voice Transcribe, through the project proxy.
-    Structuring: Muse Spark, through the same proxy. No API key lives in
-    this page.</p>
+    Structuring, photo scan and comparison: Muse Spark, through the
+    same proxy. No API key lives in this page.</p>
   </footer>
 
 </main>
 <script src="js/voice.js"></script>
 <script src="js/record.js"></script>
+<script src="js/photo.js"></script>
 </body>
 </html>
