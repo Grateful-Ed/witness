@@ -9,5 +9,11 @@
   "assets": {
     "directory": "."
   },
-  "keep_vars": true
+  "keep_vars": true,
+  "kv_namespaces": [
+    {
+      "binding": "SCANS",
+      "id": "7b95f49bb5ab477ebc0492555140cdba"
+    }
+  ]
 }
