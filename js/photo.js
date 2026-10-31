@@ -122,11 +122,22 @@
     }
   }
 
-  function chat(messages, what) {
+  function replyText(j) {
+    return j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+  }
+
+  /* One /chat attempt. Spark reasons before it speaks and the
+     reasoning bills against the token budget: a comparison measured
+     8,628 reasoning tokens (2026-10-31), so each step asks for what
+     it needs — photo 6000, comparison 16000 — under the Worker's
+     ceiling. A reply that still comes back with no content (the
+     model reasoned the whole budget away, or a transient empty) is
+     retried exactly once before the caller hears about it. */
+  function chat(messages, what, maxTokens, attempt) {
     return fetch(CHAT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: messages, temperature: 0.2, max_tokens: 3000 })
+      body: JSON.stringify({ messages: messages, temperature: 0.2, max_tokens: maxTokens })
     }).then(function (r) {
       if (r.status === 429) {
         var cap = new Error('cap');
@@ -139,7 +150,10 @@
         throw http;
       }
       return r.json();
-    }).then(function (j) { return parseJsonReply(j, what); });
+    }).then(function (j) {
+      if (!replyText(j) && !attempt) return chat(messages, what, maxTokens, 1);
+      return parseJsonReply(j, what);
+    });
   }
 
   /* ---------- the photo scan -------------------------------------- */
@@ -166,7 +180,7 @@
         { type: 'text', text: 'Read this load\'s four sides and return the flags JSON.' },
         { type: 'image_url', image_url: { url: SHEETS[loadKey] } }
       ] }
-    ], 'photo scan').then(function (parsed) {
+    ], 'photo scan', 6000).then(function (parsed) {
       var flags = normalisePhotoFlags(parsed);
       if (!flags) {
         var wrong = new Error('unparseable');
@@ -206,7 +220,7 @@
     return chat([
       { role: 'system', content: COMPARE_PROMPT },
       { role: 'user', content: user }
-    ], 'comparison').then(function (parsed) {
+    ], 'comparison', 16000).then(function (parsed) {
       var v = normaliseVerdicts(parsed);
       if (!v) {
         var wrong = new Error('unparseable');
