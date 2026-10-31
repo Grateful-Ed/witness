@@ -178,6 +178,11 @@ working piece of it.
   camera doing the reading. Lives with the glasses layer (§11);
   the cross-check then compares three things: what was expected,
   what the worker says, what the camera sees.
+  UPDATE (William, 2026-10-31): no longer glasses-only
+  theory — build the phone-camera version in the app NOW (slice 3):
+  point the phone at a printed mock BOL and the AI reads the
+  physical paper. William prints the mock BOL himself. Brief:
+  briefs/claude-brief-bol-camera.md in this repo.
 - Receiving: the two-witness cross-check ✓ (voice scan + photo scan,
   verdicts, OS&D report) — module one, built and live.
 - Putaway: where each pallet goes (which bin), issued as a task.
