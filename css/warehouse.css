@@ -218,3 +218,42 @@
   max-height: 320px;
   overflow: auto;
 }
+
+/* ---------- Deepen areas: stages, holds, updates, shift summary. ---- */
+.stage-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.stage-chip.stage-closed, .stage-chip.stage-shipped { border-color: var(--ok); color: var(--ok); }
+.stage-chip.stage-allocating { border-color: var(--danger); color: #ffd9d9; }
+.stage-chip.stage-arrived, .stage-chip.stage-staged { border-color: var(--accent); color: var(--accent); }
+
+.mini-btn {
+  margin-top: 6px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mini-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.hold-row { border-left: 3px solid var(--danger); padding-left: 10px; }
+
+.problem-label { margin-top: 14px; }
+.problem-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+.problem-row .share { margin-top: 0; min-height: 0; padding: 0 16px; width: auto; }
+
+#holdTarget, #holdReason, #updateTask, #updateText { margin-bottom: 8px; }
+select.ask-input { font-size: 16px; }
