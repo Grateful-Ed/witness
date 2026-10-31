@@ -1,9 +1,9 @@
-# Witness — the big version: design notebook
+# Witness — the big version (post-hackathon ideas)
 
-The design notebook for the project defined in the repo README:
-the whole warehouse, in William's words first, shaping after.
-(A trimmed copy of Faye's working notebook, published so the
-build record lives with the code.)
+> Repo copy: a TRIMMED version of this notebook lives in
+> Grateful-Ed/witness as big-version-ideas.md (pushed 2026-10-31,
+> William's ruling: personal framing lines trimmed first). This
+> workspace file is the untrimmed original — keep both in step.
 
 PROJECT REDEFINITION (William, 2026-10-31 09:03 ET, his alignment
 call): the project itself has changed. Witness is no longer "the
@@ -18,9 +18,17 @@ until submissions close Wed Nov 4, 9:00 PM ET. All of it lands
 inside the build window, so everything built is legitimately
 submittable new work. Target per area stays his scope rule: the
 high-level basic that works. Module one is protected — new areas
-are additions; the proven cross-check loop must not break. The demo video + form get reserved time at the end.
+are additions; the proven cross-check loop must not break. The demo
+video + form get reserved time at the end (Faye's guardrail,
+proposed 09:05: building stops in time to shoot and submit —
+exact reserve is William's call).
 
-Started 2026-10-31.
+Started 2026-10-31 ~07:51 ET. William, lying down after the all-night
+build session, had the scope blow up on him in the best way. Rule for
+this file: NOTHING here touches the Nov 4 hackathon build — that scope
+stays frozen (demo video + submission). This is the roadmap the
+submission points at. Ideas land here in his words first; shaping
+comes later, awake.
 
 ## The seed idea
 
@@ -35,11 +43,12 @@ Started 2026-10-31.
   built — so the glasses segment is labeled on screen as the vision /
   where this goes, clearly separated from the working demo. Pitching
   a roadmap is fair; dressing it as built would be a DQ risk.
-  (The product logic: Witness exists because the receiver's hands
-  are busy. A phone still needs a hand and a pocket. Glasses put the
-  camera where the receiver's eyes already are and the mic where
-  their voice already is — the human scan and the photo scan from
-  the same viewpoint, hands never leaving the freight.)
+  (Faye's note: it's the product's own logic taken to its end.
+  Witness exists because the receiver's hands are busy. A phone still
+  needs a hand and a pocket. Glasses put the camera where the
+  receiver's eyes already are and the mic where their voice already
+  is — the human scan and the photo scan from the same viewpoint,
+  hands never leaving the freight.)
 
 ## Demo video shape (3:00, draft — William's glasses beat placed)
 
@@ -76,7 +85,7 @@ Build as HTML/CSS overlay on a load photo and screenshot it, so the
 text is crisp and exactly controlled. It lives only in the labeled
 vision segment of the video.
 
-## The whole warehouse (William, 2026-10-31 — "I'm not kidding")
+## The whole warehouse (William, 2026-10-31 07:59 ET — the scope blows up, his words: "I'm not kidding")
 
 Not just the package, not just receiving — you can't sell the
 glasses for one task. The whole warehouse runs through them, and
@@ -86,8 +95,9 @@ glasses for one task. The whole warehouse runs through them, and
   questions; a floor worker's glasses don't. Same warehouse, same
   system, different eyes per role — permissions shape both what's
   shown and what can be asked.
-- **Worker flow (voice, hands-free)** — both sides of this exchange
-  are William's scripted example dialogue, in his words:
+- **Worker flow (voice, hands-free)** — William performed BOTH sides
+  of this exchange (2026-10-31 08:00 ET correction: the AI's lines
+  below are his scripted example dialogue, in his words):
   WORKER: "Hey Muse, what's up next? I just got done with my task."
   → the finished task gets marked completed, and the AI tells him
   what his next task is. Task management by talking, hands never
@@ -98,14 +108,18 @@ glasses for one task. The whole warehouse runs through them, and
   soon, and how can I move around labor to help fix it?"
   AI (his words): bottleneck is located in location B currently; you
   can pull someone from location A to help with location B.
-  This is Goldratt's Theory of Constraints running on live data —
-  the constraint found before it bites, with the rebalance
-  suggested; and Witness's own law scales with it: the machine
-  proposes, the manager decides.
-- The receiving cross-check (the hackathon build) becomes module
-  one of a platform — the dock is where it starts, not where it ends.
+  Faye's note: this is Goldratt running on live data — the
+  constraint, found before it bites, with the rebalance suggested;
+  and Witness's own law scales with it: the machine proposes, the
+  manager decides.
+- Faye's structural note: the receiving cross-check (the hackathon
+  build) becomes module one of a platform — the dock is where it
+  starts, not where it ends.
 
-## The pitch (written 2026-10-31, for sharing)
+## Everything else
+
+(Still open — William was mid-dump at 07:59 ET.)
+## The pitch (written 2026-10-31 ~08:05 ET, for sharing with friends)
 
 ### Text-message version (copy-paste)
 
@@ -169,7 +183,7 @@ working piece of it.
 ### 2. Inbound (orders coming in)
 - What's expected: the shipment/BOL known ahead (email/EDI), door
   assignment, appointment times.
-- BOL recognition on the glasses (William, 2026-10-31,
+- BOL recognition on the glasses (William, 2026-10-31 12:05 ET,
   to-do note): a worker wearing the glasses picks up the paper bill
   of lading; the glasses read it and match it to the shipment
   already in the building, so the expected contents load on the
@@ -178,11 +192,11 @@ working piece of it.
   camera doing the reading. Lives with the glasses layer (§11);
   the cross-check then compares three things: what was expected,
   what the worker says, what the camera sees.
-  UPDATE (William, 2026-10-31): no longer glasses-only
+  UPDATE (William, 2026-10-31 13:10 ET): no longer glasses-only
   theory — build the phone-camera version in the app NOW (slice 3):
   point the phone at a printed mock BOL and the AI reads the
   physical paper. William prints the mock BOL himself. Brief:
-  briefs/claude-brief-bol-camera.md in this repo.
+  briefs/claude-brief-bol-camera.md in the repo.
 - Receiving: the two-witness cross-check ✓ (voice scan + photo scan,
   verdicts, OS&D report) — module one, built and live.
 - Putaway: where each pallet goes (which bin), issued as a task.
@@ -260,13 +274,13 @@ industry. The target per area is the high-level basic that WORKS —
 the same discipline as the hackathon build: narrow claim set,
 checked deeply.
 
-## The WMS benchmark (William, 2026-10-31)
+## The WMS benchmark (William, 2026-10-31 13:23 ET)
 
 William pasted a 15-section list of what a basic WMS tracks and
 ruled: "We won't do this entire list. This is just what a basic
 WMS has. So we need to use this as a benchmark." Full list saved
-at docs/wms-benchmark.md in this repo. Coverage map (against the
-built + briefed slices):
+at docs/wms-benchmark.md in the repo. Coverage map (Faye, against
+the built + briefed slices):
 
 - COVERED by what's built/briefed: inventory basics (item, qty,
   bin, status via holds); receiving (PO/ASN as inbound shipments,
@@ -279,7 +293,7 @@ built + briefed slices):
   labor basics (units, assignments, per-unit counts in the shift
   summary); dock doors with states.
 - REPLENISHMENT (benchmark §7): RULED OUT for the competition
-  (William, 2026-10-31). His reasoning, kept: min/max
+  (William, 2026-10-31 13:25 ET). His reasoning, kept: min/max
   levels are product bookkeeping — in a real product it's inferred
   that you'd have them; they don't use the models at all. His
   frame for the whole contest: "this competition isn't who can
@@ -293,7 +307,7 @@ built + briefed slices):
   voice — and on the glasses, a picture at the bin as he puts it
   up. That photo-confirm is the glasses layer's expression of the
   photo scan the phone already proves.
-  GENERALIZED (William, 2026-10-31): the test applies to
+  GENERALIZED (William, 2026-10-31 13:27 ET): the test applies to
   the whole benchmark list. If an item is bookkeeping that won't
   be graded (his example: min/max), skip it. But breadth of
   PROCESS is wanted: the more warehouse processes he can hit by
@@ -316,7 +330,7 @@ built + briefed slices):
   shape of the engine's state. The foundation thought in the
   right tables from day one.
 
-## The playable presentation (William, 2026-10-31)
+## The playable presentation (William, 2026-10-31 08:12 ET — "I promise I'm going to close my eyes after this")
 
 A short game-like interactive for the presentation: you're looking
 through the glasses, first-person, DOING the warehouse work. The
@@ -327,7 +341,7 @@ player picks a role first:
   bottleneck question by making labor moves, seeing them work (or
   not) live.
 Purpose: show the potential by letting someone live two minutes of
-it instead of hearing it described. Build note: a small web
+it instead of hearing it described. Build note (Faye's): a small web
 interactive is very buildable in our stack; two clean uses —
 (a) screen-record a playthrough into the demo video's vision
 segment, (b) a playable link from the repo/README for anyone who
@@ -359,7 +373,6 @@ Feeds the end-phase POV mock-up: the frames now have a real layout to render —
 - **The capture is just the picture.** When a photo is captured, the tile shows the picture and nothing else — no label, no description. Its only job is confirming the picture was taken.
 
 **Glasses workflow ruling (William, 2026-10-31):** design the glasses layer in the artifact mockup first, as close to final as we can get it there, THEN move it to the repo — it will be much touchier in there. The artifact is the sketchpad; the repo is the load-bearing wall. (`glasses-hud-mockup` artifact is the current design surface.)
-
 - Clarification on the two lenses (William, same hour): a wearer fuses the two lenses into one view in real life — but in the design the two lenses are DISTINGUISHED: two explicit panes, elements placed per lens, so what sits in front of each eye is a deliberate choice, never a blend.
 
 **HUD round 2 (William, 2026-10-31, screenshot batch review):**
@@ -369,3 +382,28 @@ Feeds the end-phase POV mock-up: the frames now have a real layout to render —
 - **No boxes.** No panel backgrounds or borders anywhere in the lens; the words float over the scene. META's side is just "META:" + the reply's first 2 lines.
 
 **HUD DESIGN SETTLED (William, 2026-10-31 16:31): "thats great! We can save this for when we build that part for the app."** The `glasses-hud-mockup` artifact at its round-2 state is the REFERENCE OF RECORD for the glasses build phase: two distinguished lenses; see-through floating text, no boxes; Task # / Bin # chips at the top of the left lens; user transcript at the bottom of the left lens (first 2 lines only); "META:" + the reply's first 2 lines in the right lens; employee as name / location / status when labor is the topic; the capture as the bare picture; hide by voice only. When the glasses phase opens, build from the artifact plus the rulings above — subject, as always, to William's word on the day.
+
+## Surface architecture — desk is the record, phone is the capture, glasses are the glance (William, 2026-10-31)
+
+William proposed it; Faye endorsed it on the merits; adopted the same day.
+The desk holds the full record and every decision. The phone is deliberately
+thin: camera, push-to-talk, AI answers, and only the information the user
+needs to see — the settled glasses-HUD philosophy without the glasses. The
+glasses stay last and minimal.
+
+What it requires (briefed as briefs/claude-brief-desk-phone.md):
+- Warehouse state moves out of per-browser localStorage into the Worker
+  (one document in KV) — phone and desk share one truth. Fetch fresh before
+  every action, then save; never save on page open; last-save-wins with no
+  conflict machinery (demo scope, stated openly).
+- The phone loads engine.js and converse.js unchanged — thin surface,
+  shared brain. Verdicts and the OS&D report stay on the desk.
+- ONE Worker change, approved by William 2026-10-31: GET/POST /state,
+  /save accepts a bol object and kind "photo", /chat body cap raised for
+  image payloads (60K chars strangled camera photos at ~45 KB).
+- The BOL brief's "Worker change expected zero" was WRONG (Faye's error,
+  caught by Claude's code read, corrected in the brief 2026-10-31): /save
+  rebuilds records from named fields, so a bol object would have been
+  silently dropped. Slice 3 now depends on the desk-phone brief's Step 1.
+- Open, William's nod required: whether /save persists the photo itself
+  (default: flags only, photo not stored).
