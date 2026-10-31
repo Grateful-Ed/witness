@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Witness — The Warehouse</title>
+<link rel="stylesheet" href="css/witness.css">
+<link rel="stylesheet" href="css/warehouse.css">
+</head>
+<body>
+<main class="wrap">
+
+  <header class="masthead">
+    <p class="kicker">Witness</p>
+    <h1>The Warehouse</h1>
+    <p class="lede">The whole building, not just the dock door: doors,
+    bins, labor units and the work moving between them. Pick who you
+    are — the building answers a worker and a manager differently.</p>
+    <p class="note"><a class="backlink" href="index.html">← Back to the receiving cross-check</a></p>
+  </header>
+
+  <section class="panel" id="roleBox">
+    <h2>I am a —</h2>
+    <div class="rolepick">
+      <button type="button" class="rolecard" id="roleWorker">Worker
+        <span class="role-sub">Get work, finish work, ask what's next</span>
+      </button>
+      <button type="button" class="rolecard" id="roleManager">Manager
+        <span class="role-sub">See the building, spot what's backing up</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ======================= WORKER ======================= -->
+  <div id="workerView" hidden>
+
+    <section class="panel">
+      <h2>Who's working</h2>
+      <p class="note">Tap your name. Your zone decides which work
+      reaches you first.</p>
+      <div id="nameChips" class="chips"></div>
+    </section>
+
+    <section class="panel" id="taskBox">
+      <h2>Your task</h2>
+      <div id="taskCard"></div>
+      <button id="nextBtn" class="share" type="button">What's next?</button>
+    </section>
+
+    <section class="panel">
+      <h2>Up next in your zone</h2>
+      <div id="upNext"></div>
+    </section>
+
+  </div>
+
+  <!-- ======================= MANAGER ======================= -->
+  <div id="managerView" hidden>
+
+    <section class="panel">
+      <h2>Dock doors</h2>
+      <div id="doorsRow" class="chips"></div>
+    </section>
+
+    <section class="panel" id="bottleneckBox">
+      <h2>Bottleneck watch</h2>
+      <p id="bottleneckText" class="bottleneck-line"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Zones</h2>
+      <div id="zoneCards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Labor units</h2>
+      <div id="laborList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Records</h2>
+      <p class="note">What got done, in the order it happened —
+      latest first.</p>
+      <div id="recordsList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Demo controls</h2>
+      <p class="note">This building is a seeded demo warehouse. Reset
+      puts every pallet, bin and task back where the day started.</p>
+      <button id="resetBtn" class="share" type="button">Reset the demo warehouse</button>
+    </section>
+
+  </div>
+
+  <footer class="foot">
+    <p>The machine proposes; a human decides. Nothing here signs
+    anything off.</p>
+    <p class="small">Built for the Meta Global AI Developer Hackathon.
+    The warehouse runs on seeded demo data, in this browser — no
+    freight was moved.</p>
+  </footer>
+
+</main>
+<script src="data/world.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/warehouse-ui.js"></script>
+</body>
+</html>
