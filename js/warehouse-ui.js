@@ -17,6 +17,7 @@
     E.generateTasks(state);
     E.saveState(state);
   } else {
+    E.upgradeState(state);  /* saves from before bills of lading / outbound doors */
     E.generateTasks(state); /* pick up anything newly derivable */
     E.saveState(state);
   }
@@ -34,6 +35,13 @@
     });
   }
   function persist() { E.saveState(state); }
+  /* After anything changes: derive the work it made possible, then save. */
+  function commit() { E.generateTasks(state); persist(); }
+  function managerId() {
+    var m = null;
+    state.labor.forEach(function (u) { if (!m && u.role === 'manager') m = u.id; });
+    return m;
+  }
 
   /* ---------- role pick ------------------------------------------- */
 
@@ -92,6 +100,8 @@
       '<p class="task-type">' + esc(task.type) + ' · Zone ' + esc(task.zone || '—') + '</p>' +
       '<p class="task-title">' + esc(task.title) + '</p>' +
       '<p class="task-detail">' + esc(task.detail) + '</p>';
+    var held = E.blockedBy(state, task);
+    if (held) html += '<p class="task-note">On hold: ' + esc(held) + ' Leave it be — ask your manager.</p>';
     (task.notes || []).forEach(function (n) {
       html += '<p class="task-note">Problem noted: “' + esc(n.text) + '”</p>';
     });
@@ -109,8 +119,15 @@
     var unit = selectedUnit();
     var box = $('upNext');
     if (!unit) { box.innerHTML = ''; return; }
+    var holds = E.currentHolds(state).filter(function (h) { return h.zone === unit.zone; });
+    $('workerHolds').innerHTML = holds.length
+      ? '<p class="heard-label">On hold in zone ' + esc(unit.zone) + ' — don\'t touch</p>' +
+        holds.map(function (h) {
+          return '<div class="upnext-row hold-row">' + esc(h.label) + (h.reason ? ' — ' + esc(h.reason) : '') + '</div>';
+        }).join('')
+      : '';
     var next = state.tasks.filter(function (t) {
-      return t.status === 'open' && t.zone === unit.zone;
+      return t.status === 'open' && t.zone === unit.zone && !E.blockedBy(state, t);
     }).slice(0, 3);
     if (!next.length) {
       box.innerHTML = '<p class="note">Nothing else waiting in zone ' + esc(unit.zone) + ' right now.</p>';
@@ -131,8 +148,9 @@
     if (current) {
       E.completeTask(state, current.id);
     }
+    E.generateTasks(state);
     E.nextTaskFor(state, unit);
-    persist();
+    commit();
     render();
   }
 
@@ -159,8 +177,12 @@
     var unit = selectedUnit();
     var match = C.matchIntent(text);
     var turn = C.workerTurn(E, state, unit, match);
-    if (turn.acted) persist();
-    $('workerHeardText').textContent = '“' + text + '”';
+    if (turn.acted) commit();
+    showWorkerTurn('“' + text + '”', turn);
+  }
+
+  function showWorkerTurn(heardText, turn) {
+    $('workerHeardText').textContent = heardText;
     var html = '';
     turn.lines.forEach(function (l) { html += '<p class="reply-line">' + esc(l) + '</p>'; });
     $('workerReply').innerHTML = html;
@@ -265,6 +287,153 @@
       html += '<div class="record-row">' + esc(r.text) + '</div>';
     });
     box.innerHTML = html;
+  }
+
+  /* ---------- worker: typed problem (the button for what voice does) --- */
+
+  $('problemBtn').addEventListener('click', function () {
+    var text = $('problemInput').value.trim();
+    if (!text) return;
+    var unit = selectedUnit();
+    var turn = C.workerTurn(E, state, unit, { intent: 'problem', heard: text });
+    if (turn.acted) commit();
+    $('problemInput').value = '';
+    $('workerTalkError').hidden = true;
+    showWorkerTurn('“' + text + '” (typed)', turn);
+  });
+
+  /* ---------- manager: inbound, outbound, holds, updates, summary ----- */
+
+  function stageChip(key) { return '<span class="stage-chip stage-' + esc(key) + '">' + esc(key) + '</span>'; }
+
+  function renderInbound() {
+    var html = '';
+    state.inbound.forEach(function (s) {
+      var st = E.inboundStage(state, s);
+      html += '<div class="labor-row"><strong>' + esc(s.id) + '</strong> ' + stageChip(st.key) +
+        '<br><span class="labor-now">' + esc(s.desc) + ' — ' + s.pallets + ' pallets</span>' +
+        '<br>' + esc(st.words) +
+        (st.key === 'expected' ? '<br><button type="button" class="mini-btn" data-arrive="' + esc(s.id) + '">Truck\'s here</button>' : '') +
+        '</div>';
+    });
+    $('inboundList').innerHTML = html;
+    var btns = $('inboundList').querySelectorAll('[data-arrive]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function () {
+        var r = E.arriveShipment(state, this.getAttribute('data-arrive'), managerId());
+        $('inboundMsg').hidden = r.ok;
+        $('inboundMsg').textContent = r.ok ? '' : r.reason;
+        if (r.ok) commit();
+        render();
+      });
+    }
+  }
+
+  function renderOrders() {
+    var html = '';
+    state.outbound.forEach(function (o) {
+      var st = E.orderStage(state, o);
+      html += '<div class="labor-row"><strong>' + esc(o.id) + '</strong> ' + stageChip(st.key) +
+        '<br>' + esc(st.words) +
+        '<br><span class="labor-now">' + o.lines.map(function (l) {
+          return esc(l.qty + ' × ' + l.desc) + (l.done ? ' — picked' : l.allocated ? ' — from ' + esc(l.binId) +
+            ((E.binById(state, l.binId) || {}).status === 'hold' ? ' (bin on hold — waits)' : '') : ' — short');
+        }).join('<br>') + '</span></div>';
+    });
+    $('ordersList').innerHTML = html;
+  }
+
+  function renderHolds() {
+    var holds = E.currentHolds(state);
+    var html = holds.length ? '' : '<p class="note">Nothing on hold.</p>';
+    holds.forEach(function (h, i) {
+      html += '<div class="labor-row hold-row"><strong>' + esc(h.label) + '</strong>' +
+        (h.reason ? ' — ' + esc(h.reason) : '') +
+        '<br><span class="labor-now">' + (h.by ? 'By ' + esc(h.by) : 'Held from the start of the day') + '</span>' +
+        '<br><button type="button" class="mini-btn" data-release="' + i + '">Release</button></div>';
+    });
+    $('holdsList').innerHTML = html;
+    var btns = $('holdsList').querySelectorAll('[data-release]');
+    for (var j = 0; j < btns.length; j++) {
+      btns[j].addEventListener('click', function () {
+        var h = holds[Number(this.getAttribute('data-release'))];
+        var r = E.releaseHold(state, h.target, managerId());
+        $('holdMsg').textContent = r.ok ? h.label + ' released.' : r.reason;
+        if (r.ok) commit();
+        render();
+      });
+    }
+    var opts = '';
+    state.bins.forEach(function (b) {
+      if (b.status !== 'hold') opts += '<option value="bin:' + esc(b.id) + '">Bin ' + esc(b.id) + ' (Zone ' + esc(b.zone) + ')</option>';
+    });
+    state.staging.forEach(function (p) {
+      if (!p.hold) opts += '<option value="stg:' + esc(p.id) + '">Pallet ' + esc(p.id) + ' — ' + esc(p.qty + ' × ' + p.desc) + ' at ' + esc(p.door) + '</option>';
+    });
+    var keep = $('holdTarget').value;
+    $('holdTarget').innerHTML = opts;
+    if (keep) $('holdTarget').value = keep;
+  }
+
+  $('holdBtn').addEventListener('click', function () {
+    var v = $('holdTarget').value;
+    if (!v) return;
+    var target = v.indexOf('bin:') === 0 ? { binId: v.slice(4) } : { stagingId: v.slice(4) };
+    var r = E.placeHold(state, target, managerId(), $('holdReason').value);
+    $('holdMsg').textContent = r.ok
+      ? 'On hold.' + (r.freed.length ? ' Back to the queue from ' + r.freed.join(', ') + '.' : '')
+      : r.reason;
+    if (r.ok) { $('holdReason').value = ''; commit(); }
+    render();
+  });
+
+  function renderUpdateTasks() {
+    var keep = $('updateTask').value;
+    var live = state.tasks.filter(function (t) { return t.status !== 'done'; });
+    var done = state.tasks.filter(function (t) { return t.status === 'done'; }).reverse();
+    var opts = '';
+    live.forEach(function (t) { opts += '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; });
+    if (done.length) {
+      opts += '<optgroup label="Done — still open to updates">';
+      done.forEach(function (t) { opts += '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; });
+      opts += '</optgroup>';
+    }
+    $('updateTask').innerHTML = opts;
+    if (keep && E.taskById(state, keep)) $('updateTask').value = keep;
+  }
+
+  $('updateBtn').addEventListener('click', function () {
+    var r = E.addTaskUpdate(state, $('updateTask').value, $('updateText').value, managerId());
+    $('updateMsg').textContent = r ? 'Update added to the task and the records.' : 'Pick a task and say what happened.';
+    if (r) { $('updateText').value = ''; commit(); }
+    render();
+  });
+
+  function countLine(obj) {
+    var keys = Object.keys(obj).sort();
+    return keys.length ? keys.map(function (k) { return esc(k) + ' ' + obj[k]; }).join(' · ') : 'none yet';
+  }
+
+  function renderShift() {
+    var x = E.shiftSummary(state);
+    var b = x.bottleneck;
+    var html = '<p class="zone-line">Tasks done: <strong>' + x.tasksDone + '</strong></p>' +
+      '<p class="zone-line">By type: <strong>' + countLine(x.doneByType) + '</strong></p>' +
+      '<p class="zone-line">By zone: <strong>' + countLine(x.doneByZone) + '</strong></p>' +
+      '<p class="heard-label">Labor units</p>' +
+      x.perUnit.map(function (p) { return '<p class="zone-line">' + esc(p.name) + ': <strong>' + p.done + '</strong></p>'; }).join('') +
+      '<p class="heard-label">Bottleneck now</p><p class="zone-line">' + (b
+        ? 'Zone ' + esc(b.zone) + ' — ' + b.pending + ' waiting, ' + b.workers + ' units. Proposed: ' + esc(b.suggestion.unitName) +
+          ' from Zone ' + esc(b.suggestion.fromZone) + '.'
+        : 'None.') + '</p>' +
+      '<p class="heard-label">Shipments received: ' + x.shipmentsReceived.length + '</p>' +
+      x.shipmentsReceived.map(function (r) { return '<p class="zone-line">' + esc(r.id) + ' — ' + r.pallets + ' pallets, ' + esc(r.door) + '</p>'; }).join('') +
+      '<p class="heard-label">Orders shipped: ' + x.ordersShipped.length + '</p>' +
+      x.ordersShipped.map(function (o) { return '<p class="zone-line">' + esc(o.id) + ' — ' + o.qty + ' loaded, ' + esc(o.door) + '</p>'; }).join('') +
+      '<p class="heard-label">Incidents: ' + x.incidents.length + '</p>' +
+      x.incidents.slice().reverse().map(function (r) { return '<p class="zone-line">' + esc(r.text) + '</p>'; }).join('') +
+      '<p class="heard-label">Holds now: ' + x.holdsNow.length + ' · hold/release events: ' + x.holdEvents.length + '</p>';
+    $('shiftSummary').innerHTML = html;
   }
 
   /* ---------- manager: ask the building ------------------------------ */
@@ -390,6 +559,11 @@
     renderBottleneck();
     renderLabor();
     renderRecords();
+    renderInbound();
+    renderOrders();
+    renderHolds();
+    renderUpdateTasks();
+    renderShift();
   }
 
   $('roleWorker').addEventListener('click', function () { role = 'worker'; render(); });
@@ -402,6 +576,9 @@
     selectedUnitId = first ? first.id : null;
     clearWorkerTalk();
     clearAnswer();
+    $('holdMsg').textContent = '';
+    $('updateMsg').textContent = '';
+    $('inboundMsg').hidden = true;
     render();
   });
 
