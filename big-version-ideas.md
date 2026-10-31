@@ -359,3 +359,5 @@ Feeds the end-phase POV mock-up: the frames now have a real layout to render —
 - **The capture is just the picture.** When a photo is captured, the tile shows the picture and nothing else — no label, no description. Its only job is confirming the picture was taken.
 
 **Glasses workflow ruling (William, 2026-10-31):** design the glasses layer in the artifact mockup first, as close to final as we can get it there, THEN move it to the repo — it will be much touchier in there. The artifact is the sketchpad; the repo is the load-bearing wall. (`glasses-hud-mockup` artifact is the current design surface.)
+
+- Clarification on the two lenses (William, same hour): a wearer fuses the two lenses into one view in real life — but in the design the two lenses are DISTINGUISHED: two explicit panes, elements placed per lens, so what sits in front of each eye is a deliberate choice, never a blend.
