@@ -243,8 +243,32 @@
     '- "label": a short plain label in dock words (for example "Crushed cartons", "Torn wrap", "Looks sound").',
     '- "detail": one plain sentence saying exactly what you see and where in the frame. Do not infer causes. If part is out of frame or unclear, flag it "Cannot verify" and say what.',
     '',
-    'Rules: one flag per distinct item; report only what is visible; never invent counts you cannot see. Most important flag first.'
+    'Rules: one flag per distinct item; report only what is visible; never invent counts you cannot see. Most important flag first.',
+    '',
+    'If there is no pallet, freight or warehouse stock in the frame, do not force it: still return the same JSON shape, with one or two flags labeled "What I see" that say plainly what IS in the frame.'
   ].join('\n');
+
+  /* Free speech: anything the wearer says that isn't a command goes
+     here with the current frame (when there is one). William,
+     2026-11-01: "just let it respond in any way … respond to what it
+     does see." It can't change the warehouse — the commands do that. */
+  var ASK_PROMPT = [
+    'You are META, the assistant in a warehouse worker\'s smart glasses. The worker just spoke to you.',
+    'You may be shown what they are looking at right now. Respond to what they said in any way that helps, and if it is about what they see, respond to what you actually see in the frame — even when there is no pallet or freight in it.',
+    'You cannot change tasks or the warehouse system; never say you did. If they want a task closed or the next one, tell them to say "done" or "what\'s next".',
+    'This shows on a glasses display: plain words, at most 2 short sentences, no lists, no markdown.'
+  ].join('\n');
+
+  function askMessages(text, dataUrl, taskTitle) {
+    var said = 'The worker said: "' + String(text).trim() + '"' + (taskTitle ? '\nTheir task in hand: ' + taskTitle : '');
+    var user = dataUrl
+      ? [{ type: 'text', text: said }, { type: 'image_url', image_url: { url: dataUrl } }]
+      : said + '\n(No camera frame this time.)';
+    return [{ role: 'system', content: ASK_PROMPT }, { role: 'user', content: user }];
+  }
+  function askBody(text, dataUrl, taskTitle) {
+    return JSON.stringify({ messages: askMessages(text, dataUrl, taskTitle), temperature: 0.4, max_tokens: SCAN_MAX_TOKENS });
+  }
 
   function scanMessages(dataUrl) {
     return [
@@ -305,8 +329,33 @@
           throw fail('empty', 'No scan — came back empty twice. Capture kept.');
         }
         var flags = normaliseFlags(text);
-        if (!flags) throw fail('unparseable', 'No scan — the reply wasn\'t in a shape this page reads. Capture kept.');
+        /* Not the flags shape, but it said something: show its words. */
+        if (!flags) return { flags: null, text: text, attempts: n };
         return { flags: flags, attempts: n };
+      });
+    }
+    return attempt(1);
+  }
+
+  /* One free question. 413 (frame too big) is reported so the page
+     can re-ask without the frame. Empty: one retry, then say so. */
+  function sendAsk(doFetch, url, body) {
+    function attempt(n) {
+      return Promise.resolve().then(function () {
+        return doFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body });
+      }).then(function (r) {
+        if (r.status === 413) throw fail('too-large', 'Frame too large to send.');
+        if (r.status === 429) throw fail('cap', 'No answer — today\'s call limit is used up.');
+        if (!r.ok) throw fail('http', 'No answer — the proxy answered HTTP ' + r.status + '.');
+        return r.json().catch(function () { throw fail('bad-json', 'No answer — unreadable reply.'); });
+      }, function (e) {
+        if (e && e.userMessage) throw e;
+        throw fail('network', 'No answer — no connection.');
+      }).then(function (j) {
+        var text = replyText(j);
+        if (text) return { text: text, attempts: n };
+        if (n < 2) return attempt(n + 1);
+        throw fail('empty', 'No answer — came back empty twice.');
       });
     }
     return attempt(1);
@@ -324,7 +373,7 @@
     fitWithin: fitWithin, chooseScanStep: chooseScanStep, moveFocus: moveFocus, stickDir: stickDir,
     readPad: readPad, padEvents: padEvents, padName: padName,
     isHide: isHide, isWhoFree: isWhoFree, taskPlace: taskPlace, chipsFor: chipsFor, employeeFor: employeeFor,
-    scanMessages: scanMessages, scanBody: scanBody, normaliseFlags: normaliseFlags, sendScan: sendScan, flagLines: flagLines
+    scanMessages: scanMessages, scanBody: scanBody, askMessages: askMessages, askBody: askBody, sendAsk: sendAsk, normaliseFlags: normaliseFlags, sendScan: sendScan, flagLines: flagLines
   };
 
   if (typeof module !== 'undefined' && module.exports) { module.exports = core; return; }
@@ -444,8 +493,10 @@
       return;
     }
     employee(null);
+    var match = C.matchIntent(text);
+    if (match.intent === 'unknown') { askFree(text); return; } /* not a command: let META answer */
     state = Store.load(); /* fresh before acting */
-    var turn = C.workerTurn(E, state, wearer(), C.matchIntent(text));
+    var turn = C.workerTurn(E, state, wearer(), match);
     if (turn.acted) Store.save(state);
     say(turn.lines);
     renderChips();
@@ -506,12 +557,47 @@
     });
   }
 
-  function capture() {
+  /* The current view as a drawable: the camera frame, or the drawn
+     scene when the camera is off. */
+  function currentSource() {
     var live = sourceSize();
-    var got = live ? Promise.resolve(live) : sceneImage().then(function (img) {
-      return { el: img, w: 1200, h: 800 };
+    return live ? Promise.resolve(live) : sceneImage().then(function (img) { return { el: img, w: 1200, h: 800 }; });
+  }
+
+  /* Build the request at each scan size, smallest needed to fit the
+     /chat cap (the last size if none fits). */
+  function fittedBody(src, makeBody) {
+    var bodies = [];
+    for (var i = 0; i < SCAN_STEPS.length; i++) {
+      var st = SCAN_STEPS[i];
+      bodies.push(makeBody(drawTo(src.el, src.w, src.h, st.max).toDataURL('image/jpeg', st.quality)));
+      if (bodies[i].length <= CHAT_BODY_CAP) break;
+    }
+    return bodies[chooseScanStep(bodies.map(function (b) { return b.length; }))];
+  }
+
+  function askFree(text) {
+    var t = chipsFor(E, state, wearer()).task ? E.taskById(state, wearer().currentTaskId) : null;
+    var title = t ? t.title : null;
+    say(['…']);
+    currentSource().then(function (src) {
+      return sendAsk(fetch.bind(window), C.CHAT_URL, fittedBody(src, function (url) { return askBody(text, url, title); }))
+        .catch(function (e) {
+          /* Frame too big for the Worker's cap: ask again with words only. */
+          if (e && e.message === 'too-large') return sendAsk(fetch.bind(window), C.CHAT_URL, askBody(text, null, title));
+          throw e;
+        });
+    }, function () {
+      return sendAsk(fetch.bind(window), C.CHAT_URL, askBody(text, null, title));
+    }).then(function (res) {
+      say([res.text]);
+    }).catch(function (e) {
+      say([(e && e.userMessage) || 'No answer — something went wrong.']);
     });
-    got.then(function (src) {
+  }
+
+  function capture() {
+    currentSource().then(function (src) {
       var shown = drawTo(src.el, src.w, src.h, SHOW_MAX);
       var pic = $('capture');
       pic.src = shown.toDataURL('image/jpeg', SHOW_QUALITY);
@@ -521,18 +607,12 @@
       captureTimer = setTimeout(function () { pic.classList.add('gone'); }, 4000);
 
       /* Scan copy: step down until the body fits the /chat cap. */
-      var bodies = [];
-      for (var i = 0; i < SCAN_STEPS.length; i++) {
-        var st = SCAN_STEPS[i];
-        bodies.push(scanBody(drawTo(src.el, src.w, src.h, st.max).toDataURL('image/jpeg', st.quality)));
-        if (bodies[i].length <= CHAT_BODY_CAP) break;
-      }
-      var pick = chooseScanStep(bodies.map(function (b) { return b.length; }));
+      var body = fittedBody(src, scanBody);
       showText();
       employee(null);
       say(['Reading the photo…']);
-      return sendScan(fetch.bind(window), C.CHAT_URL, bodies[pick]).then(function (res) {
-        say(flagLines(res.flags));
+      return sendScan(fetch.bind(window), C.CHAT_URL, body).then(function (res) {
+        say(res.flags ? flagLines(res.flags) : [res.text]);
       });
     }).catch(function (e) {
       showText();
