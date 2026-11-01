@@ -159,3 +159,41 @@ body.text-hidden .fadeable { opacity: 0; }
   .you, .meta, .employee { font-size: 16px; }
   .chip { font-size: 13px; }
 }
+
+/* ---------- Sideways: the glasses frame (William, 2026-11-01) ----------
+   Held sideways, the view shows the two lenses — a left frame and a
+   right frame — and every element sits INSIDE its lens, because that
+   is where the information lives in the real product. Left lens: the
+   chips (top) and the wearer's words (bottom). Right lens: the capture
+   (top) and META (bottom). The rims are hairlines with no fill: the
+   camera shows through every part of both lenses. Upright, the view
+   stays one fused picture with no frames. */
+@media (orientation: landscape) {
+  .hud {
+    gap: 0 9%;
+    padding: max(5vh, env(safe-area-inset-top)) max(6vw, env(safe-area-inset-right))
+             max(7vh, env(safe-area-inset-bottom)) max(6vw, env(safe-area-inset-left));
+  }
+  /* The nose bridge between the lenses. */
+  .hud::before {
+    content: "";
+    position: absolute;
+    left: 50%; top: 22%;
+    width: 7%; height: 5%;
+    transform: translateX(-50%);
+    border-top: 2px solid rgba(255, 255, 255, 0.32);
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    pointer-events: none;
+  }
+  .side {
+    position: relative;
+    border: 2px solid rgba(255, 255, 255, 0.32);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    border-radius: 34% 34% 46% 46% / 26% 26% 50% 50%;
+    /* Keep words clear of the curved rim. */
+    padding: 7% 11% 12%;
+  }
+  .side-left .side-top { padding-left: 2%; }
+  .side-right .side-top { padding-right: 2%; }
+  .capture { width: 50%; }
+}
