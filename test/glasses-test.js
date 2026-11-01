@@ -205,6 +205,14 @@ check('commands still win: done / what\'s next / problem are not sent to META',
   C.matchIntent('done').intent === 'done' && C.matchIntent("what's next").intent === 'next' && C.matchIntent('this pallet is damaged').intent === 'problem');
 check('anything else is "unknown" — that is what goes to META', C.matchIntent('what am I looking at').intent === 'unknown');
 
+/* --- META's voice ------------------------------------------------------ */
+check('spoken: "12 × Bottled water" reads "12 of Bottled water", dashes become pauses',
+  G.speakable(['Next: Pick 12 × Bottled water — cases for ORD-501 — From bin A-08.']) === 'Next: Pick 12 of Bottled water, cases for ORD-501, From bin A-08.');
+check('spoken: employee slashes become pauses', G.speakable(['Tommy Nguyen / Zone B, near B-04 / available']) === 'Tommy Nguyen, Zone B, near B-04, available');
+check('spoken: status lines are not spoken', G.speakable(['…']) === '' && G.speakable(['Reading the photo…']) === '');
+check('spoken: nothing to say → empty', G.speakable(null) === '' && G.speakable([]) === '');
+check('spoken: two lines read as one', G.speakable(['Closed: Pick.', 'Next: Load.']) === 'Closed: Pick. Next: Load.');
+
 Promise.all(pending).then(function () {
   console.log('---');
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED');
