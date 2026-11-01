@@ -34,40 +34,43 @@
   </svg>
 </div>
 
-<!-- The HUD: two distinguished lenses, floating text only. -->
-<main class="lenses">
-  <section class="lens lens-left" aria-label="Left lens">
-    <div class="lens-top">
+<!-- Start screen: plain, before the view opens. -->
+<section id="start" class="start">
+  <h1>Glasses view</h1>
+  <p class="start-line">Glasses view, running on a phone — the glasses hardware is the vision.</p>
+  <h2>Who's wearing them?</h2>
+  <div id="pickList" class="pick-list"></div>
+  <button id="openBtn" class="open-btn" type="button">Open the view</button>
+  <p class="start-help">In the view: press and hold anywhere to talk. Double-tap to take a photo.
+  Say "hide" to clear the words. With a PlayStation controller: hold R2 to talk, X to take a photo.</p>
+  <p class="start-help" id="padLine">No controller connected (optional).</p>
+</section>
+
+<!-- The view: the camera, fused, edge to edge; floating words only.
+     Left side = the wearer's elements. Right side = META's. -->
+<main id="view" class="hud" hidden>
+  <div class="side side-left">
+    <div class="side-top">
       <span id="chipTask" class="chip chip-task" hidden></span>
       <span id="chipBin" class="chip chip-bin" hidden></span>
     </div>
-    <div class="lens-bottom fadeable">
-      <p id="youText" class="you" hidden aria-live="polite"></p>
+    <div class="side-bottom">
+      <p id="padHint" class="pad-hint" hidden><span id="hint-talk">talk</span> <span id="hint-capture">capture</span></p>
+      <p id="cue" class="cue" hidden></p>
+      <p id="youText" class="you fadeable" hidden aria-live="polite"></p>
     </div>
-  </section>
-
-  <section class="lens lens-right" aria-label="Right lens">
-    <div class="lens-top">
+  </div>
+  <div class="side side-right">
+    <div class="side-top">
       <img id="capture" class="capture" alt="" hidden>
     </div>
-    <div class="lens-bottom fadeable">
+    <div class="side-bottom fadeable">
       <p id="employee" class="employee" hidden><span id="empName"></span> / <span id="empPlace"></span> / <span id="empStatus"></span></p>
       <p id="metaLine" class="meta" hidden aria-live="polite"><span class="meta-tag">META:</span> <span id="metaText"></span></p>
     </div>
-  </section>
-</main>
-
-<!-- The phone stand-in controls: under the lenses, not in them. -->
-<footer class="deck">
-  <div class="actions" role="group" aria-label="Actions">
-    <button id="act-talk" class="act act-talk" type="button" aria-pressed="false"><span id="act-talk-label">Hold to talk</span></button>
-    <button id="act-capture" class="act" type="button">Capture</button>
-    <button id="act-hide" class="act" type="button">Hide</button>
   </div>
-  <p class="small"><button id="wearerLine" class="linkish" type="button"></button></p>
-  <p class="small"><span id="padLine">No controller</span> · <span id="camLine">Starting the camera…</span></p>
-  <p class="small">Glasses view, running on a phone — the glasses hardware is the vision.</p>
-</footer>
+  <span id="talkKey" hidden></span>
+</main>
 
 <script src="data/world.js"></script>
 <script src="js/engine.js"></script>
