@@ -28,8 +28,15 @@
      CORE — pure
      ================================================================ */
 
-  /* The page's few actions, in focus order (left → right). */
-  var ACTIONS = ['talk', 'capture', 'hide'];
+  /* The controller's actions, in focus order. Hide is NOT one of
+     them: hide is spoken only, never a selectable control (William's
+     hard ruling). Focus starts on Capture, so X captures by default. */
+  var ACTIONS = ['talk', 'capture'];
+  var DEFAULT_FOCUS = 1;
+
+  /* Touch on the view: press and hold = talk; two quick taps =
+     capture. A single short tap does nothing. */
+  var HOLD_MS = 250, DOUBLE_TAP_MS = 320;
 
   /* Controller mapping — Standard Gamepad layout (DualSense /
      DualShock report it in Chrome and Safari). Change a number here
@@ -79,6 +86,14 @@
     cap = cap || CHAT_BODY_CAP;
     for (var i = 0; i < bodyLengths.length; i++) if (bodyLengths[i] <= cap) return i;
     return bodyLengths.length - 1;
+  }
+
+  /* A finished touch on the view: 'hold' (it already started talk),
+     'double' (second tap close enough to the last), or 'tap'. */
+  function touchKind(downAt, upAt, lastTapAt) {
+    if (upAt - downAt >= HOLD_MS) return 'hold';
+    if (lastTapAt != null && downAt - lastTapAt <= DOUBLE_TAP_MS) return 'double';
+    return 'tap';
   }
 
   /* Move focus one step; wraps at both ends. dir: 'left'|'up' = back,
@@ -304,7 +319,8 @@
   }
 
   var core = {
-    ACTIONS: ACTIONS, PAD_MAP: PAD_MAP, SCAN_STEPS: SCAN_STEPS, SHOW_MAX: SHOW_MAX, CHAT_BODY_CAP: CHAT_BODY_CAP,
+    ACTIONS: ACTIONS, DEFAULT_FOCUS: DEFAULT_FOCUS, HOLD_MS: HOLD_MS, DOUBLE_TAP_MS: DOUBLE_TAP_MS, touchKind: touchKind,
+    PAD_MAP: PAD_MAP, SCAN_STEPS: SCAN_STEPS, SHOW_MAX: SHOW_MAX, CHAT_BODY_CAP: CHAT_BODY_CAP,
     fitWithin: fitWithin, chooseScanStep: chooseScanStep, moveFocus: moveFocus, stickDir: stickDir,
     readPad: readPad, padEvents: padEvents, padName: padName,
     isHide: isHide, isWhoFree: isWhoFree, taskPlace: taskPlace, chipsFor: chipsFor, employeeFor: employeeFor,
@@ -351,6 +367,34 @@
   })();
   function wearer() { return E.unitById(state, wearerId); }
 
+  /* ---------- start screen: who's wearing, then open the view ------- */
+  /* The plain page before the view. It carries the label line and the
+     worker pick; the view itself carries only the HUD. */
+
+  function renderPick() {
+    var html = '';
+    state.labor.forEach(function (u) {
+      if (u.role !== 'worker') return;
+      html += '<button type="button" class="pick' + (u.id === wearerId ? ' selected' : '') +
+        '" data-unit="' + u.id + '">' + u.name + ' <span class="pick-zone">Zone ' + u.zone + '</span></button>';
+    });
+    $('pickList').innerHTML = html;
+    var bs = $('pickList').querySelectorAll('[data-unit]');
+    for (var i = 0; i < bs.length; i++) {
+      bs[i].addEventListener('click', function () { wearerId = this.getAttribute('data-unit'); renderPick(); });
+    }
+  }
+
+  var opened = false;
+  function openView() {
+    if (opened) return;
+    opened = true;
+    $('start').hidden = true;
+    $('view').hidden = false;
+    renderChips();
+    startCamera(); /* started from the tap, which phones want */
+  }
+
   /* ---------- HUD ---------------------------------------------------- */
 
   var captureTimer = null;
@@ -367,8 +411,8 @@
     setText('chipBin', c.bin);
   }
 
-  /* Hide fades the transcript, the reply and the employee text (in
-     both lenses). The chips stay. Any new speech brings text back. */
+  /* Hide (spoken only) fades the transcript, the reply and the
+     employee text. The chips stay. Any new speech brings text back. */
   function showText() { document.body.classList.remove('text-hidden'); }
   function hideText() { document.body.classList.add('text-hidden'); }
 
@@ -385,6 +429,9 @@
     $('empPlace').textContent = e.location;
     $('empStatus').textContent = e.status;
   }
+  /* A one-word cue where the wearer's words will land, only while
+     the mic is live — the wearer has no button to watch. */
+  function cue(word) { setText('cue', word); }
 
   function onSpeech(text) {
     showText();
@@ -409,24 +456,25 @@
   var cameraOn = false;
   function startCamera() {
     var v = $('cam');
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return cameraOff('This browser has no camera access.');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return cameraOff('this browser has no camera access');
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(function (s) {
       v.srcObject = s;
       v.play().catch(function () {});
       cameraOn = true;
       $('scene').setAttribute('hidden', ''); /* SVG has no .hidden property — set the attribute */
       v.hidden = false;
-      $('camLine').textContent = 'Camera on.';
     }).catch(function (e) {
       cameraOff(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
-        ? 'Camera blocked for this page.' : 'No camera found.');
+        ? 'camera blocked for this page' : 'no camera found');
     });
   }
   function cameraOff(why) {
     cameraOn = false;
     $('cam').hidden = true;
     $('scene').removeAttribute('hidden');
-    $('camLine').textContent = 'Camera off — ' + why + ' Showing a drawn scene.';
+    /* Said plainly, once, in META's place — the topic requires it. */
+    showText();
+    say(['Camera off — ' + why + '. Showing a drawn scene.']);
   }
 
   /* ---------- capture -------------------------------------------------- */
@@ -492,76 +540,96 @@
     });
   }
 
-  /* ---------- actions & focus ------------------------------------------ */
+  /* ---------- talk: the mic, warehouse-mic.js unchanged --------------- */
+  /* It is attached to an invisible key (#talkKey). Holding on the view,
+     R2, or X-on-Talk drive it through the keyboard hold it supports. */
 
-  var focus = 0;
-  function renderFocus() {
-    ACTIONS.forEach(function (a, i) { $('act-' + a).classList.toggle('focused', i === focus); });
-  }
   function talkKey(type) {
-    $('act-talk').dispatchEvent(new KeyboardEvent(type, { code: 'Space', key: ' ', bubbles: true }));
+    $('talkKey').dispatchEvent(new KeyboardEvent(type, { code: 'Space', key: ' ', bubbles: true }));
   }
-
-  /* The mic: warehouse-mic.js, unchanged. R2 and X drive it through
-     the same keyboard hold it already supports. */
   if (root.WitnessMic) {
-    root.WitnessMic.attach($('act-talk'), {
-      onListening: function () { $('act-talk').classList.add('recording'); $('act-talk-label').textContent = 'Listening…'; },
-      onSending: function () { $('act-talk-label').textContent = 'Working…'; },
-      onText: function (t) { $('act-talk').classList.remove('recording'); $('act-talk-label').textContent = 'Hold to talk'; onSpeech(t); },
-      onError: function (m) { $('act-talk').classList.remove('recording'); $('act-talk-label').textContent = 'Hold to talk'; showText(); say([m]); },
-      onIdle: function () { $('act-talk').classList.remove('recording'); $('act-talk-label').textContent = 'Hold to talk'; }
+    root.WitnessMic.attach($('talkKey'), {
+      onListening: function () { cue('listening…'); },
+      onSending: function () { cue('…'); },
+      onText: function (t) { cue(null); onSpeech(t); },
+      onError: function (m) { cue(null); showText(); say([m]); },
+      onIdle: function () { cue(null); }
     });
   }
-  $('act-capture').addEventListener('click', capture);
-  $('act-hide').addEventListener('click', hideText);
 
-  /* ---------- controller loop ------------------------------------------- */
+  /* ---------- touch on the view: hold = talk, double-tap = capture ---- */
 
-  var prevPad = null, padIndex = null, activeOnTalk = false;
-  function padLine(gp) {
-    $('padLine').textContent = gp ? 'Controller: ' + padName(gp.id) + ' — connected' : 'No controller';
+  var downAt = null, lastTapAt = null, holdTimer = null, holding = false;
+  var view = $('view');
+  view.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    downAt = Date.now();
+    holding = false;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(function () { holding = true; talkKey('keydown'); }, HOLD_MS);
+  });
+  function touchEnd() {
+    if (downAt == null) return;
+    clearTimeout(holdTimer);
+    var now = Date.now();
+    if (holding) { holding = false; talkKey('keyup'); downAt = null; return; }
+    var kind = touchKind(downAt, now, lastTapAt);
+    if (kind === 'double') { lastTapAt = null; capture(); }
+    else lastTapAt = now;
+    downAt = null;
   }
-  window.addEventListener('gamepadconnected', function (e) { padIndex = e.gamepad.index; padLine(e.gamepad); });
-  window.addEventListener('gamepaddisconnected', function () { padIndex = null; prevPad = null; padLine(null); });
+  view.addEventListener('pointerup', touchEnd);
+  view.addEventListener('pointercancel', touchEnd);
+  view.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  /* ---------- controller ---------------------------------------------- */
+  /* R2 = hold to talk. Stick / D-pad moves focus between Talk and
+     Capture; X activates it (hold X on Talk to talk). The focus shows
+     as two faint floating words — never a box — that appear only
+     while the controller is being used, then fade. */
+
+  var focus = DEFAULT_FOCUS, prevPad = null, padIndex = null, activeOnTalk = false, hintTimer = null;
+  function showFocus() {
+    ACTIONS.forEach(function (a, i) { $('hint-' + a).classList.toggle('on', i === focus); });
+    $('padHint').hidden = false;
+    $('padHint').classList.remove('gone');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(function () { $('padHint').classList.add('gone'); }, 2500);
+  }
+  function padState(gp) {
+    $('padLine').textContent = gp ? 'Controller: ' + padName(gp.id) + ' — connected.' : 'No controller connected (optional).';
+  }
+  window.addEventListener('gamepadconnected', function (e) { padIndex = e.gamepad.index; padState(e.gamepad); });
+  window.addEventListener('gamepaddisconnected', function () { padIndex = null; prevPad = null; padState(null); });
 
   function loop() {
     var pads = navigator.getGamepads ? navigator.getGamepads() : [];
     var gp = null;
     if (padIndex != null && pads[padIndex]) gp = pads[padIndex];
-    else for (var i = 0; i < pads.length; i++) if (pads[i]) { gp = pads[i]; padIndex = i; padLine(gp); break; }
+    else for (var i = 0; i < pads.length; i++) if (pads[i]) { gp = pads[i]; padIndex = i; padState(gp); break; }
     if (gp) {
       var cur = readPad(gp);
-      padEvents(prevPad, cur).forEach(function (ev) {
-        if (ev === 'talk-down') talkKey('keydown');
-        else if (ev === 'talk-up') talkKey('keyup');
-        else if (ev.indexOf('move-') === 0) { focus = moveFocus(focus, ev.slice(5)); renderFocus(); }
-        else if (ev === 'activate-down') {
-          var a = ACTIONS[focus];
-          if (a === 'talk') { activeOnTalk = true; talkKey('keydown'); }
-          else if (a === 'capture') capture();
-          else if (a === 'hide') hideText();
-        } else if (ev === 'activate-up' && activeOnTalk) { activeOnTalk = false; talkKey('keyup'); }
-      });
+      if (opened) {
+        padEvents(prevPad, cur).forEach(function (ev) {
+          if (ev === 'talk-down') talkKey('keydown');
+          else if (ev === 'talk-up') talkKey('keyup');
+          else if (ev.indexOf('move-') === 0) { focus = moveFocus(focus, ev.slice(5)); showFocus(); }
+          else if (ev === 'activate-down') {
+            showFocus();
+            if (ACTIONS[focus] === 'talk') { activeOnTalk = true; talkKey('keydown'); }
+            else capture();
+          } else if (ev === 'activate-up' && activeOnTalk) { activeOnTalk = false; talkKey('keyup'); }
+        });
+      } else if (padEvents(prevPad, cur).indexOf('activate-down') !== -1) {
+        openView(); /* X on the start screen opens the view */
+      }
       prevPad = cur;
     }
     requestAnimationFrame(loop);
   }
 
-  /* ---------- wearer switch (footer, outside the lenses) ----------------- */
-  $('wearerLine').addEventListener('click', function () {
-    var ws = state.labor.filter(function (u) { return u.role === 'worker'; });
-    var i = ws.map(function (u) { return u.id; }).indexOf(wearerId);
-    wearerId = ws[(i + 1) % ws.length].id;
-    renderWearer();
-    renderChips();
-  });
-  function renderWearer() { $('wearerLine').textContent = 'Wearing: ' + wearer().name + ' (tap to switch)'; }
-
-  renderWearer();
-  renderChips();
-  renderFocus();
-  padLine(null);
-  startCamera();
+  $('openBtn').addEventListener('click', openView);
+  renderPick();
+  padState(null);
   requestAnimationFrame(loop);
 })(typeof window !== 'undefined' ? window : globalThis);
