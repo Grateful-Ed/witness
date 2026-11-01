@@ -432,3 +432,19 @@ Demo labeling: the interaction is BUILT; the glasses hardware is the
 vision — the page says so on its face. Known limit: live-capture photo
 scan is squeezed by the /chat 60K body cap until desk-phone Step 1 raises
 it for images; the page must say so plainly if a send 413s.
+
+## The scan model — summon vs intake (William, 2026-11-01)
+
+William's clarification of what a scan MEANS, by world. Warehouse: the
+BOL is already in the system (sent ahead) and its tasks were already
+created; scanning the BOL through the glasses is identification /
+confirmation — "this is BOL ABC" — and the glasses bring up that BOL's
+tasks. The scan creates nothing; it summons the work. Kitchen (the demo):
+no back office exists, so the receipt scan IS the intake — the real
+receipt is read, items become the shipment, tasks are created from the
+scan live, each with a home location (mapping table wins, META proposes
+for unknowns, the wearer confirms or corrects by voice before anything
+is created). Demo video spine v3: one continuous kitchen run (scan →
+confirm → putaway run by voice → problem beat → summary), then the
+pull-back to the warehouse. Brief: briefs/claude-brief-kitchen-demo.md
+(builds after the BOL slice; reuses js/bol.js, never forks it).
