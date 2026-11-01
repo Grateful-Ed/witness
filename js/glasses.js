@@ -361,6 +361,21 @@
     return attempt(1);
   }
 
+  /* What META says out loud for a reply: the same words as the lens,
+     made to read well aloud — "12 × Rice" → "12 of Rice", dashes and
+     slashes become pauses. Status lines ("…", "Reading the photo…")
+     are not spoken. Returns '' when there is nothing to say. */
+  var SILENT = /^(…|\.\.\.|Reading the photo…)$/;
+  function speakable(lines) {
+    var said = (lines || []).filter(function (l) { return l && !SILENT.test(String(l).trim()); }).join(' ');
+    return said
+      .replace(/\s*×\s*/g, ' of ')
+      .replace(/\s+[—–]\s+/g, ', ')
+      .replace(/\s+\/\s+/g, ', ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   /* HUD text: what the right lens says after a scan. */
   function flagLines(flags) {
     if (!flags.length) return ['Nothing flagged in that frame.'];
@@ -373,7 +388,7 @@
     fitWithin: fitWithin, chooseScanStep: chooseScanStep, moveFocus: moveFocus, stickDir: stickDir,
     readPad: readPad, padEvents: padEvents, padName: padName,
     isHide: isHide, isWhoFree: isWhoFree, taskPlace: taskPlace, chipsFor: chipsFor, employeeFor: employeeFor,
-    scanMessages: scanMessages, scanBody: scanBody, askMessages: askMessages, askBody: askBody, sendAsk: sendAsk, normaliseFlags: normaliseFlags, sendScan: sendScan, flagLines: flagLines
+    scanMessages: scanMessages, scanBody: scanBody, askMessages: askMessages, speakable: speakable, askBody: askBody, sendAsk: sendAsk, normaliseFlags: normaliseFlags, sendScan: sendScan, flagLines: flagLines
   };
 
   if (typeof module !== 'undefined' && module.exports) { module.exports = core; return; }
@@ -434,10 +449,35 @@
     }
   }
 
+  /* ---------- META's voice: the phone's built-in speech --------------- */
+  /* Every META reply is also spoken. Phones only let a page talk after
+     a tap, so the "Open the view" tap unlocks it. Speech stops the
+     moment the wearer starts talking (so the mic never hears META)
+     and when they say "hide". */
+  var voice = root.speechSynthesis || null;
+  function voiceUnlock() {
+    if (!voice) return;
+    try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; voice.speak(u); } catch (e) { /* no voice */ }
+  }
+  function speak(lines) {
+    if (!voice) return;
+    var text = speakable(lines);
+    try {
+      voice.cancel();
+      if (!text) return;
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-US';
+      u.rate = 1.05;
+      voice.speak(u);
+    } catch (e) { /* speaking is extra — the words are on the lens */ }
+  }
+  function hush() { if (voice) try { voice.cancel(); } catch (e) {} }
+
   var opened = false;
   function openView() {
     if (opened) return;
     opened = true;
+    voiceUnlock(); /* inside the tap */
     $('start').hidden = true;
     $('view').hidden = false;
     renderChips();
@@ -466,9 +506,11 @@
   function hideText() { document.body.classList.add('text-hidden'); }
 
   function say(lines) {
-    /* "META:" + the reply's first 2 lines (CSS clamps to two lines). */
+    /* "META:" + the reply's first 2 lines (CSS clamps to two lines),
+       and spoken aloud. */
     setText('metaText', (lines || []).join(' '));
     $('metaLine').hidden = !(lines && lines.length);
+    speak(lines);
   }
   function heard(text) { setText('youText', text); }
   function employee(e) {
@@ -477,6 +519,7 @@
     $('empName').textContent = e.name;
     $('empPlace').textContent = e.location;
     $('empStatus').textContent = e.status;
+    speak([e.name + ' / ' + e.location + ' / ' + e.status]);
   }
   /* A one-word cue where the wearer's words will land, only while
      the mic is live — the wearer has no button to watch. */
@@ -485,7 +528,7 @@
   function onSpeech(text) {
     showText();
     heard(text);
-    if (isHide(text)) { say(null); employee(null); setTimeout(hideText, 700); return; }
+    if (isHide(text)) { say(null); employee(null); hush(); setTimeout(hideText, 700); return; }
     if (isWhoFree(text)) {
       var e = employeeFor(E, state, wearer());
       employee(e);
@@ -629,7 +672,7 @@
   }
   if (root.WitnessMic) {
     root.WitnessMic.attach($('talkKey'), {
-      onListening: function () { cue('listening…'); },
+      onListening: function () { hush(); cue('listening…'); },
       onSending: function () { cue('…'); },
       onText: function (t) { cue(null); onSpeech(t); },
       onError: function (m) { cue(null); showText(); say([m]); },
