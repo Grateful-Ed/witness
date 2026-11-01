@@ -20,13 +20,20 @@ function check(name, cond) {
 function fresh() { var s = E.seedWorld(); E.generateTasks(s); return s; }
 
 /* --- focus ------------------------------------------------------- */
-check('actions are Talk, Capture, Hide in that order', G.ACTIONS.join() === 'talk,capture,hide');
+check('controller actions are Talk and Capture only — Hide is never a control', G.ACTIONS.join() === 'talk,capture');
+check('focus starts on Capture, so X captures by default', G.ACTIONS[G.DEFAULT_FOCUS] === 'capture');
 check('right moves forward', G.moveFocus(0, 'right') === 1);
-check('down moves forward', G.moveFocus(1, 'down') === 2);
-check('left moves back', G.moveFocus(2, 'left') === 1);
-check('right wraps from the last to the first', G.moveFocus(2, 'right') === 0);
-check('left wraps from the first to the last', G.moveFocus(0, 'left') === 2);
+check('right wraps from the last to the first', G.moveFocus(1, 'right') === 0);
+check('down wraps the same way', G.moveFocus(1, 'down') === 0);
+check('left wraps from the first to the last', G.moveFocus(0, 'left') === 1);
 check('no direction: focus stays', G.moveFocus(1, null) === 1);
+
+/* --- touch on the view ---------------------------------------------- */
+check('a press held past HOLD_MS is a hold (talk)', G.touchKind(1000, 1000 + G.HOLD_MS, null) === 'hold');
+check('a short tap alone does nothing (tap)', G.touchKind(1000, 1100, null) === 'tap');
+check('a second short tap soon after is a double (capture)', G.touchKind(1300, 1380, 1100) === 'double');
+check('a second tap too late is just a tap', G.touchKind(1400 + G.DOUBLE_TAP_MS + 1, 1400 + G.DOUBLE_TAP_MS + 60, 1400) === 'tap');
+check('a long press after a tap is still a hold, never a capture', G.touchKind(1200, 1200 + G.HOLD_MS + 50, 1100) === 'hold');
 
 /* --- stick ------------------------------------------------------- */
 check('inside the deadzone: no direction', G.stickDir(0.3, -0.2) === null);
