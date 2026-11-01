@@ -416,3 +416,19 @@ for hands-busy glasses input while there is no real glasses hardware: a
 worker who can't tap a screen can still nudge, point, and confirm. Belongs
 to the glasses phase (last), alongside the settled HUD design and the
 playable sim.
+
+## Glasses build shape — the phone IS the glasses (William, 2026-11-01)
+
+William's ruling on how the glasses layer gets built: use the phone camera
+as the glasses. Live camera view full-screen, the settled HUD floating over
+it, wired to the real engine and converse intents — not a drawing. The
+PlayStation controller is its input (hold R2 to talk, stick/D-pad moves
+focus, X activates), so the phone can be propped up as the glasses and the
+hands stay busy-realistic. Briefed as briefs/claude-brief-glasses-mock.md:
+ALL-NEW files only (glasses.html, js/glasses.js, css/glasses.css), so it
+cannot collide with the desk-phone build; state flows through a small
+adapter over the current seam so the server-state swap stays one place.
+Demo labeling: the interaction is BUILT; the glasses hardware is the
+vision — the page says so on its face. Known limit: live-capture photo
+scan is squeezed by the /chat 60K body cap until desk-phone Step 1 raises
+it for images; the page must say so plainly if a send 413s.
