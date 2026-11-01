@@ -1,0 +1,166 @@
+/* =====================================================================
+   glasses.css — the glasses view (settled HUD, round 2).
+
+   Safety specs, not styling (William, 2026-10-31): the wearer sees
+   THROUGH the information. Floating text only — no boxes, no panel
+   backgrounds, no borders. Compact, translucent, center kept clear.
+   Two distinguished lenses: left = chips (top) + your words (bottom);
+   right = the capture (top) + employee / META (bottom).
+   ===================================================================== */
+
+:root {
+  --hud-text: rgba(255, 255, 255, 0.82);
+  --hud-dim: rgba(255, 255, 255, 0.62);
+  --hud-shadow: 0 0 2px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.7);
+  --chip-task: rgba(77, 163, 255, 0.22);     /* blue, see-through */
+  --chip-task-text: rgba(170, 210, 255, 0.92);
+  --chip-bin: rgba(255, 196, 77, 0.2);       /* amber, see-through */
+  --chip-bin-text: rgba(255, 222, 160, 0.92);
+  --meta: rgba(140, 220, 160, 0.9);
+  --deck-bg: #0b0c0e;
+  --deck-text: #c9ced6;
+  --focus: #4da3ff;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--hud-text); }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+/* ---------- the room ---------- */
+.room { position: fixed; inset: 0; z-index: 0; background: #000; }
+.room video, .room svg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.room [hidden] { display: none; }
+
+/* ---------- the two lenses ---------- */
+.lenses {
+  position: relative; z-index: 1;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4%;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+.lens {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  /* The lens rim is the glasses' frame, not a panel: a hairline that
+     tells left from right, no fill. */
+  border-radius: 38% 38% 44% 44% / 22% 22% 30% 30%;
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+  outline-offset: -1px;
+  padding: 7% 8%;
+}
+/* Portrait phone: narrow lenses — give the words the width. */
+@media (orientation: portrait) {
+  .lenses { gap: 2%; padding-left: max(6px, env(safe-area-inset-left)); padding-right: max(6px, env(safe-area-inset-right)); }
+  .lens { padding: 10% 4% 8%; }
+  .you, .meta, .employee { font-size: 13px; }
+}
+.lens-top, .lens-bottom { min-width: 0; }
+.lens-left .lens-top { display: flex; gap: 6px; flex-wrap: wrap; }
+.lens-right .lens-top { display: flex; justify-content: flex-end; }
+
+/* ---------- chips: Task # / Bin # (the only persistent things) ---------- */
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow: var(--hud-shadow);
+}
+.chip[hidden] { display: none; }
+.chip-task { background: var(--chip-task); color: var(--chip-task-text); }
+.chip-bin { background: var(--chip-bin); color: var(--chip-bin-text); }
+
+/* ---------- floating text ---------- */
+.you, .meta, .employee {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.35;
+  text-shadow: var(--hud-shadow);
+  /* First 2 lines only — never expandable here. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.you[hidden], .meta[hidden], .employee[hidden] { display: none; }
+.you { color: var(--hud-text); }
+.meta { color: var(--hud-text); }
+.meta-tag { color: var(--meta); font-weight: 700; }
+.employee { color: var(--hud-dim); margin-bottom: 4px; }
+
+.fadeable { transition: opacity 0.5s ease; }
+body.text-hidden .fadeable { opacity: 0; }
+
+/* ---------- the capture: just the picture, briefly ---------- */
+.capture {
+  width: 62%;
+  max-width: 180px;
+  height: auto;
+  opacity: 0.85;
+  border-radius: 6px;
+  transition: opacity 0.6s ease;
+}
+.capture[hidden] { display: none; }
+.capture.gone { opacity: 0; }
+
+/* ---------- the deck: phone stand-in controls, under the lenses ---------- */
+.deck {
+  position: relative; z-index: 2;
+  flex: 0 0 auto;
+  padding: 8px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0));
+  color: var(--deck-text);
+}
+.actions { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+.act {
+  min-height: 52px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-radius: 14px;
+  background: rgba(20, 24, 30, 0.55);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.act-talk {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.act.recording { border-color: #ff5d5d; background: rgba(80, 20, 24, 0.7); }
+.act.focused { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus); }
+.act:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.small { margin: 2px 0; font-size: 12px; color: var(--deck-text); opacity: 0.8; }
+.linkish {
+  padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-decoration: underline; cursor: pointer;
+}
+
+/* Landscape (phone propped as glasses): text can be a touch larger. */
+@media (orientation: landscape) and (min-width: 640px) {
+  .you, .meta, .employee { font-size: 16px; }
+  .chip { font-size: 14px; }
+}
