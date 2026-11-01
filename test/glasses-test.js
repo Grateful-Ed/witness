@@ -172,6 +172,39 @@ pending.push(G.sendScan(stub(['throw']), 'u', '{}').then(null, function (e) {
   check('scan: no network → honest error', e.message === 'network' && /Capture kept/.test(e.userMessage));
 }));
 
+/* --- respond to what it sees (William, 2026-11-01) ------------------- */
+check('scan prompt: no pallet → say what IS in the frame, same shape', /no pallet, freight or warehouse stock/.test(body.messages[0].content) &&
+  /"What I see"/.test(body.messages[0].content));
+var sProse = stub([ok('A desk with a laptop and a coffee mug. No pallet in view.')]);
+pending.push(G.sendScan(sProse, 'u', '{}').then(function (r) {
+  check('scan: a plain-words reply is shown as-is, not thrown away', r.flags === null && /coffee mug/.test(r.text));
+}));
+var ask = JSON.parse(G.askBody('what am I looking at', 'data:image/jpeg;base64,BBBB', 'Pick 12 × Bottled water — cases for ORD-501'));
+check('free ask: sends the words and the frame', /what am I looking at/.test(ask.messages[1].content[0].text) &&
+  ask.messages[1].content[1].image_url.url === 'data:image/jpeg;base64,BBBB');
+check('free ask: carries the task in hand as context', /Bottled water/.test(ask.messages[1].content[0].text));
+check('free ask: answers in any way, responds to what it sees even without a pallet',
+  /in any way/.test(ask.messages[0].content) && /even when there is no pallet/.test(ask.messages[0].content));
+check('free ask: can\'t change the warehouse, points to the commands', /never say you did/.test(ask.messages[0].content) && /"done"/.test(ask.messages[0].content));
+check('free ask: short for the glasses, 6,000 max_tokens', /at most 2 short sentences/.test(ask.messages[0].content) && ask.max_tokens === 6000);
+var askNoFrame = JSON.parse(G.askBody('hello', null, null));
+check('free ask: no frame → words only, says so', typeof askNoFrame.messages[1].content === 'string' && /No camera frame/.test(askNoFrame.messages[1].content));
+var a413 = stub([{ status: 413, body: {} }]);
+pending.push(G.sendAsk(a413, 'u', '{}').then(null, function (e) {
+  check('free ask: 413 is reported as too-large (page re-asks without the frame)', e.message === 'too-large' && a413.calls() === 1);
+}));
+var aEmpty = stub([ok(''), ok('That\'s a forklift charging station.')]);
+pending.push(G.sendAsk(aEmpty, 'u', '{}').then(function (r) {
+  check('free ask: empty → one retry → answer', aEmpty.calls() === 2 && /forklift/.test(r.text));
+}));
+var aEmpty2 = stub([ok(''), ok('')]);
+pending.push(G.sendAsk(aEmpty2, 'u', '{}').then(null, function (e) {
+  check('free ask: two empties → honest error', /empty twice/.test(e.userMessage));
+}));
+check('commands still win: done / what\'s next / problem are not sent to META',
+  C.matchIntent('done').intent === 'done' && C.matchIntent("what's next").intent === 'next' && C.matchIntent('this pallet is damaged').intent === 'problem');
+check('anything else is "unknown" — that is what goes to META', C.matchIntent('what am I looking at').intent === 'unknown');
+
 Promise.all(pending).then(function () {
   console.log('---');
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED');
