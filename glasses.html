@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Witness — Glasses view</title>
+<link rel="stylesheet" href="css/glasses.css">
+</head>
+<body>
+
+<!-- The room: the rear camera, or a drawn scene when the camera is off. -->
+<div class="room" aria-hidden="true">
+  <video id="cam" playsinline muted autoplay hidden></video>
+  <svg id="scene" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+    <rect width="1200" height="800" fill="#2b2f36"/>
+    <rect y="520" width="1200" height="280" fill="#3a3d42"/>
+    <line x1="0" y1="700" x2="1200" y2="640" stroke="#d9b84a" stroke-width="10" opacity="0.6"/>
+    <rect x="60" y="80" width="170" height="440" fill="#23272d"/>
+    <rect x="970" y="80" width="170" height="440" fill="#23272d"/>
+    <g>
+      <rect x="380" y="560" width="440" height="34" fill="#8a6a43"/>
+      <rect x="390" y="594" width="40" height="22" fill="#6e5434"/>
+      <rect x="580" y="594" width="40" height="22" fill="#6e5434"/>
+      <rect x="770" y="594" width="40" height="22" fill="#6e5434"/>
+      <g fill="#c79a5b" stroke="#8c6a3b" stroke-width="3">
+        <rect x="390" y="440" width="140" height="120"/><rect x="530" y="440" width="140" height="120"/><rect x="670" y="440" width="140" height="120"/>
+        <rect x="390" y="320" width="140" height="120"/><rect x="530" y="320" width="140" height="120"/><rect x="670" y="320" width="140" height="120"/>
+        <rect x="405" y="200" width="140" height="120" transform="rotate(-3 475 260)"/><rect x="545" y="200" width="140" height="120"/>
+      </g>
+      <path d="M690 330 l40 30 l-25 25 z" fill="#5a4326" opacity="0.8"/>
+      <rect x="385" y="320" width="430" height="240" fill="#ffffff" opacity="0.08"/>
+    </g>
+  </svg>
+</div>
+
+<!-- The HUD: two distinguished lenses, floating text only. -->
+<main class="lenses">
+  <section class="lens lens-left" aria-label="Left lens">
+    <div class="lens-top">
+      <span id="chipTask" class="chip chip-task" hidden></span>
+      <span id="chipBin" class="chip chip-bin" hidden></span>
+    </div>
+    <div class="lens-bottom fadeable">
+      <p id="youText" class="you" hidden aria-live="polite"></p>
+    </div>
+  </section>
+
+  <section class="lens lens-right" aria-label="Right lens">
+    <div class="lens-top">
+      <img id="capture" class="capture" alt="" hidden>
+    </div>
+    <div class="lens-bottom fadeable">
+      <p id="employee" class="employee" hidden><span id="empName"></span> / <span id="empPlace"></span> / <span id="empStatus"></span></p>
+      <p id="metaLine" class="meta" hidden aria-live="polite"><span class="meta-tag">META:</span> <span id="metaText"></span></p>
+    </div>
+  </section>
+</main>
+
+<!-- The phone stand-in controls: under the lenses, not in them. -->
+<footer class="deck">
+  <div class="actions" role="group" aria-label="Actions">
+    <button id="act-talk" class="act act-talk" type="button" aria-pressed="false"><span id="act-talk-label">Hold to talk</span></button>
+    <button id="act-capture" class="act" type="button">Capture</button>
+    <button id="act-hide" class="act" type="button">Hide</button>
+  </div>
+  <p class="small"><button id="wearerLine" class="linkish" type="button"></button></p>
+  <p class="small"><span id="padLine">No controller</span> · <span id="camLine">Starting the camera…</span></p>
+  <p class="small">Glasses view, running on a phone — the glasses hardware is the vision.</p>
+</footer>
+
+<script src="data/world.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/converse.js"></script>
+<script src="js/warehouse-mic.js"></script>
+<script src="js/glasses.js"></script>
+</body>
+</html>
