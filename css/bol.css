@@ -2,6 +2,8 @@
    chips and buttons. This file adds only the capture, the preview,
    and the findings list. Words carry the meaning; colour only helps. */
 
+
+[hidden] { display: none !important; }
 .bol-file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 .bol-btn { display: flex; align-items: center; justify-content: center; min-height: 88px; text-align: center; }
 .bol-file:focus-visible + .bol-btn, .bol-file:focus-visible + .hint .bol-pick { outline: 3px solid var(--accent); outline-offset: 3px; }
