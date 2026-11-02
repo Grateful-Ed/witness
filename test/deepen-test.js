@@ -124,6 +124,17 @@ var o903 = E.orderById(heldAlloc, 'ORD-903').lines[0];
 check('outbound: held stock is never allocated (A-01 held → best free bin is B-01, 12)',
   !o903.allocated && o903.short.want === 30 && o903.short.free === 12);
 
+/* Held-bin confession: a line allocated from B-04, then B-04 held. */
+var conf = fresh();
+var riceLine = E.orderById(conf, 'ORD-501').lines.filter(function (l) { return l.binId === 'B-04'; })[0];
+check('confession: allocated line reads plainly before any hold', riceLine.allocated && E.lineSource(conf, riceLine) === 'from B-04');
+E.placeHold(conf, { binId: 'B-04' }, 'u-sam', 'pallet leaning');
+check('confession: bin held after allocation → "from B-04 — bin on hold"', E.lineSource(conf, riceLine) === 'from B-04 — bin on hold');
+check('confession: the reservation stands untouched', riceLine.allocated === true && riceLine.binId === 'B-04' && !!E.taskById(conf, 't-pick-ORD-501-B-04'));
+check('confession: the manager summary carries it too', /Rice — bags from B-04 — bin on hold/.test(C.buildStateSummary(E, conf).text));
+E.releaseHold(conf, { binId: 'B-04' }, 'u-sam');
+check('confession: release → the confession goes', E.lineSource(conf, riceLine) === 'from B-04');
+
 /* Pick ORD-501 through to shipped, counting every case. */
 var rice0 = itemTotal(o, 'Rice — bags'), water0 = itemTotal(o, 'Bottled water — cases');
 E.completeTask(o, 't-pick-ORD-501-B-04');

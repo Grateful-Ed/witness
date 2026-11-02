@@ -257,7 +257,7 @@
       var os = E.orderStage(state, o);
       facts.orders.push({ id: o.id, status: o.status, linesLeft: left.length, stage: os.words });
       L.push(o.id + ' — ' + o.status + ' — ' + left.length + ' of ' + o.lines.length + ' lines left to pick' +
-        (left.length ? ': ' + left.map(function (l) { return l.qty + ' × ' + l.desc + ' from ' + l.binId; }).join('; ') : '') +
+        (left.length ? ': ' + left.map(function (l) { return l.qty + ' × ' + l.desc + ' ' + (E.lineSource ? E.lineSource(state, l) : 'from ' + l.binId); }).join('; ') : '') +
         ' — stage: ' + os.words);
     });
 
