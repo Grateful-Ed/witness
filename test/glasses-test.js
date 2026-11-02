@@ -102,10 +102,10 @@ check('hide is not a converse intent today (so the page must catch it first)', C
 var s = fresh();
 var marcus = E.unitById(s, 'u-marcus');
 check('no task in hand: no chips', G.chipsFor(E, s, marcus).task === null && G.chipsFor(E, s, marcus).bin === null);
-var t = E.nextTaskFor(s, marcus); /* the receive at Door 1 */
+var t = E.nextTaskFor(s, marcus); /* the receive at Inbound Door 1 */
 var ch = G.chipsFor(E, s, marcus);
 check('chips: Task # is the task\'s place in the list', ch.task === 'Task ' + (s.tasks.indexOf(t) + 1));
-check('chips: a receive shows its door', ch.bin === 'Door 1');
+check('chips: a receive shows its door', ch.bin === 'Inbound Door 1');
 E.completeTask(s, t.id); E.generateTasks(s);
 var t2 = E.nextTaskFor(s, marcus);
 check('chips: a pick shows its bin', t2.type === 'pick' && G.chipsFor(E, s, marcus).bin === 'Bin ' + t2.binId);

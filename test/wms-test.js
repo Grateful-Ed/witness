@@ -48,14 +48,15 @@ check('install upgrades a plain engine state without touching its tasks', raw.ta
 
 /* ---------- dock & yard ---------- */
 s = fresh();
-var r = W.schedule(s, { shipmentId: 'IN-1003', door: 'Door 3', day: 'Today', start: '10:30', end: '11:00' }, 'u-sam');
-check('schedule: a clash on the same door and day is refused', !r.ok && /Door 3 is booked 10:00–11:30/.test(r.reason));
-r = W.schedule(s, { shipmentId: 'IN-1003', door: 'Door 3', day: 'Today', start: '12:00', end: '13:00', trailer: 'BRF-9' }, 'u-sam');
-check('schedule: a free window reschedules the shipment\'s appointment', r.ok && r.appointment.id === 'APT-103' && E.shipmentById(s, 'IN-1003').door === 'Door 3');
-check('schedule: bad times refused', !W.schedule(s, { shipmentId: 'IN-1003', door: 'Door 3', day: 'Today', start: '14:00', end: '13:00' }).ok);
-check('schedule: a shipment already at a door is refused', !W.schedule(s, { shipmentId: 'IN-1001', door: 'Door 3', day: 'Today', start: '15:00', end: '16:00' }).ok);
+var r = W.schedule(s, { shipmentId: 'IN-1003', door: 'Inbound Door 3', day: 'Today', start: '10:30', end: '11:00' }, 'u-sam');
+check('schedule: a clash on the same door and day is refused', !r.ok && /Inbound Door 3 is booked 10:00–11:30/.test(r.reason));
+r = W.schedule(s, { shipmentId: 'IN-1003', door: 'Inbound Door 3', day: 'Today', start: '12:00', end: '13:00', trailer: 'BRF-9' }, 'u-sam');
+check('schedule: a free window reschedules the shipment\'s appointment', r.ok && r.appointment.id === 'APT-103' && E.shipmentById(s, 'IN-1003').door === 'Inbound Door 3');
+check('schedule: an outbound door is refused for a truck coming in', /Outbound Door 2 is an outbound door/.test(W.schedule(s, { shipmentId: 'IN-1003', door: 'Outbound Door 2', day: 'Today', start: '14:00', end: '15:00' }).reason || ''));
+check('schedule: bad times refused', !W.schedule(s, { shipmentId: 'IN-1003', door: 'Inbound Door 3', day: 'Today', start: '14:00', end: '13:00' }).ok);
+check('schedule: a shipment already at a door is refused', !W.schedule(s, { shipmentId: 'IN-1001', door: 'Inbound Door 3', day: 'Today', start: '15:00', end: '16:00' }).ok);
 r = W.checkIn(s, 'APT-102', 'u-sam');
-check('check-in: IN-1002 arrives at Door 3', r.ok && E.shipmentById(s, 'IN-1002').status === 'staged at door' && s.wms.appointments[1].status === 'checked in');
+check('check-in: IN-1002 arrives at Inbound Door 3', r.ok && E.shipmentById(s, 'IN-1002').status === 'staged at door' && s.wms.appointments[1].status === 'checked in');
 check('check-in: a receive task appears for IN-1002', !!task(s, 't-receive-IN-1002'));
 check('check-in: twice is refused', !W.checkIn(s, 'APT-102', 'u-sam').ok);
 r = W.checkIn(s, 'APT-103', 'u-sam');
@@ -232,7 +233,7 @@ check('pack: label, weight from the item master (4×21 + 10×14 = 224 lb)', r.ok
 check('order status: packed, ready to load', W.orderStatus(s, o503).key === 'packed');
 r = W.complete(s, 't-load-ORD-503', { by: 'u-jay' });
 var ld = s.wms.loads[0];
-check('load: order on a trailer at Door 4, load open', r.ok && ld && ld.status === 'loading' && ld.orderIds[0] === 'ORD-503' && s.doors[3].loadId === ld.id);
+check('load: order on a trailer at Outbound Door 4, load open', r.ok && ld && ld.status === 'loading' && ld.orderIds[0] === 'ORD-503' && s.doors.filter(function (d) { return d.id === 'Outbound Door 4'; })[0].loadId === ld.id);
 check('order status: loaded (not yet shipped)', W.orderStatus(s, o503).key === 'loaded');
 W.complete(s, 't-pick-ORD-502-C-02', {});
 W.complete(s, 't-pack-ORD-502', {});
@@ -240,7 +241,7 @@ W.complete(s, 't-load-ORD-502', {});
 check('a second order joins the same open load at the door', ld.orderIds.length === 2 && s.wms.loads.length === 1);
 r = W.closeLoad(s, ld.id, { seal: 'SL-1', by: 'u-sam' });
 check('ship confirm: load closed with BOL, seal and totals', r.ok && ld.status === 'shipped' && /^WIT-OB-\d{4}$/.test(ld.bolNumber) && ld.seal === 'SL-1' && ld.totals.units === 22 && ld.totals.orders === 2);
-check('ship confirm: order status shipped; door freed', W.orderStatus(s, o503).key === 'shipped' && s.doors[3].loadId === null);
+check('ship confirm: order status shipped; door freed', W.orderStatus(s, o503).key === 'shipped' && s.doors.filter(function (d) { return d.id === 'Outbound Door 4'; })[0].loadId === null);
 check('ship confirm: closing twice is refused', !W.closeLoad(s, ld.id, {}).ok);
 d = W.dashboard(s);
 check('dashboard: fill rate counts the short pick (22 of 24 = 91.7%)', d.fillRate === 91.7 && d.shortPicks === 1);

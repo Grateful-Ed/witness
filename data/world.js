@@ -4,7 +4,7 @@
    One small building, seeded on purpose: freight staged at the dock
    doors waiting for putaway, partial pallets of the same item in two
    different bins (they should be married up), one stored pallet that
-   needs breaking down, open orders to pick, and a truck at Door 1
+   needs breaking down, open orders to pick, and a truck at Inbound Door 1
    waiting on a receiving cross-check (that part lives in module one,
    index.html — this file is only the world it happens in).
 
@@ -20,13 +20,20 @@
 
   var SEED = {
 
-    /* Dock doors. Each door sits in a zone; state is what the door
-       is doing right now. */
+    /* Dock doors: eight, on two walls (William's sketch, 2026-11-02).
+       Inbound Door 1–4 take trucks in; Outbound Door 1–4 send loads
+       out. direction says which wall. Each door sits in a zone; state
+       is what the door is doing right now. Outbound Door 4 is the
+       loading door. */
     doors: [
-      { id: 'Door 1', zone: 'A', state: 'unloading', shipmentId: 'IN-1001' },
-      { id: 'Door 2', zone: 'A', state: 'staged', shipmentId: null },
-      { id: 'Door 3', zone: 'B', state: 'empty', shipmentId: null },
-      { id: 'Door 4', zone: 'C', state: 'loading', shipmentId: null }
+      { id: 'Inbound Door 1', direction: 'in', zone: 'A', state: 'unloading', shipmentId: 'IN-1001' },
+      { id: 'Inbound Door 2', direction: 'in', zone: 'A', state: 'staged', shipmentId: null },
+      { id: 'Inbound Door 3', direction: 'in', zone: 'B', state: 'empty', shipmentId: null },
+      { id: 'Inbound Door 4', direction: 'in', zone: 'C', state: 'staged', shipmentId: null },
+      { id: 'Outbound Door 1', direction: 'out', zone: 'A', state: 'empty', shipmentId: null },
+      { id: 'Outbound Door 2', direction: 'out', zone: 'A', state: 'empty', shipmentId: null },
+      { id: 'Outbound Door 3', direction: 'out', zone: 'B', state: 'empty', shipmentId: null },
+      { id: 'Outbound Door 4', direction: 'out', zone: 'C', state: 'loading', shipmentId: null }
     ],
 
     zones: ['A', 'B', 'C'],
@@ -66,10 +73,10 @@
 
     /* Pallets sitting at the doors, waiting to be put away. */
     staging: [
-      { id: 'STG-1', door: 'Door 2', desc: 'Paper towels — cases', qty: 18 },
-      { id: 'STG-2', door: 'Door 2', desc: 'Laundry detergent — cases', qty: 24 },
-      { id: 'STG-3', door: 'Door 1', desc: 'Canned peaches — cases', qty: 15 },
-      { id: 'STG-4', door: 'Door 4', desc: 'Bottled water — cases', qty: 30 }
+      { id: 'STG-1', door: 'Inbound Door 2', desc: 'Paper towels — cases', qty: 18 },
+      { id: 'STG-2', door: 'Inbound Door 2', desc: 'Laundry detergent — cases', qty: 24 },
+      { id: 'STG-3', door: 'Inbound Door 1', desc: 'Canned peaches — cases', qty: 15 },
+      { id: 'STG-4', door: 'Inbound Door 4', desc: 'Bottled water — cases', qty: 30 }
     ],
 
     /* Labor units — a labor unit is an employee. Six workers spread
@@ -84,7 +91,7 @@
       { id: 'u-sam', name: 'Sam Whitaker', role: 'manager', zone: 'A', currentTaskId: null }
     ],
 
-    /* Inbound: what is expected at the doors. IN-1001 is at Door 1
+    /* Inbound: what is expected at the doors. IN-1001 is at Inbound Door 1
        now — staged for a receiving task. lines are what the bill of
        lading says is on the truck: pallets × cases (or bags) per
        pallet. Receiving turns each pallet into a staged pallet at the
@@ -100,24 +107,24 @@
        the same as data/bol-loads.js and the printed fixture page
        test-data/bol-test-load-001.html, so that page summons it. */
     inbound: [
-      { id: 'IN-1001', door: 'Door 1', desc: 'Peach truck — Blue Ridge Freight', pallets: 6, status: 'staged at door',
+      { id: 'IN-1001', door: 'Inbound Door 1', desc: 'Peach truck — Blue Ridge Freight', pallets: 6, status: 'staged at door',
         lines: [{ desc: 'Canned peaches — cases', pallets: 6, perPallet: 40 }],
         bol: { bolNumber: 'BRFL-1001', carrier: 'Blue Ridge Freight Lines', shipper: 'Orchard Valley Canning',
           consignee: 'Witness Demo Warehouse', piecesClaimed: 240, totalWeightLb: 7200,
           lines: [{ name: 'Canned peaches', match: ['peach'], pieces: 240, weightLb: 7200 }] } },
-      { id: 'IN-1002', door: 'Door 3', desc: 'Household goods — Southeast Line', pallets: 10, status: 'expected today',
+      { id: 'IN-1002', door: 'Inbound Door 3', desc: 'Household goods — Southeast Line', pallets: 10, status: 'expected today',
         lines: [{ desc: 'Laundry detergent — cases', pallets: 4, perPallet: 30 },
                 { desc: 'Paper towels — cases', pallets: 6, perPallet: 20 }],
         bol: { bolNumber: 'SEL-1002', carrier: 'Southeast Line', shipper: 'Carolina Household Co.',
           consignee: 'Witness Demo Warehouse', piecesClaimed: 240, totalWeightLb: 4440,
           lines: [{ name: 'Laundry detergent', match: ['detergent', 'laundry'], pieces: 120, weightLb: 3000 },
                   { name: 'Paper towels', match: ['towel'], pieces: 120, weightLb: 1440 }] } },
-      { id: 'IN-1003', door: 'Door 2', desc: 'Paper goods — Blue Ridge Freight', pallets: 8, status: 'expected tomorrow',
+      { id: 'IN-1003', door: 'Inbound Door 2', desc: 'Paper goods — Blue Ridge Freight', pallets: 8, status: 'expected tomorrow',
         lines: [{ desc: 'Paper towels — cases', pallets: 8, perPallet: 24 }],
         bol: { bolNumber: 'BRFL-1003', carrier: 'Blue Ridge Freight Lines', shipper: 'Piedmont Paper Mills',
           consignee: 'Witness Demo Warehouse', piecesClaimed: 192, totalWeightLb: 2304,
           lines: [{ name: 'Paper towels', match: ['towel'], pieces: 192, weightLb: 2304 }] } },
-      { id: 'IN-1004', door: 'Door 2', desc: 'Janitorial supply — Blue Ridge Freight (Test Load 001)', pallets: 1, status: 'expected today',
+      { id: 'IN-1004', door: 'Inbound Door 2', desc: 'Janitorial supply — Blue Ridge Freight (Test Load 001)', pallets: 1, status: 'expected today',
         lines: [{ desc: 'Janitorial supply — cartons', pallets: 1, perPallet: 20 }],
         bol: { bolNumber: 'BRFL-TL-001', carrier: 'Blue Ridge Freight Lines', shipper: 'Piedmont Janitorial Supply',
           consignee: 'Witness Demo Warehouse', piecesClaimed: 20, totalWeightLb: 624,
@@ -128,16 +135,16 @@
     ],
 
     /* Outbound: orders to pick from the bins. door is where picked
-       freight is staged and loaded — Door 4 is the loading door. */
+       freight is staged and loaded — Outbound Door 4 is the loading door. */
     outbound: [
-      { id: 'ORD-501', status: 'open', door: 'Door 4', lines: [
+      { id: 'ORD-501', status: 'open', door: 'Outbound Door 4', lines: [
         { binId: 'B-04', desc: 'Rice — bags', qty: 10 },
         { binId: 'A-08', desc: 'Bottled water — cases', qty: 12 }
       ] },
-      { id: 'ORD-502', status: 'open', door: 'Door 4', lines: [
+      { id: 'ORD-502', status: 'open', door: 'Outbound Door 4', lines: [
         { binId: 'C-02', desc: 'Green beans — cases', qty: 8 }
       ] },
-      { id: 'ORD-503', status: 'open', door: 'Door 4', lines: [
+      { id: 'ORD-503', status: 'open', door: 'Outbound Door 4', lines: [
         { binId: 'B-02', desc: 'Tomato sauce — cases', qty: 6 },
         { binId: 'C-08', desc: 'Cereal — cases', qty: 10 }
       ] }

@@ -1,0 +1,187 @@
+/* =====================================================================
+   wms-map.css — the warehouse map (js/wms-map.js), the console home.
+   From William's sketch: pink = receiving / staging, yellow = bay
+   locations. Calm surfaces, strong landmark bands, AA text in both
+   light and dark. Scoped to .wm-surface so nothing else changes.
+   ===================================================================== */
+.wm-surface {
+  --wm-floor: #f7f6f2;
+  --wm-wall: #33404c;
+  --wm-ink: #1f2a33;
+  --wm-ink-2: #4d5965;
+  --wm-dock: #ffffff;
+  --wm-dock-busy: #e4eef6;
+  --wm-dock-edge: #6f8aa0;
+  --wm-pink: #fbe6ee;
+  --wm-pink-edge: #d6517f;
+  --wm-pink-ink: #8f2350;
+  --wm-yellow: #fdf3cf;
+  --wm-yellow-edge: #d9a514;
+  --wm-yellow-ink: #6b4f00;
+  --wm-bin: #ffffff;
+  --wm-bin-edge: #d8c88f;
+  --wm-bin-stocked: #ecd98f;
+  --wm-pallet: #b8466f;
+  --wm-pallet-out: #4d6f8c;
+  --wm-hold: #8a6d1f;
+  color: var(--wm-ink);
+  margin-bottom: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  .wm-surface {
+    --wm-floor: #171c21;
+    --wm-wall: #8b9aa8;
+    --wm-ink: #e8edf1;
+    --wm-ink-2: #b4c0ca;
+    --wm-dock: #222a31;
+    --wm-dock-busy: #26394a;
+    --wm-dock-edge: #7f9db5;
+    --wm-pink: #3a2230;
+    --wm-pink-edge: #e07aa2;
+    --wm-pink-ink: #f6bfd4;
+    --wm-yellow: #33301d;
+    --wm-yellow-edge: #d8b44a;
+    --wm-yellow-ink: #f3dc96;
+    --wm-bin: #262a22;
+    --wm-bin-edge: #5d5636;
+    --wm-bin-stocked: #5a5128;
+    --wm-pallet: #e07aa2;
+    --wm-pallet-out: #8fb3d1;
+    --wm-hold: #d8b44a;
+  }
+}
+
+/* ---------- the building ---------- */
+.wmap {
+  display: grid;
+  grid-template-columns: minmax(104px, 150px) minmax(70px, 1fr) minmax(0, 2.6fr) minmax(70px, 1fr) minmax(104px, 150px);
+  grid-template-rows: auto auto repeat(var(--wm-rows, 4), minmax(74px, 1fr));
+  column-gap: 14px;
+  padding: 0 0 16px;
+  background: var(--wm-floor);
+  border: 6px solid var(--wm-wall);
+  border-radius: 6px;
+}
+.wm-col-in { grid-column: 1; }
+.wm-col-rcv { grid-column: 2; }
+.wm-bays, .wm-bays-head { grid-column: 3; }
+.wm-band, .wm-bays, .wm-bays-head, .wm-cell { min-width: 0; }
+.wm-col-stg { grid-column: 4; }
+.wm-col-out { grid-column: 5; }
+
+.wm-wall-label {
+  grid-row: 1; align-self: end; padding: 8px 12px 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--wm-ink-2);
+}
+.wm-wall-label.wm-col-out { text-align: right; }
+
+/* The bands: drawn first, the lanes and bins sit on top. */
+.wm-band {
+  background: var(--wm-pink);
+  border-left: 3px solid var(--wm-pink-edge);
+  border-right: 3px solid var(--wm-pink-edge);
+  border-radius: 4px;
+}
+.wm-bays-head {
+  background: var(--wm-yellow);
+  border: 3px solid var(--wm-yellow-edge); border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+}
+.wm-bays {
+  background: var(--wm-yellow);
+  border: 3px solid var(--wm-yellow-edge); border-top: 0;
+  border-radius: 0 0 6px 6px;
+  padding: 0 12px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.wm-band-label {
+  display: block; padding: 8px 8px 6px; text-align: center;
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+}
+.wm-band .wm-band-label { color: var(--wm-pink-ink); }
+.wm-bays-head .wm-band-label { color: var(--wm-yellow-ink); }
+
+/* ---------- docks: openings in the wall ---------- */
+.wm-cell { display: flex; align-items: center; min-width: 0; }
+.wm-col-in .wm-dock { margin-left: -6px; border-left: 6px solid var(--wm-floor); border-radius: 0 6px 6px 0; }
+.wm-col-out .wm-dock { margin-right: -6px; border-right: 6px solid var(--wm-floor); border-radius: 6px 0 0 6px; text-align: right; }
+.wm-col-out { justify-content: flex-end; }
+.wm-dock {
+  display: flex; flex-direction: column; gap: 1px;
+  width: 100%; padding: 8px 10px;
+  background: var(--wm-dock);
+  border-top: 1px solid var(--wm-dock-edge); border-bottom: 1px solid var(--wm-dock-edge);
+}
+.wm-col-in .wm-dock { border-right: 1px solid var(--wm-dock-edge); }
+.wm-col-out .wm-dock { border-left: 1px solid var(--wm-dock-edge); }
+.wm-dock.busy { background: var(--wm-dock-busy); }
+.wm-dock-name { font-weight: 700; font-size: 12.5px; color: var(--wm-ink); }
+.wm-dock-state { font-size: 12px; color: var(--wm-ink-2); }
+.wm-dock-state b { font-weight: 600; color: var(--wm-ink); }
+
+/* ---------- lanes and pallets ---------- */
+.wm-lane { flex-wrap: wrap; align-content: center; justify-content: center; gap: 5px; padding: 6px; }
+.wm-pallet {
+  display: inline-block; width: 14px; height: 14px; border-radius: 2px;
+  background: var(--wm-pallet); vertical-align: middle;
+}
+.wm-pallet.out { background: transparent; border: 2px solid var(--wm-pallet-out); }
+.wm-pallet.out.packed { background: var(--wm-pallet-out); }
+.wm-pallet.held {
+  background: repeating-linear-gradient(45deg, var(--wm-pallet) 0 3px, transparent 3px 6px);
+  outline: 1px solid var(--wm-pallet);
+}
+
+/* ---------- bays ---------- */
+.wm-zone h3 {
+  margin: 0 0 5px; font-size: 12px; font-weight: 700; color: var(--wm-yellow-ink); letter-spacing: .03em;
+}
+.wm-bins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.wm-bin {
+  display: inline-grid; place-items: center; min-height: 30px; padding: 2px 4px;
+  font-size: 11.5px; font-weight: 600; font-family: var(--mono, monospace); color: var(--wm-ink-2);
+  background: var(--wm-bin); border: 1px solid var(--wm-bin-edge); border-radius: 3px;
+}
+.wm-bin.stocked { background: var(--wm-bin-stocked); color: var(--wm-ink); }
+.wm-bin.held {
+  background: repeating-linear-gradient(45deg, var(--wm-bin-stocked) 0 5px, var(--wm-bin) 5px 10px);
+  border-color: var(--wm-hold); color: var(--wm-ink);
+}
+
+/* ---------- legend ---------- */
+.wm-legend {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 2px 0;
+  font-size: 12px; color: var(--wm-ink-2);
+}
+.wm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.wm-legend .wm-bin { min-height: 14px; width: 18px; padding: 0; }
+.wm-key { display: inline-block; width: 18px; height: 12px; border-radius: 2px; }
+.wm-key.rcv { background: var(--wm-pink); border: 2px solid var(--wm-pink-edge); }
+.wm-key.bays { background: var(--wm-yellow); border: 2px solid var(--wm-yellow-edge); }
+
+/* The legend sits outside the building, so it needs its own ground in dark mode. */
+@media (prefers-color-scheme: dark) {
+  .wm-surface { background: var(--wm-floor); padding: 10px; border-radius: 8px; }
+}
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 760px) {
+  .wmap {
+    grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1.5fr) 22px minmax(0, 1fr);
+    column-gap: 5px;
+  }
+  .wm-dock { padding: 6px 5px; overflow-wrap: anywhere; }
+  .wm-dock-name, .wm-dock-state { font-size: 11px; }
+  .wm-wall-label { padding: 6px 6px 2px; font-size: 10px; letter-spacing: .04em; }
+  .wm-bays { padding: 0 6px 8px; }
+  .wm-bin { font-size: 10.5px; }
+  .wm-band-label { writing-mode: vertical-rl; padding: 8px 2px; font-size: 10px; margin: 0 auto; }
+  .wm-bays-head .wm-band-label { writing-mode: horizontal-tb; }
+  .wm-bins { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wm-lane { padding: 4px 2px; }
+  .wm-pallet { width: 10px; height: 10px; }
+}
+@media (max-width: 760px) {
+  .wm-band .wm-band-label { font-size: 9px; letter-spacing: .02em; padding: 6px 1px; }
+}
+.wm-loose { margin: 8px 2px 0; font-size: 12px; color: var(--wm-ink-2); }

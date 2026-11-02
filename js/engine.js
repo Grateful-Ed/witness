@@ -25,7 +25,7 @@
 
   /* Where picked freight waits for its truck when an order names no
      door: the building's loading door. */
-  var DEFAULT_OUTBOUND_DOOR = 'Door 4';
+  var DEFAULT_OUTBOUND_DOOR = 'Outbound Door 4';
 
   var SEED = null;
   if (typeof root !== 'undefined' && root.WitnessWorldSeed) SEED = root.WitnessWorldSeed;
@@ -689,6 +689,7 @@
     }
     var door = doorById(state, ship.door);
     if (!door) return { ok: false, reason: ship.id + ' has no door assigned.' };
+    if (door.direction === 'out') return { ok: false, reason: door.id + ' is an outbound door. ' + ship.id + ' comes in at an inbound door.' };
     if (door.shipmentId && door.shipmentId !== ship.id) {
       return { ok: false, reason: door.id + ' is busy with ' + door.shipmentId + '. Receive that one first.' };
     }

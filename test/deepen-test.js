@@ -45,7 +45,7 @@ var s = fresh();
 var in1 = E.shipmentById(s, 'IN-1001');
 check('inbound: IN-1001 starts "arrived" (at the door, waiting)', E.inboundStage(s, in1).key === 'arrived');
 check('inbound: IN-1002 starts "expected", words name the door',
-  E.inboundStage(s, E.shipmentById(s, 'IN-1002')).words === 'Expected today — Door 3.');
+  E.inboundStage(s, E.shipmentById(s, 'IN-1002')).words === 'Expected today — Inbound Door 3.');
 
 assignTo(s, 't-receive-IN-1001', 'u-marcus');
 check('inbound: receive task in hand → "receiving", names the unit',
@@ -57,9 +57,9 @@ var fromTruck = s.staging.filter(function (p) { return p.shipmentId === 'IN-1001
 check('inbound: receiving stages one pallet per BOL pallet (6)', fromTruck.length === 6);
 check('inbound: staged qty = BOL qty exactly (6 × 40 = 240)',
   stagedTotal(s, PEACH) === peachStaged + 240 && itemTotal(s, PEACH) === peachBins);
-check('inbound: Door 1 is "staged", no longer holds the truck', door(s, 'Door 1').state === 'staged' && door(s, 'Door 1').shipmentId === null);
+check('inbound: Inbound Door 1 is "staged", no longer holds the truck', door(s, 'Inbound Door 1').state === 'staged' && door(s, 'Inbound Door 1').shipmentId === null);
 check('inbound: stage "putaway", 6 of 6 left', E.inboundStage(s, in1).key === 'putaway' && /6 of 6 pallets/.test(E.inboundStage(s, in1).words));
-check('inbound: receive record says what was staged', /6 pallets \(240 cases\/bags\) staged at Door 1/.test(lastRecord(s).text));
+check('inbound: receive record says what was staged', /6 pallets \(240 cases\/bags\) staged at Inbound Door 1/.test(lastRecord(s).text));
 
 E.generateTasks(s);
 var truckPutaways = s.tasks.filter(function (t) { return t.type === 'putaway' && /^STG-IN-1001-/.test(t.stagingId); });
@@ -69,13 +69,13 @@ truckPutaways.forEach(function (t) { E.completeTask(s, t.id); });
 check('inbound: all 240 cases in bins after putaway, none created or lost',
   itemTotal(s, PEACH) === peachBins + 240 && stagedTotal(s, PEACH) === peachStaged);
 check('inbound: stage "closed"', E.inboundStage(s, in1).key === 'closed');
-check('inbound: Door 1 still "staged" while the old STG-3 pallet waits', door(s, 'Door 1').state === 'staged');
+check('inbound: Inbound Door 1 still "staged" while the old STG-3 pallet waits', door(s, 'Inbound Door 1').state === 'staged');
 E.completeTask(s, 't-putaway-STG-3');
-check('inbound: Door 1 goes "empty" when its last pallet leaves', door(s, 'Door 1').state === 'empty');
+check('inbound: Inbound Door 1 goes "empty" when its last pallet leaves', door(s, 'Inbound Door 1').state === 'empty');
 
 var arr = E.arriveShipment(s, 'IN-1002', 'u-sam');
-check('inbound: IN-1002 arrives at Door 3', arr.ok && door(s, 'Door 3').state === 'unloading' &&
-  door(s, 'Door 3').shipmentId === 'IN-1002' && E.inboundStage(s, E.shipmentById(s, 'IN-1002')).key === 'arrived');
+check('inbound: IN-1002 arrives at Inbound Door 3', arr.ok && door(s, 'Inbound Door 3').state === 'unloading' &&
+  door(s, 'Inbound Door 3').shipmentId === 'IN-1002' && E.inboundStage(s, E.shipmentById(s, 'IN-1002')).key === 'arrived');
 check('inbound: arrival is in the records with who', lastRecord(s).kind === 'arrive' && /Sam Whitaker/.test(lastRecord(s).text));
 check('inbound: arriving twice is refused', E.arriveShipment(s, 'IN-1002', 'u-sam').ok === false);
 E.generateTasks(s);
@@ -87,9 +87,12 @@ check('inbound: mixed BOL stages 4 + 6 pallets (120 detergent, 120 towels)',
     .reduce(function (n, p) { return n + p.qty; }, 0) === 120);
 
 var busy = fresh();
-E.shipmentById(busy, 'IN-1003').door = 'Door 1'; /* Door 1 holds IN-1001 */
+E.shipmentById(busy, 'IN-1003').door = 'Inbound Door 1'; /* Inbound Door 1 holds IN-1001 */
 var refused = E.arriveShipment(busy, 'IN-1003', 'u-sam');
-check('inbound: a door holding another truck refuses, plainly', !refused.ok && /Door 1 is busy with IN-1001/.test(refused.reason));
+check('inbound: a door holding another truck refuses, plainly', !refused.ok && /Inbound Door 1 is busy with IN-1001/.test(refused.reason));
+var wrongWall = fresh(); E.shipmentById(wrongWall, 'IN-1003').door = 'Outbound Door 1';
+var ww = E.arriveShipment(wrongWall, 'IN-1003', 'u-sam');
+check('inbound: a truck sent to an outbound door is refused, plainly', !ww.ok && /Outbound Door 1 is an outbound door/.test(ww.reason));
 
 /* ================= 2. OUTBOUND END TO END ========================= */
 var o = fresh();
@@ -99,8 +102,8 @@ check('outbound: stage words "Allocated — 2 lines reserved"',
   E.orderStage(o, E.orderById(o, 'ORD-501')).words === 'Allocated — 2 lines reserved, waiting to pick.');
 
 /* Rice: B-04 holds 30, ORD-501 reserves 10 → 20 free. */
-o.outbound.push({ id: 'ORD-900', status: 'open', door: 'Door 4', lines: [{ binId: 'B-04', desc: 'Rice — bags', qty: 25 }] });
-o.outbound.push({ id: 'ORD-901', status: 'open', door: 'Door 4', lines: [{ binId: 'B-04', desc: 'Rice — bags', qty: 15 }] });
+o.outbound.push({ id: 'ORD-900', status: 'open', door: 'Outbound Door 4', lines: [{ binId: 'B-04', desc: 'Rice — bags', qty: 25 }] });
+o.outbound.push({ id: 'ORD-901', status: 'open', door: 'Outbound Door 4', lines: [{ binId: 'B-04', desc: 'Rice — bags', qty: 15 }] });
 E.generateTasks(o);
 var o900 = E.orderById(o, 'ORD-900');
 check('outbound: a line bigger than free stock is short, not shorted',
@@ -111,14 +114,14 @@ check('outbound: short line gets no pick task', !o.tasks.some(function (t) { ret
 check('outbound: a line that fits the free stock is reserved (15 of 20)',
   E.orderById(o, 'ORD-901').status === 'allocated' && !!E.taskById(o, 't-pick-ORD-901-B-04'));
 
-o.outbound.push({ id: 'ORD-902', status: 'open', door: 'Door 4', lines: [{ binId: 'B-01', desc: PEACH, qty: 30 }] });
+o.outbound.push({ id: 'ORD-902', status: 'open', door: 'Outbound Door 4', lines: [{ binId: 'B-01', desc: PEACH, qty: 30 }] });
 E.generateTasks(o);
 check('outbound: own bin short → another usable bin fills the line (B-01 → A-01)',
   E.orderById(o, 'ORD-902').lines[0].binId === 'A-01' && E.orderById(o, 'ORD-902').lines[0].allocated === true);
 
 var heldAlloc = fresh();
 E.placeHold(heldAlloc, { binId: 'A-01' }, 'u-sam', 'water damage');
-heldAlloc.outbound.push({ id: 'ORD-903', status: 'open', door: 'Door 4', lines: [{ binId: 'A-01', desc: PEACH, qty: 30 }] });
+heldAlloc.outbound.push({ id: 'ORD-903', status: 'open', door: 'Outbound Door 4', lines: [{ binId: 'A-01', desc: PEACH, qty: 30 }] });
 E.generateTasks(heldAlloc);
 var o903 = E.orderById(heldAlloc, 'ORD-903').lines[0];
 check('outbound: held stock is never allocated (A-01 held → best free bin is B-01, 12)',
@@ -141,7 +144,7 @@ E.completeTask(o, 't-pick-ORD-501-B-04');
 check('outbound: one line picked → "picking 1 of 2"', E.orderStage(o, E.orderById(o, 'ORD-501')).words === 'Picking — 1 of 2 lines picked.');
 E.completeTask(o, 't-pick-ORD-501-A-08');
 var o501 = E.orderById(o, 'ORD-501');
-check('outbound: last pick → staged at Door 4', o501.status === 'staged at door' && o501.door === 'Door 4' &&
+check('outbound: last pick → staged at Outbound Door 4', o501.status === 'staged at door' && o501.door === 'Outbound Door 4' &&
   E.orderStage(o, o501).key === 'staged');
 check('outbound: bins dropped by exactly the picked qty', itemTotal(o, 'Rice — bags') === rice0 - 10 &&
   itemTotal(o, 'Bottled water — cases') === water0 - 12);
@@ -150,9 +153,9 @@ var load = E.taskById(o, 't-load-ORD-501');
 check('outbound: a load task is generated at the order\'s door (zone C)', !!load && load.type === 'load' && load.zone === 'C');
 check('outbound: load completes', E.completeTask(o, 't-load-ORD-501') === true);
 check('outbound: shipped, 22 loaded = 10 + 12 picked', o501.status === 'shipped' && o501.shippedQty === 22 &&
-  E.orderStage(o, o501).words === 'Shipped from Door 4 — 22 loaded.');
+  E.orderStage(o, o501).words === 'Shipped from Outbound Door 4 — 22 loaded.');
 check('outbound: shipping is a record entry', lastRecord(o).kind === 'complete' && lastRecord(o).type === 'load' &&
-  /Shipped ORD-501 from Door 4 — 22 loaded/.test(lastRecord(o).text));
+  /Shipped ORD-501 from Outbound Door 4 — 22 loaded/.test(lastRecord(o).text));
 check('outbound: shipped + in bins = what we started with',
   itemTotal(o, 'Rice — bags') + 10 === rice0 && itemTotal(o, 'Bottled water — cases') + 12 === water0);
 check('outbound: picking released the reservation (rice free = 30 − 10 picked − 15 reserved)',
@@ -202,12 +205,12 @@ check('holds: released pallet gets its putaway', !!E.taskById(hp, 't-putaway-STG
 /* ================= 4. INCIDENT UPDATES ============================= */
 var u = fresh();
 var freight = JSON.stringify(u.bins) + JSON.stringify(u.staging) + JSON.stringify(u.outbound);
-var r1 = E.addTaskUpdate(u, 't-putaway-STG-2', 'pallet spilled at Door 2', 'u-dee');
+var r1 = E.addTaskUpdate(u, 't-putaway-STG-2', 'pallet spilled at Inbound Door 2', 'u-dee');
 var t2 = E.taskById(u, 't-putaway-STG-2');
 check('updates: addTaskUpdate(state, taskId, text, byUnit) returns the record entry',
   !!r1 && r1.kind === 'incident' && r1.taskId === 't-putaway-STG-2' && r1.by === 'u-dee' && r1 === lastRecord(u));
-check('updates: the update rides the task', t2.notes.length === 1 && t2.notes[0].text === 'pallet spilled at Door 2' && t2.notes[0].by === 'u-dee');
-check('updates: record names who and the task', /Update on "Put away 24 × Laundry detergent — cases" from Dee Carter: pallet spilled at Door 2/.test(r1.text));
+check('updates: the update rides the task', t2.notes.length === 1 && t2.notes[0].text === 'pallet spilled at Inbound Door 2' && t2.notes[0].by === 'u-dee');
+check('updates: record names who and the task', /Update on "Put away 24 × Laundry detergent — cases" from Dee Carter: pallet spilled at Inbound Door 2/.test(r1.text));
 check('updates: an update moves no freight and closes nothing',
   JSON.stringify(u.bins) + JSON.stringify(u.staging) + JSON.stringify(u.outbound) === freight && t2.status === 'open');
 E.completeTask(u, 't-putaway-STG-2');
@@ -252,7 +255,7 @@ old.outbound.forEach(function (x) { delete x.door; });
 old.outbound[1].status = 'picked'; old.outbound[1].lines[0].done = true;
 E.upgradeState(old);
 check('upgrade: bills of lading filled from the seed', old.inbound.every(function (x) { return Array.isArray(x.lines); }));
-check('upgrade: orders get the loading door; "picked" becomes staged', old.outbound.every(function (x) { return x.door === 'Door 4'; }) &&
+check('upgrade: orders get the loading door; "picked" becomes staged', old.outbound.every(function (x) { return x.door === 'Outbound Door 4'; }) &&
   old.outbound[1].status === 'staged at door' && old.outbound[1].lines[0].pickedQty === 8);
 
 /* ================= the manager's summary reads the stages ========== */

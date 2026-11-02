@@ -122,7 +122,7 @@ check('records grew across completions', fresh.records.length >= 1 &&
    otherwise the emptiest-bin rule, unchanged. */
 function homeWorld(home, binSetup) {
   var s = engine.seedWorld();
-  s.staging = [{ id: 'STG-H', door: 'Door 3', desc: 'Test item', qty: 5, home: home }];
+  s.staging = [{ id: 'STG-H', door: 'Inbound Door 3', desc: 'Test item', qty: 5, home: home }];
   s.tasks = [];
   if (binSetup) binSetup(s);
   engine.generateTasks(s);
