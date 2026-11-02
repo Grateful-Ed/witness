@@ -257,3 +257,8 @@
 
 #holdTarget, #holdReason, #updateTask, #updateText { margin-bottom: 8px; }
 select.ask-input { font-size: 16px; }
+
+/* Scan a BOL (summon) — bol.css carries the list and tag styles. */
+.summon-next { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+.bol-summary.summon-none { color: var(--warn, #ffd27a); }
+#summonBox .bol-lines + .bol-lines { margin-top: 8px; }

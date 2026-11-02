@@ -852,6 +852,16 @@
       if (s.lines) return;
       SEED.inbound.forEach(function (x) { if (x.id === s.id && x.lines) s.lines = deepCopy(x.lines); });
     });
+    /* The file copy of each BOL (for the dock scan), filled by id; a
+       seed shipment the saved state has never heard of joins as it
+       is in the seed. Only within the same world. */
+    var sameWorld = (state.world || 'warehouse') === (SEED.world || 'warehouse');
+    (sameWorld ? SEED.inbound || [] : []).forEach(function (x) {
+      var have = null;
+      state.inbound.forEach(function (s) { if (s.id === x.id) have = s; });
+      if (!have) state.inbound.push(deepCopy(x));
+      else if (!have.bol && x.bol) have.bol = deepCopy(x.bol);
+    });
     state.outbound.forEach(function (o) {
       if (!o.door) o.door = DEFAULT_OUTBOUND_DOOR;
       if (o.status === 'picked') o.status = 'staged at door';
