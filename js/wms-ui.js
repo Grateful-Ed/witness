@@ -159,7 +159,8 @@
 
   var NAV = [
     { group: 'Overview' },
-    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'dashboard', label: 'Warehouse Map' },
+    { id: 'numbers', label: 'Shift Numbers' },
     { group: 'Inbound' },
     { id: 'dock', label: 'Dock & Yard' },
     { id: 'receiving', label: 'Receiving' },
@@ -254,13 +255,19 @@
 
   var VIEWS = {};
 
+  /* The home: the building itself (js/wms-map.js). No tables here. */
   VIEWS.dashboard = function () {
+    return head('Overview', 'Warehouse', 'The building, live from the desk record.') + window.WitnessWmsMap.html(state, W);
+  };
+
+  /* The numbers that used to be the home, one click away. */
+  VIEWS.numbers = function () {
     var d = W.dashboard(state);
     var k = function (label, v, sub, cls, href) {
       return '<a class="kpi ' + (cls || '') + '" href="#/' + href + '"><div class="k-label">' + esc(label) + '</div><div class="k-val">' +
         esc(v == null ? '—' : v) + '</div><div class="k-sub">' + esc(sub || '') + '</div></a>';
     };
-    var html = head('Overview', 'Operations Dashboard', 'Computed from the live desk record — tasks, flags, zone loads, shipments in and out. Nobody types these numbers.');
+    var html = head('Overview › Shift Numbers', 'Operations Dashboard', 'Computed from the live desk record — tasks, flags, zone loads, shipments in and out. Nobody types these numbers.');
     html += '<div class="kpis">' +
       k('Open tasks', d.tasks.open + d.tasks.assigned, d.tasks.assigned + ' in progress · ' + d.tasks.blocked + ' blocked', d.tasks.blocked ? 'warn' : '', 'queues') +
       k('Tasks done', d.tasks.done, 'this shift', 'ok', 'summary') +

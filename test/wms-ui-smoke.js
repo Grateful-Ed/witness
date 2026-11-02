@@ -71,11 +71,24 @@ server.listen(0, async function () {
   function st() { return page.evaluate(function () { return window.WitnessWmsPage.getState(); }); }
 
   await page.goto('http://localhost:' + port + '/wms.html');
-  await page.waitForSelector('.kpis');
+  await page.waitForSelector('.wmap');
   check('first open with no desk record seeds and POSTs once', posts === 1 && gets >= 1);
   await page.reload();
-  await page.waitForSelector('.kpis');
+  await page.waitForSelector('.wmap');
   check('second open is read-only (no POST on page open)', posts === 1);
+
+  /* Home is the warehouse map: the building, no tables. */
+  var home = await page.evaluate(function () {
+    var m = document.querySelector('#main');
+    return { docksIn: m.querySelectorAll('[data-place="dock"][data-side="in"]').length, docksOut: m.querySelectorAll('[data-place="dock"][data-side="out"]').length,
+      bins: m.querySelectorAll('[data-place="bin"]').length, rcv: !!m.querySelector('.wm-col-rcv.wm-band'), stg: !!m.querySelector('.wm-col-stg.wm-band'),
+      bays: !!m.querySelector('.wm-bays'), tables: m.querySelectorAll('table').length };
+  });
+  check('home is the map: 4 inbound docks, 4 outbound docks, receiving, staging, bays', home.docksIn === 4 && home.docksOut === 4 && home.rcv && home.stg && home.bays && home.bins === 24);
+  check('no data tables on the map', home.tables === 0);
+  await go('#/numbers');
+  check('the numbers moved one click away (Shift Numbers)', await page.$('.kpis') !== null);
+  await go('#/dashboard');
 
   var s = await st();
   check('loaded state carries the WMS layer', !!(s.wms && s.wms.appointments.length === 3));
@@ -155,7 +168,7 @@ server.listen(0, async function () {
   check('RF console hands the worker a task', !!cur);
 
   /* Every view renders */
-  var views = ['dashboard', 'dock', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'rf'];
+  var views = ['dashboard', 'numbers', 'dock', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'rf'];
   var bad = [];
   for (var i = 0; i < views.length; i++) {
     await go('#/' + views[i]);
