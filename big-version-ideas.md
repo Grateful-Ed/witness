@@ -481,3 +481,20 @@ the OS&D findings, the human's post. The enterprise grid stays as the
 record underneath, but the idea is the landmark, not the density. A
 judge opening the page should understand the concept from the design
 itself, before reading a word of documentation.
+
+
+## Controller navigation — the joystick is the glasses own (William, 2026-11-02)
+
+William's clarification of what the PlayStation controller is FOR in
+the glasses mockup: it stands in for the joystick on the real glasses.
+It navigates the glasses experience itself — focus travels between the
+floating HUD elements over the camera view, the way attention would
+move wearing the real thing. It is never a mouse substitute on a
+webpage: no cursor, no pointer, no scrolling the page, no clicking
+webpage buttons. Current build state (Faye, from the code): the stick
+is already quantized into discrete focus steps over an actions list
+(deadzone + step, wraps), X activates, R2 talks — pointer-free. What
+remains unproven is the FEEL on real hardware (the controller test has
+never run), and whether focus over HUD elements reads as moving
+through a place rather than tabbing through a page. That judgment is
+Segment 3 work (sim + POV polish), with this note as its spec.
