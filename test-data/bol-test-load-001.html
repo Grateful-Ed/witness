@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock BOL — Test Load 001</title>
+<!-- FIXTURE: a mock bill of lading for Witness test data. Not a real
+     shipment, carrier document, or company record. It matches
+     data/bol-loads.js (onFile). Show it on a screen and point the
+     phone at it, or open the rendered image, bol-test-load-001.png. -->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #fff; color: #000; }
+  body { font: 15px/1.35 Arial, Helvetica, sans-serif; }
+  .page { width: 1000px; margin: 0 auto; padding: 36px 40px 40px; background: #fff; }
+  .mock { text-align: center; font-size: 12px; letter-spacing: .08em; margin: 0 0 8px; }
+  h1 { margin: 0; font-size: 30px; letter-spacing: .04em; text-align: center; }
+  .sub { text-align: center; margin: 2px 0 18px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { border: 2px solid #000; padding: 7px 9px; vertical-align: top; }
+  th { background: #fff; font-size: 13px; text-transform: uppercase; text-align: left; }
+  .lab { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .big { font-size: 19px; font-weight: 700; }
+  .num { text-align: right; white-space: nowrap; }
+  .hm { text-align: center; font-weight: 700; }
+  .gap { height: 14px; }
+  .tot td { font-weight: 700; font-size: 17px; }
+  .sig td { height: 74px; }
+  .fine { font-size: 11px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="mock">MOCK DOCUMENT — WITNESS TEST DATA — NOT A REAL SHIPMENT</p>
+  <h1>STRAIGHT BILL OF LADING</h1>
+  <p class="sub">Short Form — Not Negotiable</p>
+
+  <table>
+    <tr>
+      <td style="width:50%"><span class="lab">Carrier</span><span class="big">Blue Ridge Freight Lines</span><br>SCAC: BRFL</td>
+      <td><span class="lab">BOL Number</span><span class="big">BRFL-TL-001</span></td>
+    </tr>
+    <tr>
+      <td><span class="lab">Date</span>10/31/2026</td>
+      <td><span class="lab">Trailer No. / Seal No.</span>BR-5531 / 0048812</td>
+    </tr>
+    <tr>
+      <td><span class="lab">Ship From (Shipper)</span><span class="big">Piedmont Janitorial Supply</span><br>400 Industrial Blvd<br>Greensboro, NC 27406</td>
+      <td><span class="lab">Ship To (Consignee)</span><span class="big">Witness Demo Warehouse</span><br>Receiving — Door 1<br>1200 Commerce Way, Charlotte, NC 28206</td>
+    </tr>
+    <tr>
+      <td><span class="lab">Load Reference</span>Test Load 001 — 1 pallet</td>
+      <td><span class="lab">Freight Charges</span>Prepaid</td>
+    </tr>
+  </table>
+
+  <div class="gap"></div>
+
+  <table>
+    <tr>
+      <th style="width:9%">Pieces</th>
+      <th style="width:9%">Type</th>
+      <th style="width:6%">HM</th>
+      <th>Description of Articles, Special Marks and Exceptions</th>
+      <th style="width:12%">Weight</th>
+      <th style="width:8%">Class</th>
+    </tr>
+    <tr>
+      <td class="num big">6</td><td>CTN</td><td class="hm"></td>
+      <td>All-purpose cleaner, concentrate — 4 × 1 gal per carton<br>Not regulated</td>
+      <td class="num">216 lb</td><td>55</td>
+    </tr>
+    <tr>
+      <td class="num big">4</td><td>CTN</td><td class="hm">X</td>
+      <td><strong>UN1950, Aerosols, flammable, 2.1, Limited Quantity</strong><br>Aerosol air freshener — 12 × 10 oz per carton</td>
+      <td class="num">88 lb</td><td>60</td>
+    </tr>
+    <tr>
+      <td class="num big">6</td><td>CTN</td><td class="hm"></td>
+      <td>Paper towels — 12 rolls per carton</td>
+      <td class="num">120 lb</td><td>100</td>
+    </tr>
+    <tr>
+      <td class="num big">4</td><td>CTN</td><td class="hm"></td>
+      <td>Dish soap — 12 × 32 oz per carton</td>
+      <td class="num">200 lb</td><td>55</td>
+    </tr>
+    <tr class="tot">
+      <td class="num">20</td><td colspan="3">TOTAL PIECES — 20 cartons on 1 pallet</td>
+      <td class="num">624 lb</td><td></td>
+    </tr>
+  </table>
+
+  <div class="gap"></div>
+
+  <table>
+    <tr>
+      <td style="width:50%"><span class="lab">Emergency Response Phone</span>800-555-0199 (mock)</td>
+      <td><span class="lab">Special Instructions</span>Keep aerosols upright. Do not double stack.</td>
+    </tr>
+    <tr class="sig">
+      <td><span class="lab">Shipper Signature / Date</span></td>
+      <td><span class="lab">Carrier Signature / Pickup Date</span></td>
+    </tr>
+  </table>
+
+  <p class="fine">This is to certify that the above-named materials are properly classified, packaged, marked and labeled, and are in proper condition for transportation according to the applicable regulations. — Mock text for Witness test data only.</p>
+</div>
+</body>
+</html>
