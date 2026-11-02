@@ -29,11 +29,13 @@ var server = http.createServer(function (req, res) {
   fs.createReadStream(f).pipe(res);
 });
 
-var kv = null, gets = 0, posts = 0, chats = [];
+var kv = null, gets = 0, posts = 0, chats = [], asrs = 0;
 function chatReply(body) {
   var sys = body.messages[0].content;
   var content;
-  if (/spoken count into numbers/.test(sys)) {
+  if (/Witness agent on one warehouse item/.test(sys)) {
+    content = 'Flagged at receipt: Tommy said "one sixteen cases, four crushed". It is on hold.';
+  } else if (/spoken count into numbers/.test(sys)) {
     content = JSON.stringify({ lines: [
       { line: 1, received: 116, damaged: 4, quote: 'detergent four pallets, one sixteen cases, four crushed' },
       { line: 2, received: 120, damaged: 0, quote: 'towels all six pallets, a hundred twenty' }] });
@@ -49,7 +51,7 @@ function chatReply(body) {
 
 server.listen(0, async function () {
   var port = server.address().port;
-  var browser = await pw.chromium.launch();
+  var browser = await pw.chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
   var page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   var errors = [];
   page.on('pageerror', function (e) { errors.push(String(e)); });
@@ -62,6 +64,7 @@ server.listen(0, async function () {
       if (req.method() === 'GET') { gets++; return route.fulfill(kv ? { status: 200, headers: cors, body: kv } : { status: 404, headers: cors, body: '{"ok":false}' }); }
       posts++; kv = req.postData(); return route.fulfill({ status: 200, headers: cors, body: '{"ok":true}' });
     }
+    if (u.pathname === '/asr') { asrs++; return route.fulfill({ status: 200, headers: cors, body: JSON.stringify({ text: 'I decided to keep it on hold until the carrier calls back.' }) }); }
     if (u.pathname === '/chat') { var b = JSON.parse(req.postData()); chats.push(b); return route.fulfill({ status: 200, headers: cors, body: JSON.stringify(chatReply(b)) }); }
     return route.fulfill({ status: 404, headers: cors, body: '{}' });
   });
@@ -189,6 +192,48 @@ server.listen(0, async function () {
   check('Witness page: events from the record, and the receiver\'s words verbatim', !!wp && wp.events >= 2 &&
     wp.lines.indexOf('detergent four pallets, one sixteen cases, four crushed. towels all six pallets, a hundred twenty') !== -1);
   check('opening a Witness page saves nothing', posts === postsBefore);
+
+  /* The agent in the chair (Task 3): ask, then tell by typing and by voice. */
+  var chatsBefore = chats.length;
+  await page.fill('#agQ', 'why is this flagged?');
+  await page.press('#agQ', 'Enter');
+  await page.waitForSelector('.ag-turn.ag-agent:not(.pending)');
+  var asked = await page.evaluate(function () {
+    var a = document.querySelector('.ag-turn.ag-agent:not(.pending)');
+    return { text: a.querySelector('p').textContent, check: (a.querySelector('.ag-check') || {}).textContent || '', you: (document.querySelector('.ag-you p') || {}).textContent };
+  });
+  var askBody = chats[chatsBefore] ? JSON.stringify(chats[chatsBefore].messages) : '';
+  check('agent: a question (Enter) is answered from this pallet\'s record', /Tommy said/.test(asked.text) && asked.you === 'why is this flagged?' &&
+    askBody.indexOf('ITEM RECORD — Pallet ' + palletId) !== -1 && askBody.indexOf('DESK QUESTION: why is this flagged?') !== -1 && /one sixteen cases, four crushed/.test(asked.check));
+  check('agent: asking saves nothing', posts === postsBefore);
+  await page.fill('#agQ', 'Called the carrier, photos by noon.');
+  await click('[data-act="agent-tell"]');
+  await page.waitForTimeout(300);
+  var told = await page.evaluate(function () {
+    var desk = Array.prototype.map.call(document.querySelectorAll('.wp-line.desk'), function (l) { return { words: l.querySelector('blockquote').textContent, src: l.querySelector('.wp-src').textContent }; });
+    var ev = Array.prototype.map.call(document.querySelectorAll('.wp-ev'), function (l) { return l.textContent; });
+    return { desk: desk, ev: ev, rec: !!document.querySelector('.ag-rec') };
+  });
+  s = await st();
+  var last = s.records[s.records.length - 1];
+  check('agent: a typed update lands in the transcript as a desk entry and saves once', posts === postsBefore + 1 && told.rec &&
+    told.desk.some(function (d) { return d.words === 'Called the carrier, photos by noon.' && /Desk · typed/.test(d.src); }) &&
+    told.ev.some(function (t) { return /Desk update/.test(t) && /photos by noon/.test(t); }) && last.kind === 'desk' && last.by === 'u-sam');
+  var box = await page.locator('#agTalk').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  await page.waitForFunction(function () { return Array.prototype.some.call(document.querySelectorAll('.wp-line.desk .wp-src'), function (x) { return /spoken/.test(x.textContent); }); }, null, { timeout: 8000 }).catch(function () {});
+  var spoke = await page.evaluate(function () {
+    var dec = Array.prototype.filter.call(document.querySelectorAll('.wp-ev.decision'), function (l) { return /carrier calls back/.test(l.textContent); })[0];
+    return { line: Array.prototype.some.call(document.querySelectorAll('.wp-line.desk'), function (l) { return /Desk · spoken/.test(l.textContent) && /keep it on hold until the carrier calls back/.test(l.textContent); }),
+      decided: dec ? dec.querySelector('.wp-who').textContent : '', law: !!document.querySelector('.ag-rec.decision') };
+  });
+  s = await st();
+  check('agent: a spoken decision lands as a desk entry and an event decided by the person', asrs === 1 && spoke.line && /Decided by Sam/.test(spoke.decided) && spoke.law &&
+    posts === postsBefore + 2 && !!s.staging.find(function (p) { return p.id === palletId; }));
+  postsBefore = posts;
   await go('#/dashboard');
   await page.focus('[data-place="bin"][data-id="C-08"]');
   await page.keyboard.press('Enter'); await page.waitForTimeout(200);

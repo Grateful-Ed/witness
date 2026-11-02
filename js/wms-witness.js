@@ -4,8 +4,10 @@
    Clicking an item on the warehouse map (a pallet, an order staged to
    ship, a bin, a dock) opens its Witness page. Top to bottom:
 
-     1. The agent's chair — reserved. The live agent arrives in the
-        next build; the chair is drawn empty and says so.
+     1. The agent's chair — the live agent (js/wms-agent.js, console
+        Task 3): ask it about this item, or tell it what happened.
+        What the desk user tells it joins this record as a desk entry
+        (transcript) and an event (a desk update, or a decision).
      2. Two panels:
         LEFT  — THE EVENTS: the important moments, in time order,
                 derived only from real records (the records ledger,
@@ -202,7 +204,20 @@
     return new RegExp('(^|[^A-Za-z0-9-])' + String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^A-Za-z0-9-])').test(String(text || ''));
   }
 
+  /* A desk entry (js/wms-agent.js deskEntry) is filed under the item it
+     was said on. It shows there, and on the pages that hold that item:
+     a pallet's shipment, the bin its putaway went to, an order's load. */
+  function deskAbout(state, s, r) {
+    var k = r.on;
+    if (!k) return false;
+    if (s.kind === 'dock') return k.doorId === s.id;
+    if (has(s.stagingIds, k.stagingId) || has(s.shipmentIds, k.shipmentId) || has(s.orderIds, k.orderId) ||
+        has(s.loadIds, k.loadId) || has(s.binIds, k.binId) || has(s.taskIds, k.taskId)) return true;
+    return !!k.stagingId && arr(state.tasks).some(function (t) { return t.stagingId === k.stagingId && has(s.taskIds, t.id); });
+  }
+
   function recordAbout(s, r) {
+    if (r.kind === 'desk') return false; /* told by deskAbout */
     if (r.kind === 'osd-closed' || r.kind === 'flag-closed') return false; /* told from the finding / flag itself */
     if (has(s.taskIds, r.taskId)) return true;
     if (has(s.shipmentIds, r.shipmentId)) return true;
@@ -236,6 +251,10 @@
     var out = [];
     var flags = flagsAbout(state, s);
     arr(state.records).forEach(function (r, i) {
+      if (r.kind === 'desk') {
+        if (deskAbout(state, s, r)) out.push({ ts: r.ts || null, verb: r.decision ? 'Decided' : 'Desk update', text: '"' + r.words + '"', by: r.by || null, decision: !!r.decision, kind: 'desk', desk: true, n: i });
+        return;
+      }
       if (!recordAbout(s, r) || isFlagUpdate(flags, r)) return;
       out.push({ ts: r.ts || null, verb: verbOf(r), text: r.text, by: r.by || null, decision: !!DECISION[r.kind], kind: r.kind || 'note', n: i });
     });
@@ -298,6 +317,12 @@
       if (!c.words || !(has(s.taskIds, c.taskId) || has(s.binIds, c.binId))) return;
       out.push({ ts: c.ts || null, by: c.by || null, words: c.words, source: 'voice', about: 'Count of ' + c.binId });
     });
+    /* Words the desk user typed or said to this item's agent. */
+    arr(state.records).forEach(function (r) {
+      if (r.kind !== 'desk' || !r.words || !deskAbout(state, s, r)) return;
+      out.push({ ts: r.ts || null, by: r.by || null, words: r.words, source: r.source === 'voice' ? 'desk-voice' : 'desk-typed',
+        about: (r.decision ? 'Decision at the desk' : 'Desk entry') + (r.on && (r.on.place !== s.kind || r.on.id !== s.id) ? ' on ' + r.on.place + ' ' + r.on.id : ''), desk: true, decision: !!r.decision });
+    });
     /* Words said with a short pick (kept in the record line itself). */
     arr(state.records).forEach(function (r) {
       if (!r.shortPick || !has(s.taskIds, r.taskId)) return;
@@ -334,7 +359,7 @@
     return '<span class="wp-who' + (decision ? ' decided' : '') + '">' + (decision ? 'Decided by ' : '') + '<b>' + esc(n) + '</b></span>';
   }
 
-  var SOURCE = { voice: 'Spoken', typed: 'Typed', update: 'Update', 'voice, corrected': 'Spoken, then corrected' };
+  var SOURCE = { voice: 'Spoken', typed: 'Typed', update: 'Update', 'voice, corrected': 'Spoken, then corrected', 'desk-typed': 'Desk · typed', 'desk-voice': 'Desk · spoken' };
 
   function eventsHtml(state, list) {
     if (!list.length) return '<p class="wp-empty">Nothing on the record yet. No event is shown until one happens.</p>';
@@ -349,7 +374,7 @@
     if (!list.length) return '<p class="wp-empty">Not said. No one has spoken or typed about this item on the record.</p>';
     return '<ol class="wp-transcript">' + list.map(function (x) {
       var n = who(state, x.by);
-      return '<li class="wp-line">' +
+      return '<li class="wp-line' + (x.desk ? ' desk' : '') + '">' +
         '<div class="wp-line-h"><b>' + esc(n || 'Not said who') + '</b> <span class="wp-src">' + esc(SOURCE[x.source] || x.source) + '</span>' +
         '<time datetime="' + esc(x.ts || '') + '">' + esc(time(x.ts)) + '</time></div>' +
         '<blockquote>' + esc(x.words) + '</blockquote>' +
@@ -357,7 +382,16 @@
     }).join('') + '</ol>';
   }
 
-  function html(state, place, id) {
+  /* The agent's chair. js/wms-agent.js draws it live; opts.agent is the
+     page's conversation ({ turns, busy, draft, me }). */
+  function agentLib() {
+    if (root.WitnessWmsAgent) return root.WitnessWmsAgent;
+    if (typeof require === 'function') { try { return require('./wms-agent.js'); } catch (e) { /* browser */ } }
+    return null;
+  }
+
+  function html(state, place, id, opts) {
+    opts = opts || {};
     var m = model(state, place, id);
     var s = m.subject;
     var out = '<div class="wp-page" data-witness="' + esc(place) + '" data-id="' + esc(id) + '">';
@@ -370,10 +404,9 @@
       '<h1>' + esc(s.title) + '</h1><p class="wp-sub">' + esc(s.sub) + '</p>' +
       (s.facts.length ? '<div class="wp-facts">' + s.facts.map(function (f) { return '<span class="wp-fact">' + esc(f) + '</span>'; }).join('') + '</div>' : '') +
       '</header>';
-    /* The agent's chair: reserved for the next build, drawn empty. */
-    out += '<section class="wp-agent" data-slot="agent" aria-label="The agent (coming next)">' +
-      '<div class="wp-agent-h">The agent <span class="wp-soon">Coming next</span></div>' +
-      '<p>Ask and tell this item\'s Witness here, by typing or speaking, with this record as its context. This chair is kept for it.</p></section>';
+    var A = agentLib();
+    out += A ? A.chairHtml(state, s, opts.agent) :
+      '<section class="wp-agent" data-slot="agent" aria-label="The agent"><div class="wp-agent-h">The agent</div><p>The agent is not loaded on this page.</p></section>';
     out += '<div class="wp-panels">' +
       '<section class="wp-panel" data-panel="events"><div class="wp-panel-h"><h2>The events</h2><span>' + m.events.length + ' on the record · oldest first</span></div>' + eventsHtml(state, m.events) + '</section>' +
       '<section class="wp-panel" data-panel="transcript"><div class="wp-panel-h"><h2>The full transcript</h2><span>' +

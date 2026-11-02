@@ -18,6 +18,7 @@
   var B = window.WitnessBol;
   var Mic = window.WitnessMic;
   var WP = window.WitnessWmsWitness;
+  var AG = window.WitnessWmsAgent;
 
   var params = new URLSearchParams(location.search);
   var state = null;
@@ -29,7 +30,8 @@
     rcvShip: null, rcvLines: null, rcvTranscript: '', rcvSource: 'typed', rcvPhoto: null, rcvPhotoFlags: [],
     selBin: null, zoneFilter: '', binSearch: '', taskType: '', taskZone: '', taskStatus: 'active',
     recKind: '', rfUnit: null, rfReply: '', rfHeard: '', rfPhoto: null, rfPhotoRead: null,
-    flagWords: '', ask: null, askBusy: false, camFor: null, pin: null
+    flagWords: '', ask: null, askBusy: false, camFor: null, pin: null,
+    agent: { key: null, turns: [], busy: false, draft: '' }   /* the Witness page's agent: this page's talk only */
   };
 
   var store = S.create({
@@ -271,13 +273,20 @@
   };
 
   /* The Witness page: one item's record (js/wms-witness.js). Routed
-     as #/witness/<place>/<id> from a click on the map. Read-only. */
+     as #/witness/<place>/<id> from a click on the map. Opening it is
+     read-only; only what the desk user tells the agent is saved. */
+  function agentFor(r) {
+    var key = r.place + '/' + r.id;
+    if (ui.agent.key !== key) ui.agent = { key: key, turns: [], busy: false, draft: '' };
+    return ui.agent;
+  }
   VIEWS.witness = function () {
     var r = WP.parseRoute(route());
     if (!r) return VIEWS.dashboard();
+    var ag = agentFor(r);
     return '<div class="crumbs">DC-01 › <a href="#/dashboard">Warehouse</a> › Witness page</div>' +
       (store.practice() ? '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record.</div>' : '') +
-      WP.html(state, r.place, r.id);
+      WP.html(state, r.place, r.id, { agent: { turns: ag.turns, busy: ag.busy, draft: ag.draft, me: me } });
   };
 
   function doorsHtml() {
@@ -1442,6 +1451,8 @@
     var scroll = window.scrollY;
     $('main').innerHTML = v();
     window.scrollTo(0, scroll);
+    var agLog = document.querySelector('.ag-log');
+    if (agLog) agLog.scrollTop = agLog.scrollHeight; /* the newest turn in view */
     wireMics(cur);
   }
 
@@ -1464,6 +1475,7 @@
     if (view === 'receiving' && $('rcvTalk')) Mic.attach($('rcvTalk'), micHandlers($('rcvTalk'), 'rcvStatus', receivingVoice));
     if (view === 'flags' && $('flTalk')) Mic.attach($('flTalk'), micHandlers($('flTalk'), 'flStatus', function (text) { ui.flagWords = text; fileFlag(text, 'voice'); }));
     if (view === 'rf' && $('rfTalk')) Mic.attach($('rfTalk'), micHandlers($('rfTalk'), 'rfStatus', rfVoice));
+    if (/^witness\//.test(view) && $('agTalk')) Mic.attach($('agTalk'), micHandlers($('agTalk'), 'agStatus', function (text) { agentSay(text, 'voice'); }));
     if (view === 'labor' && $('askTalk')) Mic.attach($('askTalk'), micHandlers($('askTalk'), 'askQ', function (text) { askBuilding(text); }));
   }
 
@@ -1529,6 +1541,48 @@
       ui.ask = { q: q, error: (e && e.userMessage) || 'No answer. Nothing was guessed.' };
     }).then(function () { ui.askBusy = false; render(); });
   }
+
+  /* ---------- the Witness page's agent -------------------------------- */
+
+  /* mode: 'ask' | 'tell' | undefined (decide from the words, locally:
+     a question is asked; anything else joins the record). */
+  function agentSay(text, source, mode) {
+    var r = WP.parseRoute(route());
+    if (!r || !AG) return;
+    var ag = agentFor(r);
+    var words = String(text || '').trim();
+    if (!words) { toast('Type or say something first.', true); return; }
+    if (ag.busy) return;
+    var kind = AG.intentOf(words);
+    var ask = mode ? mode === 'ask' : kind === 'ask';
+    ag.draft = '';
+    if (ask) {
+      ag.turns.push({ kind: 'ask', q: words, by: me, source: source });
+      ag.turns.push({ kind: 'pending' });
+      ag.busy = true; render();
+      AG.askItem({ state: state, place: r.place, id: r.id, question: words, fetch: window.fetch.bind(window) }).then(function (res) {
+        return { kind: 'answer', text: res.answer, check: res.check, context: res.context };
+      }, function (e) {
+        return { kind: 'error', text: (e && e.userMessage) || 'No answer. Nothing was guessed.' };
+      }).then(function (turn) {
+        if (ag.turns.length && ag.turns[ag.turns.length - 1].kind === 'pending') ag.turns.pop();
+        ag.turns.push(turn);
+        ag.busy = false; render(); focusAgent();
+      });
+      return;
+    }
+    var decision = kind === 'decision';
+    ag.busy = true; render();
+    act(function (s) { return AG.deskEntry(s, r.place, r.id, { by: me, words: words, source: source, decision: decision }); }, function (res) {
+      return (res.decision ? 'Recorded as ' + uname(me) + '\'s decision' : 'Added to the record as ' + uname(me) + '\'s words') + '.';
+    }).then(function (res) {
+      ag.busy = false;
+      if (res && res.ok) ag.turns.push({ kind: 'recorded', words: words, by: me, source: source, decision: res.decision });
+      else { ag.draft = words; ag.turns.push({ kind: 'not-recorded', text: (res && res.reason) || 'Not saved. Your words are back in the box.' }); }
+      render(); focusAgent();
+    });
+  }
+  function focusAgent() { var q = $('agQ'); if (q && document.activeElement !== q && !('ontouchstart' in window)) q.focus(); }
 
   /* ---------- camera ------------------------------------------------ */
 
@@ -1696,7 +1750,9 @@
       act(function (s) { var r = W.act(s, uid, { intent: 'confirm', task: cur, binId: rd.binLabel, heard: '' }); ui.rfReply = r.reply; return r.ok ? r : { ok: false, reason: r.reply }; }, null)
         .then(function () { ui.rfPhoto = null; ui.rfPhotoRead = null; render(); });
     },
-    'rf-goto-rcv': function (el) { ui.rcvShip = el.dataset.id; ui.rcvLines = null; }
+    'rf-goto-rcv': function (el) { ui.rcvShip = el.dataset.id; ui.rcvLines = null; },
+    'agent-ask': function () { agentSay(val('agQ'), 'typed', 'ask'); },
+    'agent-tell': function () { agentSay(val('agQ'), 'typed', 'tell'); }
   };
 
   /* A map item opens its Witness page. */
@@ -1707,6 +1763,9 @@
   }
 
   document.addEventListener('keydown', function (e) {
+    if (e.target && e.target.id === 'agQ' && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault(); agentSay(e.target.value, 'typed'); return;
+    }
     if (e.key !== 'Enter' && e.key !== ' ') return;
     var el = e.target.closest && e.target.closest('.wmap [data-open]');
     if (el && e.target === el) { e.preventDefault(); openItem(el); }
@@ -1732,6 +1791,7 @@
     }
     if (el.id === 'fBin') { ui.binSearch = el.value; var pos = el.selectionStart; render(); var n = $('fBin'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }
     if (el.id === 'flWords') ui.flagWords = el.value;
+    if (el.id === 'agQ') ui.agent.draft = el.value;
   });
 
   document.addEventListener('change', function (e) {
