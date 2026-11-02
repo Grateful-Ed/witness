@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Witness WMS — Desk Console</title>
+<link rel="stylesheet" href="css/wms.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button type="button" class="menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+  <div class="brand"><span class="mark">W</span> WITNESS WMS <small>Desk console</small></div>
+  <div class="facility">Facility <b>DC-01 · Witness Demo Warehouse</b></div>
+  <div class="top-spacer"></div>
+  <label class="who"><span>Signed in as</span> <select id="whoSel" aria-label="Signed in as"></select></label>
+  <span class="sync" id="syncPill">Loading…</span>
+  <span class="clock" id="clock"></span>
+</header>
+
+<div class="shell">
+  <nav class="sidenav" id="sidenav" aria-label="Modules"></nav>
+  <main class="main" id="main">
+    <div class="loading">Loading the desk record…</div>
+  </main>
+</div>
+
+<input type="file" id="camInput" accept="image/*" capture="environment" hidden>
+
+<script src="data/world.js"></script>
+<script src="data/wms-seed.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/converse.js"></script>
+<script src="js/bol.js"></script>
+<script src="js/warehouse-mic.js"></script>
+<script src="js/wms.js"></script>
+<script src="js/wms-ai.js"></script>
+<script src="js/wms-store.js"></script>
+<script src="js/wms-ui.js"></script>
+</body>
+</html>
