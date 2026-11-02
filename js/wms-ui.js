@@ -17,6 +17,7 @@
   var S = window.WitnessWmsStore;
   var B = window.WitnessBol;
   var Mic = window.WitnessMic;
+  var WP = window.WitnessWmsWitness;
 
   var params = new URLSearchParams(location.search);
   var state = null;
@@ -199,7 +200,7 @@
       if (n.group) { if (mgr || n.group === 'Floor' || n.group === 'Control') html += '<div class="nav-group">' + esc(n.group) + '</div>'; return; }
       if (!mgr && WORKER_VIEWS.indexOf(n.id) === -1) return;
       var b = n.badge ? n.badge() : 0;
-      html += '<a class="nav-item' + (n.id === cur ? ' active' : '') + '" href="#/' + n.id + '"><span>' + esc(n.label) + '</span>' +
+      html += '<a class="nav-item' + (n.id === cur || (n.id === 'dashboard' && /^witness\//.test(cur)) ? ' active' : '') + '" href="#/' + n.id + '"><span>' + esc(n.label) + '</span>' +
         (b ? '<span class="nav-badge' + (n.info ? ' info' : '') + '">' + b + '</span>' : '') + '</a>';
     });
     $('sidenav').innerHTML = html;
@@ -256,7 +257,17 @@
 
   /* The home: the building itself (js/wms-map.js). No tables here. */
   VIEWS.dashboard = function () {
-    return head('Overview', 'Warehouse', 'The building, live from the desk record.') + window.WitnessWmsMap.html(state, W);
+    return head('Overview', 'Warehouse', 'The building, live from the desk record. Open any dock, pallet, order or bin for its Witness page.') + window.WitnessWmsMap.html(state, W);
+  };
+
+  /* The Witness page: one item's record (js/wms-witness.js). Routed
+     as #/witness/<place>/<id> from a click on the map. Read-only. */
+  VIEWS.witness = function () {
+    var r = WP.parseRoute(route());
+    if (!r) return VIEWS.dashboard();
+    return '<div class="crumbs">DC-01 › <a href="#/dashboard">Warehouse</a> › Witness page</div>' +
+      (store.practice() ? '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record.</div>' : '') +
+      WP.html(state, r.place, r.id);
   };
 
   function doorsHtml() {
@@ -1414,7 +1425,8 @@
     var cur = route();
     renderWho();
     renderNav(cur);
-    var v = (LOOK_VIEWS[LOOK] || {})[cur] || VIEWS[cur] || VIEWS.dashboard;
+    var base = cur.split('/')[0];
+    var v = (LOOK_VIEWS[LOOK] || {})[base] || VIEWS[base] || VIEWS.dashboard;
     var scroll = window.scrollY;
     $('main').innerHTML = v();
     window.scrollTo(0, scroll);
@@ -1675,7 +1687,21 @@
     'rf-goto-rcv': function (el) { ui.rcvShip = el.dataset.id; ui.rcvLines = null; }
   };
 
+  /* A map item opens its Witness page. */
+  function openItem(el) {
+    if (!el || !WP) return false;
+    location.hash = WP.href(el.dataset.place, el.dataset.id);
+    return true;
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var el = e.target.closest && e.target.closest('.wmap [data-open]');
+    if (el && e.target === el) { e.preventDefault(); openItem(el); }
+  });
+
   document.addEventListener('click', function (e) {
+    if (openItem(e.target.closest('.wmap [data-open]'))) { e.preventDefault(); return; }
     var el = e.target.closest('[data-act]');
     if (!el) return;
     var fn = ACTIONS[el.dataset.act];
@@ -1711,7 +1737,11 @@
     }
   });
 
-  window.addEventListener('hashchange', function () { document.body.classList.remove('nav-open'); render(); });
+  window.addEventListener('hashchange', function () {
+    document.body.classList.remove('nav-open');
+    if (/^#\/?witness\//.test(location.hash)) window.scrollTo(0, 0);
+    render();
+  });
   $('menuBtn').addEventListener('click', function () { document.body.classList.toggle('nav-open'); });
 
   function tick() { var c = $('clock'); if (c) c.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }

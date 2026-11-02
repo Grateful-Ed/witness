@@ -18,8 +18,10 @@
    no direction, or a pallet or order not at a door on its own wall,
    is listed under the map as "not on a wall", never dropped.
 
-   Every place carries data-place / data-id hooks for the next tasks
-   (the Witness page, flags). Nothing here acts on a click.
+   Every place carries data-place / data-id hooks. The items a person
+   can open (a dock, a pallet, an order staged to ship, a bin) are
+   focusable (data-open); wms-ui.js routes a click or Enter on one to
+   that item's Witness page (js/wms-witness.js). Flags come next.
 
    model() is pure (node-testable); html() renders the model.
    ===================================================================== */
@@ -108,9 +110,12 @@
 
   /* ---------- rendering ------------------------------------------- */
 
+  /* An item a person can open: its Witness page. */
+  var OPEN = ' data-open tabindex="0" role="link"';
+
   function dockHtml(side, d) {
     if (!d) return '';
-    return '<div class="wm-dock wm-' + side + (d.busy ? ' busy' : '') + '" data-place="dock" data-side="' + side + '" data-id="' + esc(d.doorId) + '" title="' +
+    return '<div class="wm-dock wm-' + side + (d.busy ? ' busy' : '') + '" data-place="dock" data-side="' + side + '" data-id="' + esc(d.doorId) + '"' + OPEN + ' title="' +
       esc(d.name + ' — ' + d.word + (d.ref ? ' ' + d.ref : '')) + '">' +
       '<span class="wm-dock-name">' + esc(d.name) + '</span>' +
       '<span class="wm-dock-state">' + esc(d.word) + (d.ref ? ' <b>' + esc(d.ref) + '</b>' : '') + '</span>' +
@@ -118,17 +123,17 @@
   }
 
   function palletHtml(p) {
-    return '<span class="wm-pallet' + (p.held ? ' held' : '') + '" data-place="pallet" data-id="' + esc(p.id) + '" title="' +
+    return '<span class="wm-pallet' + (p.held ? ' held' : '') + '" data-place="pallet" data-id="' + esc(p.id) + '"' + OPEN + ' title="' +
       esc(p.id + ' · ' + p.qty + ' × ' + p.desc + (p.held ? ' · on hold' : '')) + '"></span>';
   }
 
   function orderHtml(o) {
-    return '<span class="wm-pallet out' + (o.packed ? ' packed' : '') + '" data-place="order" data-id="' + esc(o.id) + '" title="' +
+    return '<span class="wm-pallet out' + (o.packed ? ' packed' : '') + '" data-place="order" data-id="' + esc(o.id) + '"' + OPEN + ' title="' +
       esc(o.id + (o.customer ? ' · ' + o.customer : '') + (o.packed ? ' · packed' : ' · picked, not packed')) + '"></span>';
   }
 
   function binHtml(b) {
-    return '<span class="wm-bin' + (b.stocked ? ' stocked' : '') + (b.held ? ' held' : '') + '" data-place="bin" data-id="' + esc(b.id) + '" title="' +
+    return '<span class="wm-bin' + (b.stocked ? ' stocked' : '') + (b.held ? ' held' : '') + '" data-place="bin" data-id="' + esc(b.id) + '"' + OPEN + ' title="' +
       esc(b.id + ' — ' + b.title + (b.held ? ' · on hold' : '')) + '">' + esc(b.id) + '</span>';
   }
 
