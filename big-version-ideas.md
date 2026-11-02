@@ -498,3 +498,21 @@ remains unproven is the FEEL on real hardware (the controller test has
 never run), and whether focus over HUD elements reads as moving
 through a place rather than tabbing through a page. That judgment is
 Segment 3 work (sim + POV polish), with this note as its spec.
+
+
+## Cold-visitor law — the app must teach itself (William, 2026-11-02)
+
+William's ruling: treat the whole application like a product being
+sold. If he shares the links, strangers will open them cold — nobody
+will know what to do, and "what the hell is this" is a failed demo.
+Every public surface must answer, on the page itself: what is this,
+what do I do first, what just happened and what is next. No reliance
+on the README, the video, or William standing there explaining.
+Judges are cold visitors too. Applies to the entry page, warehouse,
+the WMS console (whichever look wins), and the glasses view. Shape
+per his standing design law: guidance as a dismissible layer (the ⓘ
+pattern), plus a clear first action on the surface — not paragraphs
+of prose. One open design point Faye raised: today all visitors share
+one state document; a practice/sandbox default for cold entries would
+keep strangers from mutating the demo state (the WMS console already
+has ?practice=1).
