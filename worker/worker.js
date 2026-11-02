@@ -23,6 +23,11 @@
      falls back to share/copy, so testers are never blocked.
    - GET /samples?key=... — lists stored scans (most recent first)
      when the key matches the SAMPLES_KEY secret and SCANS is bound.
+     Keys beginning with "__" are reserved and never listed.
+   - GET /state, POST /state — the whole warehouse state as ONE JSON
+     document under the reserved SCANS key "__warehouse_state__", so
+     the desk and the phone share one world (desk-phone brief, Step 1,
+     approved by William 2026-10-31).
      No key or secret value ever appears in this file; both live as
      Worker bindings/secrets set outside the repo.
 
@@ -52,6 +57,12 @@ const CHAT_MODEL = 'muse-spark-1.3';
    so the page can ask for what each step actually needs. */
 const MAX_TOKENS_CEILING = 16000;
 const MAX_CHAT_BODY_CHARS = 60000;
+/* A camera photo sent as a base64 data: URL does not fit in 60,000
+   chars (~45 KB of image). A request carrying a data: image part gets
+   this larger cap instead; text-only requests keep the 60,000 cap. */
+const MAX_CHAT_IMAGE_BODY_CHARS = 1500000;
+const STATE_KEY = '__warehouse_state__';
+const MAX_STATE_BODY_CHARS = 500000;
 
 function originAllowed(origin) {
   return !!origin && ALLOWED_ORIGINS.indexOf(origin) !== -1;
@@ -79,6 +90,18 @@ function preflight(request) {
   return new Response(null, { status: 204, headers: corsHeaders(origin) });
 }
 
+/* True when any message carries an image part whose URL is a data:
+   URL (a camera capture sent inline). */
+function hasDataImage(messages) {
+  return messages.some(function (m) {
+    if (!m || !Array.isArray(m.content)) return false;
+    return m.content.some(function (part) {
+      return !!part && part.type === 'image_url' && !!part.image_url &&
+        typeof part.image_url.url === 'string' && part.image_url.url.indexOf('data:') === 0;
+    });
+  });
+}
+
 function keyMissing(origin) {
   return json(500, { error: 'META_API_KEY secret is not set on the witness Worker yet' }, origin);
 }
@@ -99,7 +122,8 @@ async function handleChat(request, env) {
   if (!body || !Array.isArray(body.messages) || !body.messages.length) {
     return json(400, { error: 'body needs a non-empty "messages" array' }, origin);
   }
-  if (JSON.stringify(body).length > MAX_CHAT_BODY_CHARS) {
+  const cap = hasDataImage(body.messages) ? MAX_CHAT_IMAGE_BODY_CHARS : MAX_CHAT_BODY_CHARS;
+  if (JSON.stringify(body).length > cap) {
     return json(413, { error: 'request too large' }, origin);
   }
 
@@ -220,14 +244,18 @@ async function handleSave(request, env) {
   const scan = {
     load: (typeof body.load === 'string' && body.load) || null,
     /* kind: "scan" (a Step 1 spoken scan — the default, and what
-       every pre-Step-2 save is) or "osd" (a Step 2 OS&D report, whose
-       transcript is the report text and whose verdicts ride along). */
-    kind: body.kind === 'osd' ? 'osd' : 'scan',
+       every pre-Step-2 save is), "osd" (a Step 2 OS&D report, whose
+       transcript is the report text and whose verdicts ride along),
+       or "photo" (a phone camera capture's flags). */
+    kind: body.kind === 'osd' ? 'osd' : body.kind === 'photo' ? 'photo' : 'scan',
     transcript: body.transcript,
     flags: Array.isArray(body.flags) ? body.flags : [],
     savedAt: savedAt
   };
   if (Array.isArray(body.verdicts)) scan.verdicts = body.verdicts;
+  /* bol: a bill of lading read (the BOL camera slice), kept only when
+     it is a plain object. */
+  if (body.bol && typeof body.bol === 'object' && !Array.isArray(body.bol)) scan.bol = body.bol;
   const key = savedAt + '__' + loadLabel;
   try {
     await env.SCANS.put(key, JSON.stringify(scan));
@@ -253,7 +281,9 @@ async function handleSamples(request, env) {
   } catch (e) {
     return json(502, { ok: false, error: 'storage read failed' }, origin);
   }
-  const names = (listed.keys || []).map(function (k) { return k.name; }).sort().reverse().slice(0, 100);
+  const names = (listed.keys || []).map(function (k) { return k.name; })
+    .filter(function (n) { return n.indexOf('__') !== 0; }) /* reserved keys are not scans */
+    .sort().reverse().slice(0, 100);
   const scans = [];
   for (const name of names) {
     let value = null;
@@ -266,6 +296,52 @@ async function handleSamples(request, env) {
     scans.push({ key: name, scan: value });
   }
   return json(200, { ok: true, count: scans.length, scans: scans }, origin);
+}
+
+/* ---------------- /state ----------------
+   One JSON document: the whole warehouse. Stored and returned
+   verbatim. Validation is deliberately light — it must be a JSON
+   object. Auth posture matches /save (origin allow-list, no key);
+   the state is synthetic test data. Last save wins, by design. */
+
+async function handleStateGet(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  if (!originAllowed(origin)) return json(403, { error: 'origin not allowed' }, origin);
+  if (typeof env.SCANS === 'undefined') return storageMissing(origin);
+  let raw;
+  try {
+    raw = await env.SCANS.get(STATE_KEY);
+  } catch (e) {
+    return json(502, { ok: false, error: 'storage read failed' }, origin);
+  }
+  if (raw == null) return json(404, { ok: false, error: 'no state yet' }, origin);
+  return new Response(raw, {
+    status: 200,
+    headers: Object.assign({ 'Content-Type': 'application/json' }, corsHeaders(origin))
+  });
+}
+
+async function handleStatePost(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  if (!originAllowed(origin)) return json(403, { error: 'origin not allowed' }, origin);
+  const text = await request.text();
+  if (text.length > MAX_STATE_BODY_CHARS) return json(413, { ok: false, error: 'state too large' }, origin);
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch (e) {
+    return json(400, { ok: false, error: 'expected a JSON object' }, origin);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json(400, { ok: false, error: 'expected a JSON object' }, origin);
+  }
+  if (typeof env.SCANS === 'undefined') return storageMissing(origin);
+  try {
+    await env.SCANS.put(STATE_KEY, text);
+  } catch (e) {
+    return json(502, { ok: false, error: 'storage write failed' }, origin);
+  }
+  return json(200, { ok: true }, origin);
 }
 
 /* ---------------- router ---------------- */
@@ -286,6 +362,12 @@ export default {
       return handleSave(request, env);
     }
 
+    if (url.pathname === '/state') {
+      if (request.method === 'GET') return handleStateGet(request, env);
+      if (request.method === 'POST') return handleStatePost(request, env);
+      return json(405, { error: 'method not allowed' }, origin);
+    }
+
     if (url.pathname === '/samples') {
       if (request.method !== 'GET') {
         return json(405, { error: 'method not allowed' }, origin);
@@ -293,6 +375,6 @@ export default {
       return handleSamples(request, env);
     }
 
-    return json(404, { error: 'the witness Worker serves /chat, /asr, /save and /samples' }, origin);
+    return json(404, { error: 'the witness Worker serves /chat, /asr, /save, /state and /samples' }, origin);
   }
 };
