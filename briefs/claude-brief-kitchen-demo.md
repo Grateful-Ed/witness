@@ -44,11 +44,22 @@ Same shape as `data/world.js`, home scale:
   glasses start screen).
 - **NO inbound shipment.** The world starts with an empty counter.
   The shipment exists only after a receipt scan creates it (§3).
-- A **home-mapping table**: product keywords → home bin (milk →
-  Fridge, pasta → Pantry, ice cream → Freezer). This is master data,
-  like a warehouse's fixed-bin table. Ship it with sensible common
-  groceries; Faye extends it with William's real items during demo
-  prep.
+- A **destination rules table** — the demo logic William asked for
+  (2026-11-01): when the scan sees a product, its TYPE decides the
+  spot, and the putaway task is created for that spot. Exact item
+  rules win first (milk → Fridge, ice cream → Freezer), then
+  product-type rules:
+  - frozen anything (frozen meals, frozen vegetables, ice cream)
+    → **Freezer**
+  - refrigerated / dairy / deli / eggs / fresh meat → **Fridge**
+  - fresh produce → **Fridge** (fruit that lives out, like bananas,
+    can be an exact-item exception)
+  - dry goods (pasta, rice, cereal, cans, jars) → **Pantry**
+  - bread / bakery / snacks / coffee → **Cabinet A**
+  - household / cleaning / paper goods → **Cabinet B**
+  This is master data, like a warehouse's fixed-bin table. Ship it
+  with sensible common groceries; Faye extends it with William's
+  real items during demo prep.
 
 ### 2. One engine behavior: fixed home locations
 Putaway target selection prefers an item's `home` bin when that bin
@@ -65,18 +76,23 @@ exists, a capture is a receipt read**:
 - Send the frame through `/chat` with the BOL slice's structured-read
   pattern (reuse `js/bol.js`'s read + parse — do not fork it):
   extract the line items (name + quantity).
-- For each item, assign a home: the mapping table wins; for an
-  unknown item, META proposes a home from the kitchen's bin list.
-- Show the read in the META area as a confirmation list (item →
-  home), and **wait for the human**: the wearer says "looks right"
-  (or the confirm action) before anything is created; a correction
-  by voice ("coffee goes in Cabinet B") updates that item's home
-  first. Machine proposes, human decides — the law holds at intake.
-- On confirmation: create the "Grocery run" shipment at the Counter
-  from exactly those items, receive it, and let the existing task
-  generation produce the putaway tasks (each targeting its home per
-  §2). From here the run is the ordinary queue: the wearer works it
-  by voice through the glasses, exactly like the warehouse flow.
+- For each item, assign its spot automatically: exact item rule
+  first, product-type rule second, and for an item neither covers,
+  META classifies it from its name and picks the spot. The scan does
+  the whole job on its own — **no manual entry and no separate
+  confirmation gate** (William, 2026-11-01): the read populates the
+  items, assigns the spots, and creates the work in one flow.
+- In that same flow: create the "Grocery run" shipment at the
+  Counter from exactly those items, receive it, and let the
+  existing task generation produce one putaway task per item, each
+  targeting its assigned spot per §2. The META area shows what was
+  created (item → spot, task by task).
+- A wrong spot is corrected by voice after the fact ("coffee goes
+  in Cabinet B"): the item's task retargets and the correction is
+  logged on the record. The human can override anything — he just
+  isn't made to approve everything first.
+- From here the run is the ordinary queue: the wearer works it by
+  voice through the glasses, exactly like the warehouse flow.
 - After a shipment exists, captures in kitchen mode are the ordinary
   photo scan (flags), as in the warehouse world.
 - Honest failures: an unreadable receipt says so and creates nothing;
@@ -101,10 +117,12 @@ exists, a capture is a receipt read**:
   dispatch. `js/bol.js` is reused, not forked.
 
 ## Tests
-- New kitchen tests: the receipt read → items + homes (mapping hit,
-  model proposal for unknown, correction applied); confirmation
-  creates the shipment and one putaway task per item, each targeting
-  its home; unreadable receipt creates nothing.
+- New kitchen tests: the receipt read → items + spots by rule
+  (milk → Fridge, a frozen meal → Freezer, pasta → Pantry, cleaning
+  spray → Cabinet B; unknown item classified); the scan creates the
+  shipment and one putaway task per item automatically, each
+  targeting its assigned spot; a voice correction retargets a task;
+  unreadable receipt creates nothing.
 - All existing suites green: engine 29 (+ new), converse 68, deepen
   72, glasses 84, plus the BOL slice's tests.
 
