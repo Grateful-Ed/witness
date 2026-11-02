@@ -467,3 +467,17 @@ The held-bin confession passes the test: the bin is on the line because
 it is the source, and the hold is the news ("from B-04 — bin on hold").
 This law binds the warehouse page, Ask-the-building answers, and the
 glasses when that segment resumes.
+
+
+## The WMS console is a demonstration, not a product skin (William, 2026-11-01)
+
+William's direction for wms.html: "I just want this WMS to be set up to
+show how this idea works. So the UI design should reflect that." The
+console exists to make the Witness idea visible — two witnesses (the
+worker's voice and the camera's eye) compared, findings in the worker's
+own words, a human deciding. Its presentation should lead with those
+mechanics: the cross-check, the verdicts (Agree / Flag / Can't verify),
+the OS&D findings, the human's post. The enterprise grid stays as the
+record underneath, but the idea is the landmark, not the density. A
+judge opening the page should understand the concept from the design
+itself, before reading a word of documentation.
