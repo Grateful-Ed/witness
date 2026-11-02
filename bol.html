@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Witness — Read the bill of lading</title>
+<link rel="stylesheet" href="css/witness.css">
+<link rel="stylesheet" href="css/warehouse.css">
+<link rel="stylesheet" href="css/bol.css">
+</head>
+<body>
+<main class="wrap">
+
+  <header class="masthead">
+    <p class="kicker">Witness</p>
+    <h1>Read the bill of lading</h1>
+    <p class="lede">Point the phone at the bill of lading — paper or screen —
+    and the AI reads it. You see the photo before anything is sent. What it
+    reads is shown exactly as read; what it can't read says "not read".</p>
+    <p class="note"><a class="backlink" href="index.html">← Back to the receiving cross-check</a></p>
+  </header>
+
+  <section class="panel" id="loadBox">
+    <h2>The load</h2>
+    <p class="note">Pick the test load this bill of lading belongs to. The
+    match compares the BOL with this load's fixture data — what is known to
+    be on the pallet.</p>
+    <div class="chips" id="loadChips"></div>
+    <p class="note bol-fixture">No paper needed. Open the
+      <a href="test-data/bol-test-load-001.html" target="_blank" rel="noopener">test BOL page</a>
+      or its <a href="test-data/bol-test-load-001.png" target="_blank" rel="noopener">image</a>
+      on another screen and point the camera at it.</p>
+  </section>
+
+  <section class="panel" id="captureBox">
+    <h2>The photo</h2>
+    <input id="camInput" class="bol-file" type="file" accept="image/*" capture="environment">
+    <label class="talk bol-btn" for="camInput">Take a photo of the BOL</label>
+    <input id="fileInput" class="bol-file" type="file" accept="image/*">
+    <p class="hint"><label class="bol-pick" for="fileInput">or pick an image from the phone</label></p>
+
+    <figure id="previewBox" class="bol-preview" hidden>
+      <img id="preview" alt="The photo of the bill of lading that will be sent">
+      <figcaption class="note" id="previewNote"></figcaption>
+    </figure>
+    <button type="button" id="readBtn" class="crosscheck-btn bol-read" hidden>Read this BOL</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div id="error" class="error" role="alert" hidden></div>
+  </section>
+
+  <section class="panel" id="saysBox" hidden>
+    <h2>What the BOL says</h2>
+    <p class="note">Exactly as read from the photo.</p>
+    <ul class="bol-lines" id="saysList"></ul>
+  </section>
+
+  <section class="panel" id="matchBox" hidden>
+    <h2>The match</h2>
+    <p class="note" id="matchAgainst"></p>
+    <p class="bol-summary" id="matchSummary"></p>
+    <h3 class="heard-label">The pallet against the BOL</h3>
+    <ul class="bol-lines" id="countList"></ul>
+    <h3 class="heard-label">The BOL against the one on file</h3>
+    <ul class="bol-lines" id="idList"></ul>
+    <p class="note bol-law">Findings, not a decision. A person decides what
+    happens to this load.</p>
+    <button type="button" id="saveBtn" class="crosscheck-btn">Save with the load's record</button>
+    <p id="saveStatus" class="status" role="status" aria-live="polite"></p>
+  </section>
+
+</main>
+<script src="data/bol-loads.js"></script>
+<script src="js/bol.js"></script>
+<script src="js/bol-page.js"></script>
+</body>
+</html>
