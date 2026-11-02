@@ -365,7 +365,7 @@
      made to read well aloud — "12 × Rice" → "12 of Rice", dashes and
      slashes become pauses. Status lines ("…", "Reading the photo…")
      are not spoken. Returns '' when there is nothing to say. */
-  var SILENT = /^(…|\.\.\.|Reading the photo…)$/;
+  var SILENT = /^(…|\.\.\.|Reading the photo…|Reading the receipt…)$/;
   function speakable(lines) {
     var said = (lines || []).filter(function (l) { return l && !SILENT.test(String(l).trim()); }).join(' ');
     return said
@@ -407,9 +407,17 @@
      browser's localStorage today, shared with the warehouse page in
      this browser). Re-point these two functions at js/state.js when
      the desk-phone build lands. */
+  /* World (js/world-select.js): a state saved by the other world is
+     not used — reseeded, and the start screen says so. */
+  var W = root.WitnessWorlds, K = root.WitnessKitchen, B = root.WitnessBol;
   var Store = {
     load: function () {
       var s = E.loadState();
+      if (W) {
+        var ws = W.checkWorld(s, W.current);
+        s = ws.state;
+        if (ws.notice) W.announce(ws.notice, opened ? null : 'start');
+      }
       if (!s) { s = E.seedWorld(); E.generateTasks(s); E.saveState(s); return s; }
       E.upgradeState(s);
       E.generateTasks(s);
@@ -536,6 +544,16 @@
       return;
     }
     employee(null);
+    /* Kitchen: "coffee goes in Cabinet B" retargets that item's task. */
+    var corr = K && K.isKitchen(state) ? K.parseCorrection(text) : null;
+    if (corr) {
+      state = Store.load(); /* fresh before acting */
+      var cr = K.applyCorrection(E, state, corr, wearerId, text);
+      if (cr.ok) Store.save(state);
+      say(cr.lines);
+      renderChips();
+      return;
+    }
     var match = C.matchIntent(text);
     if (match.intent === 'unknown') { askFree(text); return; } /* not a command: let META answer */
     state = Store.load(); /* fresh before acting */
@@ -639,6 +657,29 @@
     });
   }
 
+  /* Kitchen, before any shipment exists: the capture is the receipt
+     read, and the read creates the Grocery run and its tasks in one
+     flow (js/kitchen.js, reading through js/bol.js). */
+  function receiptIntake(src) {
+    if (!K || !B) { say(['Receipt reader not loaded — nothing created.']); return Promise.resolve(); }
+    var bodies = [], body = null;
+    for (var i = 0; i < K.RECEIPT_STEPS.length; i++) {
+      var st = K.RECEIPT_STEPS[i];
+      body = K.receiptBody(B, drawTo(src.el, src.w, src.h, st.max).toDataURL('image/jpeg', st.quality));
+      if (body.length <= K.RECEIPT_CAP) break;
+    }
+    say(['Reading the receipt…']);
+    return K.readReceipt(B, fetch.bind(window), C.CHAT_URL, body).then(function (receipt) {
+      state = Store.load(); /* fresh before acting */
+      var res = K.createRun(E, state, receipt, wearerId);
+      if (res.ok) Store.save(state);
+      say(K.intakeLines(res));
+      renderChips();
+    }, function (e) {
+      say([((e && e.userMessage) || 'No read — something went wrong.') + ' Nothing created.']);
+    });
+  }
+
   function capture() {
     currentSource().then(function (src) {
       var shown = drawTo(src.el, src.w, src.h, SHOW_MAX);
@@ -649,10 +690,11 @@
       clearTimeout(captureTimer);
       captureTimer = setTimeout(function () { pic.classList.add('gone'); }, 4000);
 
-      /* Scan copy: step down until the body fits the /chat cap. */
-      var body = fittedBody(src, scanBody);
       showText();
       employee(null);
+      if (K && K.isIntakeMode(state = Store.load())) return receiptIntake(src);
+      /* Scan copy: step down until the body fits the /chat cap. */
+      var body = fittedBody(src, scanBody);
       say(['Reading the photo…']);
       return sendScan(fetch.bind(window), C.CHAT_URL, body).then(function (res) {
         say(res.flags ? flagLines(res.flags) : [res.text]);

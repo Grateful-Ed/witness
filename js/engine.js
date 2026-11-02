@@ -233,16 +233,30 @@
 
   function haveTask(state, id) { return !!taskById(state, id); }
 
+  /* Fixed home locations (dedicated storage, a real WMS concept): a
+     staged item may name its home bin. The home wins when it exists,
+     is not held, and is free — empty, or a mixed bin (one built to
+     hold many different items, like a fridge). Otherwise null, and
+     the caller falls back to the emptiest-bin rule unchanged. */
+  function homeBinFor(state, p) {
+    if (!p || !p.home) return null;
+    var b = binById(state, p.home);
+    if (!b || isHeldBin(b)) return null;
+    if (b.contents.length && !b.mixed) return null;
+    return b;
+  }
+
   function generateTasks(state) {
     /* Putaway: every pallet staged at a door wants a bin in the
-       door's zone — the emptiest usable one. */
+       door's zone — its home bin when that is free, else the
+       emptiest usable one. */
     state.staging.forEach(function (p) {
       var id = 't-putaway-' + p.id;
       if (haveTask(state, id)) return;
       if (p.hold) return; /* a held pallet waits; released, it gets its task */
       var door = doorById(state, p.door);
       var zone = door ? door.zone : null;
-      var target = zone ? emptiestBin(state, zone, null) : null;
+      var target = homeBinFor(state, p) || (zone ? emptiestBin(state, zone, null) : null);
       state.tasks.push({
         id: id, type: 'putaway', zone: zone,
         title: 'Put away ' + p.qty + ' × ' + p.desc,
@@ -866,6 +880,7 @@
     saveState: saveState,
     resetState: resetState,
     generateTasks: generateTasks,
+    homeBinFor: homeBinFor,
     nextTaskFor: nextTaskFor,
     completeTask: completeTask,
     zoneStats: zoneStats,

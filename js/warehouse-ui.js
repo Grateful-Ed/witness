@@ -11,7 +11,15 @@
   var E = window.WitnessEngine;
   var C = window.WitnessConverse; /* the conversational layer */
 
+  /* Which world this page runs (js/world-select.js): a state saved
+     by the other world is not used — the page reseeds and says so. */
+  var W = window.WitnessWorlds;
   var state = E.loadState();
+  if (W) {
+    var ws = W.checkWorld(state, W.current);
+    state = ws.state;
+    if (ws.notice) W.announce(ws.notice);
+  }
   if (!state) {
     state = E.seedWorld();
     E.generateTasks(state);
