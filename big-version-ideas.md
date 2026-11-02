@@ -516,3 +516,26 @@ of prose. One open design point Faye raised: today all visitors share
 one state document; a practice/sandbox default for cold entries would
 keep strangers from mutating the demo state (the WMS console already
 has ?practice=1).
+
+
+## The center — AI first, glasses the hook, WMS the stage (William, 2026-11-02)
+
+William's alignment clarification, verbatim in substance: the goal
+of the hackathon is to create something new and potentially great
+using AI — specifically Meta's AI models. The center focus of the
+entire application is how the AI is used. The glasses are the
+delicious fudge filling — the hook that pulls a person in ("oh, AI
+with a WMS, cool — you can talk to it — oh, you designed this around
+the Meta smart glasses, that's genius"). The WMS is NOT the point
+and not the product: there are plenty of great WMSs already, he is
+not trying to beat them. Witness is a tool that makes them better —
+an AI layer that highlights what the AI and the glasses do. "I don't
+want us to worry so much about the WMS itself."
+
+Consequences Faye logged with it: judge the console looks by which
+one puts the AI moments in lights (the comparison, the spoken
+finding, asking the building); the front door and the explainer lead
+with the AI, WMS second; no more WMS breadth for its own sake before
+Wednesday; submission framing is "an AI witness layer for the
+warehouse, designed for Meta smart glasses" — an augmentation of the
+WMS a company already runs, never "a new WMS."
