@@ -539,3 +539,10 @@ with the AI, WMS second; no more WMS breadth for its own sake before
 Wednesday; submission framing is "an AI witness layer for the
 warehouse, designed for Meta smart glasses" — an augmentation of the
 WMS a company already runs, never "a new WMS."
+
+
+**Vision film — SCRAPPED (William, 2026-11-02 02:06).** Four test clips
+were generated (workers + POV); William judged they won't work and the
+route too hard. The film is off the plan entirely. Nothing was embedded
+or published. The cold-visitor law and the center ruling above stand
+independent of it.
