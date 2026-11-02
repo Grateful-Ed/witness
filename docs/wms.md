@@ -123,6 +123,18 @@ On the desk record: the Worker's existing `/state` document
 
 No Worker change was needed.
 
+## Flow-sliced task views (Console Task 5)
+
+A task view never shows the whole building. The inbound pages (Dock &
+Yard, Receiving, OS&D, Putaway) stack Inbound Docks → Receiving Bay →
+Bay Locations, top to bottom. The outbound pages (Picking, Pack & Ship)
+stack Bay Locations → Staging → Outbound Docks. Each page's own panels
+sit under the stage they concern; every action is unchanged. Only bins
+with a reason show: a putaway destination or pick source, or a hold.
+Code: `slice()` / `sliceHtml()` in js/wms-map.js, `flow()` in
+js/wms-ui.js, styles in css/wms-flow.css. In the Floor look these pages
+no longer add that look's small whole-building map.
+
 ## Tests
 
 ```
@@ -131,6 +143,7 @@ node test/wms-ai-test.js     # 20  — Meta API calls, stubbed /chat
 node test/wms-store-test.js  # 15  — desk-record seam, stubbed fetch
 node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
 node test/wms-witness-test.js # 43 — the Witness page: events, transcript, empty-honest
+node test/wms-flow-test.js   # 36  — flow-sliced task views (inbound / outbound)
 node test/wms-ui-smoke.js    # 28  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 

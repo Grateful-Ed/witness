@@ -255,6 +255,16 @@
 
   var VIEWS = {};
 
+  /* Task views are flow-sliced (Console Task 5): the page's panels ride
+     under the stage of the building they concern, freight flowing down
+     the screen — inbound docks → receiving → bays; bays → staging →
+     outbound docks. The slice is drawn by js/wms-map.js. */
+  function flow(dir, bands) {
+    var a = {};
+    Object.keys(bands).forEach(function (k) { a[k] = bands[k].join(''); });
+    return window.WitnessWmsMap.sliceHtml(state, W, dir, a);
+  }
+
   /* The home: the building itself (js/wms-map.js). No tables here. */
   VIEWS.dashboard = function () {
     return head('Overview', 'Warehouse', 'The building, live from the desk record. Open any dock, pallet, order or bin for its Witness page.') + window.WitnessWmsMap.html(state, W);
@@ -315,10 +325,10 @@
       '<div class="field"><label>Trailer</label><input id="apTrailer" type="text" placeholder="e.g. SEL-2208"></div>' +
       '</div><div class="form-actions"><button class="btn primary" data-act="schedule">Schedule / reschedule</button></div>'
       : '<p class="empty">Every inbound shipment is already at a door or received.</p>';
-    html += panel('Dock doors', doorsHtml());
-    html += panel('Appointments', table(['Appt', 'Shipment', 'BOL', 'Carrier', 'Trailer', 'Door', 'Window', 'Status', ''], rows, 'No appointments.'), null, true);
-    html += panel('Schedule a door', form, 'conflicts on the same door are refused');
-    return html;
+    return html + flow('in', { docks: [
+      panel('Dock doors', doorsHtml()),
+      panel('Appointments', table(['Appt', 'Shipment', 'BOL', 'Carrier', 'Trailer', 'Door', 'Window', 'Status', ''], rows, 'No appointments.'), null, true),
+      panel('Schedule a door', form, 'conflicts on the same door are refused')] });
   };
 
   /* ---- Receiving ---- */
@@ -331,7 +341,7 @@
         '</td><td class="num">' + esc(s.pallets) + '</td><td>' + stageChip(st) + ' <span class="hint">' + esc(st.words) + '</span></td><td class="actions">' +
         (s.status === 'staged at door' ? '<button class="btn small primary" data-act="rcv-open" data-id="' + esc(s.id) + '">Receive</button>' : '') + '</td></tr>';
     });
-    html += panel('Inbound shipments (ASN / BOL on file)', table(['Shipment', 'BOL #', 'Description', 'Door', 'Pallets', 'Status', ''], rows), null, true);
+    var bands = { docks: [panel('Inbound shipments (ASN / BOL on file)', table(['Shipment', 'BOL #', 'Description', 'Door', 'Pallets', 'Status', ''], rows), null, true)], rcv: [] };
 
     var s = ui.rcvShip ? E.shipmentById(state, ui.rcvShip) : null;
     if (s && s.status === 'staged at door') {
@@ -360,17 +370,17 @@
         }).join('') + '</div>' : '') +
         '<div class="form-actions"><button class="btn primary" data-act="rcv-post">Post receipt</button><button class="btn" data-act="rcv-clear">Clear</button></div>' +
         '<p class="law">The machine fills in what it heard; a human checks the numbers and posts. Nothing posts on its own.</p>';
-      html += panel('Receive ' + s.id + ' — ' + s.desc, body, 'counts against the BOL on file');
+      bands.rcv.push(panel('Receive ' + s.id + ' — ' + s.desc, body, 'counts against the BOL on file'));
     } else {
-      html += panel('Receive', '<p class="empty">Check a trailer in at Dock & Yard, then pick a shipment at a door above.</p>');
+      bands.rcv.push(panel('Receive', '<p class="empty">Check a trailer in at Dock & Yard, then pick a shipment at a door above.</p>'));
     }
     var rr = state.wms.receipts.slice().reverse().map(function (r) {
       var units = 0, dmg = 0; r.lines.forEach(function (l) { units += l.received; dmg += l.damaged; });
       return '<tr><td class="id">' + esc(r.id) + '</td><td class="id">' + esc(r.shipmentId) + '</td><td class="id">' + esc(r.bolNumber || '—') + '</td><td class="num">' + units + '</td><td class="num">' + dmg +
         '</td><td>' + esc(r.source) + '</td><td>' + esc(uname(r.by)) + '</td><td class="id">' + time(r.ts) + '</td><td class="num">' + r.osdIds.length + '</td></tr>';
     });
-    html += panel('Receipts posted', table(['Receipt', 'Shipment', 'BOL', 'Units', 'Dmg', 'Source', 'Receiver', 'Time', 'OS&D'], rr, 'No receipts yet.'), null, true);
-    return html;
+    bands.rcv.push(panel('Receipts posted', table(['Receipt', 'Shipment', 'BOL', 'Units', 'Dmg', 'Source', 'Receiver', 'Time', 'OS&D'], rr, 'No receipts yet.'), null, true));
+    return html + flow('in', bands);
   };
 
   /* ---- OS&D ---- */
@@ -383,8 +393,7 @@
         '</td><td><span class="quote">' + esc(f.words) + '</span></td><td>' + (f.status === 'open' ? chip('Open', 'bad') : chip('Closed', 'ok') + (f.note ? ' <span class="hint">' + esc(f.note) + '</span>' : '')) +
         '</td><td class="actions">' + (f.status === 'open' ? '<button class="btn small" data-act="osd-close" data-id="' + esc(f.id) + '">Close…</button>' : '') + '</td></tr>';
     });
-    html += panel('Findings', table(['ID', 'Shipment', 'Type', 'Item', 'Qty', 'Exp', 'Rec', 'Words on record', 'Status', ''], rows, 'No OS&D findings. Receive a shipment to create them.'), null, true);
-    return html;
+    return html + flow('in', { rcv: [panel('Findings', table(['ID', 'Shipment', 'Type', 'Item', 'Qty', 'Exp', 'Rec', 'Words on record', 'Status', ''], rows, 'No OS&D findings. Receive a shipment to create them.'), null, true)] });
   };
 
   /* ---- Putaway ---- */
@@ -396,18 +405,18 @@
         esc(t.toBinId ? dest(t.toBinId) : '—') + '</td><td>' + taskChip(t) + '</td><td>' + esc(t.assignee ? uname(t.assignee) : '—') + '</td><td class="actions">' +
         '<input class="cell" style="width:70px" id="pa-' + esc(t.id) + '" placeholder="' + esc(t.toBinId || '') + '"> <button class="btn small" data-act="pa-confirm" data-id="' + esc(t.id) + '">Confirm</button></td></tr>';
     });
-    html += panel('Directed putaway', table(['Pallet', 'Item', 'Qty', 'At', 'Destination', 'Status', 'Worker', 'Confirm bin'], rows, 'No pallets waiting for putaway.'), null, true);
+    var bands = { rcv: [], bays: [panel('Directed putaway', table(['Pallet', 'Item', 'Qty', 'At', 'Destination', 'Status', 'Worker', 'Confirm bin'], rows, 'No pallets waiting for putaway.'), null, true)] };
     var held = state.staging.filter(function (p) { return p.hold; }).map(function (p) {
       return '<tr><td class="id">' + esc(p.id) + '</td><td>' + esc(p.desc) + '</td><td class="num">' + p.qty + '</td><td>' + esc(p.door) + '</td><td>' + esc(p.hold.reason) + '</td><td class="actions">' +
         '<button class="btn small" data-act="release" data-stg="' + esc(p.id) + '">Release</button></td></tr>';
     });
-    html += panel('Pallets on hold at the dock', table(['Pallet', 'Item', 'Qty', 'At', 'Why', ''], held, 'No pallets on hold.'), 'held stock gets no putaway task until released', true);
+    bands.rcv.push(panel('Pallets on hold at the dock', table(['Pallet', 'Item', 'Qty', 'At', 'Why', ''], held, 'No pallets on hold.'), 'held stock gets no putaway task until released', true));
     var done = state.tasks.filter(function (t) { return t.type === 'putaway' && t.status === 'done'; }).slice(-10).reverse().map(function (t) {
       return '<tr><td class="id">' + esc(t.stagingId) + '</td><td>' + esc(t.title) + '</td><td class="id">' + esc(t.suggestedBinId || t.toBinId) + '</td><td class="id">' + esc(t.toBinId) +
         '</td><td>' + esc(uname(t.doneBy)) + '</td><td class="id">' + time(t.doneAt) + '</td></tr>';
     });
-    html += panel('Completed putaway', table(['Pallet', 'Task', 'Suggested', 'Actual', 'By', 'Time'], done, 'None yet.'), null, true);
-    return html;
+    bands.bays.push(panel('Completed putaway', table(['Pallet', 'Task', 'Suggested', 'Actual', 'By', 'Time'], done, 'None yet.'), null, true));
+    return html + flow('in', bands);
   };
 
   /* ---- Locations ---- */
@@ -554,21 +563,22 @@
   /* ---- Picking ---- */
   VIEWS.picking = function () {
     var html = head('Outbound › Picking', 'Picking', 'Pick tasks by zone. On the floor the picker confirms the quantity by voice ("picked 10"); fewer than asked is a short pick — reconciled on the order and a cycle count is queued for the bin.');
+    var bays = [];
     state.zones.forEach(function (z) {
       var rows = state.tasks.filter(function (t) { return t.type === 'pick' && t.zone === z && t.status !== 'done'; }).map(function (t) {
         var o = E.orderById(state, t.orderId);
         return '<tr><td class="id">' + esc(t.orderId) + '</td><td>' + esc(o && o.customer || '') + '</td><td class="id">' + esc(t.binId) + '</td><td>' + esc(t.desc) + '</td><td class="num">' + t.qty + '</td><td>' + taskChip(t) +
           '</td><td>' + esc(t.assignee ? uname(t.assignee) : '—') + '</td><td class="actions"><input class="cell" style="width:60px" id="pk-' + esc(t.id) + '" value="' + t.qty + '"> <button class="btn small" data-act="pick" data-id="' + esc(t.id) + '">Confirm qty</button></td></tr>';
       });
-      html += panel('Zone ' + z, table(['Order', 'Customer', 'Bin', 'Item', 'Qty', 'Status', 'Picker', 'Picked'], rows, 'No picks waiting in zone ' + z + '.'), null, true);
+      bays.push(panel('Zone ' + z, table(['Order', 'Customer', 'Bin', 'Item', 'Qty', 'Status', 'Picker', 'Picked'], rows, 'No picks waiting in zone ' + z + '.'), null, true));
     });
     var done = state.tasks.filter(function (t) { return t.type === 'pick' && t.status === 'done'; }).slice(-10).reverse().map(function (t) {
       var o = E.orderById(state, t.orderId), line = null;
       if (o) o.lines.forEach(function (l) { if (l.binId === t.binId && l.desc === t.desc) line = l; });
       return '<tr><td class="id">' + esc(t.orderId) + '</td><td>' + esc(t.desc) + '</td><td class="num">' + t.qty + '</td><td class="num">' + (line ? line.pickedQty : '—') + '</td><td>' + (line && line.shortPicked ? chip(line.shortPicked + ' short', 'warn') : chip('Full', 'ok')) + '</td><td>' + esc(uname(t.doneBy)) + '</td></tr>';
     });
-    html += panel('Recent picks', table(['Order', 'Item', 'Qty', 'Picked', 'Result', 'Picker'], done, 'No picks done yet.'), null, true);
-    return html;
+    bays.push(panel('Recent picks', table(['Order', 'Item', 'Qty', 'Picked', 'Result', 'Picker'], done, 'No picks done yet.'), null, true));
+    return html + flow('out', { bays: bays });
   };
 
   /* ---- Pack & ship ---- */
@@ -579,20 +589,20 @@
       return '<tr><td class="id">' + esc(t.orderId) + '</td><td>' + esc(o.customer || '') + '</td><td>' + esc(o.lines.map(function (l) { return (l.pickedQty || 0) + ' × ' + l.desc; }).join('; ')) + '</td><td>' + taskChip(t) +
         '</td><td class="actions"><input class="cell" style="width:50px" id="pc-' + esc(t.id) + '" value="' + o.lines.length + '"> cartons <button class="btn small primary" data-act="pack" data-id="' + esc(t.id) + '">Pack & label</button></td></tr>';
     });
-    html += panel('Pack station — Pack 1', table(['Order', 'Customer', 'Picked', 'Status', 'Pack'], pack, 'Nothing waiting to pack.'), null, true);
+    var bands = { stg: [panel('Pack station — Pack 1', table(['Order', 'Customer', 'Picked', 'Status', 'Pack'], pack, 'Nothing waiting to pack.'), null, true)], docks: [] };
     var staged = state.outbound.filter(function (o) { return o.status === 'staged at door'; }).map(function (o) {
       var lt = E.taskById(state, 't-load-' + o.id);
       return '<tr><td class="id">' + esc(o.id) + '</td><td>' + esc(o.customer || '') + '</td><td>' + esc(o.door) + '</td><td>' + (o.packed ? esc(o.packed.cartons + ' ctn · ' + o.packed.weightLb + ' lb · ' + o.packed.tracking) : chip('Not packed', 'warn')) +
         '</td><td>' + (lt ? taskChip(lt) : '—') + '</td><td class="actions">' + (lt && o.packed ? '<button class="btn small primary" data-act="load" data-id="' + esc(lt.id) + '">Confirm loaded</button>' : '') + '</td></tr>';
     });
-    html += panel('Staging lanes', table(['Order', 'Customer', 'Door', 'Package', 'Load task', ''], staged, 'No orders staged.'), null, true);
+    bands.stg.push(panel('Staging lanes', table(['Order', 'Customer', 'Door', 'Package', 'Load task', ''], staged, 'No orders staged.'), null, true));
     var loads = state.wms.loads.slice().reverse().map(function (l) {
       return '<tr><td class="id">' + esc(l.id) + '</td><td>' + esc(l.door) + '</td><td class="id">' + esc(l.trailer) + '</td><td>' + esc(l.carrier) + '</td><td>' + esc(l.orderIds.join(', ')) + '</td><td>' +
         (l.status === 'shipped' ? chip('Shipped', 'ok') + ' <span class="hint">BOL ' + esc(l.bolNumber) + ' · seal ' + esc(l.seal) + ' · ' + esc(l.totals.units) + ' units · ' + esc(l.totals.weightLb) + ' lb · ' + time(l.closedAt) + '</span>' : chip('Loading', 'info')) +
         '</td><td class="actions">' + (l.status === 'loading' ? '<input class="cell" style="width:90px;text-align:left" id="seal-' + esc(l.id) + '" placeholder="Seal #"> <button class="btn small primary" data-act="close-load" data-id="' + esc(l.id) + '">Ship confirm</button>' : '') + '</td></tr>';
     });
-    html += panel('Outbound loads', table(['Load', 'Door', 'Trailer', 'Carrier', 'Orders', 'Status', ''], loads, 'No outbound loads yet. Loading an order opens one at its door.'), null, true);
-    return html;
+    bands.docks.push(panel('Outbound loads', table(['Load', 'Door', 'Trailer', 'Carrier', 'Orders', 'Status', ''], loads, 'No outbound loads yet. Loading an order opens one at its door.'), null, true));
+    return html + flow('out', bands);
   };
 
   /* ---- Task queues ---- */
@@ -1280,7 +1290,9 @@
   };
 
   /* The other floor screens keep their work lists, under a small map of the building. */
-  [['dock', 'dock'], ['receiving', 'dock'], ['putaway', 'racks'], ['picking', 'racks'], ['ship', 'dock'], ['osd', 'pins'], ['flags', 'pins'], ['queues', 'crew'], ['counts', 'racks'], ['replen', 'racks']].forEach(function (x) {
+  /* (dock, receiving, osd, putaway, picking, ship are flow-sliced task
+     views now — the whole building never shows inside one.) */
+  [['flags', 'pins'], ['queues', 'crew'], ['counts', 'racks'], ['replen', 'racks']].forEach(function (x) {
     LOOK_VIEWS.floor[x[0]] = function () { return injectAfterHead(VIEWS[x[0]](), floorMap({ compact: true, focus: x[1] })); };
   });
 
