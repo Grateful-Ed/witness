@@ -17,21 +17,24 @@ lands — say so and wait if it hasn't.
 ## William's ask, in his words (2026-10-31)
 
 A camera integration in the app: point the phone at a mock bill of
-lading — a REAL printed page; he will print it himself — and the AI
-reads the physical BOL. This is module one's "identity comes from a
-scan" law made literal, and the third leg of the cross-check: what
-was EXPECTED (the BOL), what the worker SAYS (voice scan), what the
-camera SEES (photo scan).
+lading and the AI reads it. CORRECTED 2026-11-01 (William): nothing
+needs to be printed — printing is not important to the demo. The
+fixture is a clean digital BOL page/image; the read must work from a
+camera capture or an image of that page, whether it happens to be
+shown on paper or on a screen. This is module one's "identity comes
+from a scan" law made literal, and the third leg of the cross-check:
+what was EXPECTED (the BOL), what the worker SAYS (voice scan), what
+the camera SEES (photo scan).
 
 ## The job
 
-1. **Printable fixture (test-data/):** a print-clean mock BOL page
-   for Test Load 001 matching the project's existing mock BOL
+1. **BOL fixture (test-data/):** a clean digital mock BOL page for
+   Test Load 001 matching the project's existing mock BOL
    (artifact witness-test-load-mock-bol-pallet; carrier Blue Ridge
    Freight Lines; 20 pieces claimed; 624 lb; line items include the
    cleaner and the aerosol lines). Black on white, real BOL layout,
-   prints legibly on one letter page. This is the page William
-   prints.
+   legible as a full-page image. It may be printed if William ever
+   wants paper, but printing is optional and NOT part of the demo.
 2. **A new page, bol.html (+ js/bol.js, own CSS or warehouse.css):**
    - "Read the bill of lading": capture from the phone camera
      (file input with capture, plus a plain file pick fallback).
@@ -77,8 +80,8 @@ camera SEES (photo scan).
    green.
 
 ## Deliver
-Working slice on the live page, the printable fixture's URL, test
+Working slice on the live page, the fixture's URL, test
 results, and the choices list where this brief was silent. Faye's
-review will include a REAL read: she renders the printable BOL to
-an image and sends it through the live Worker — the fields must
-come back right.
+review will include a REAL read: she renders the BOL page to an
+image and sends it through the live Worker — the fields must come
+back right.
