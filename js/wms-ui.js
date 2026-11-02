@@ -1713,6 +1713,8 @@
   });
 
   document.addEventListener('click', function (e) {
+    /* A flag is its own link to its own item's Witness page (Task 4). */
+    if (e.target.closest('.wmap [data-flag]')) return;
     if (openItem(e.target.closest('.wmap [data-open]'))) { e.preventDefault(); return; }
     var el = e.target.closest('[data-act]');
     if (!el) return;

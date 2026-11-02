@@ -185,3 +185,35 @@
   .wm-band .wm-band-label { font-size: 9px; letter-spacing: .02em; padding: 6px 1px; }
 }
 .wm-loose { margin: 8px 2px 0; font-size: 12px; color: var(--wm-ink-2); }
+
+/* ---------- flags (Console Task 4) ----------
+   The one voice the map is allowed: a small pennant on anything whose
+   record says a human is needed now. No words, no counts. The link is
+   a 22px target; the mark drawn inside it is about 11px. */
+.wm-surface { --wm-flag: #c4261d; --wm-flag-pole: #1f2a33; }
+@media (prefers-color-scheme: dark) {
+  .wm-surface { --wm-flag: #ff6b5e; --wm-flag-pole: #e8edf1; }
+}
+.wm-dock, .wm-pallet, .wm-bin { position: relative; }
+.wm-flags {
+  position: absolute; top: -11px; right: -9px; z-index: 2;
+  display: inline-flex; gap: 0; pointer-events: none;
+}
+.wm-zone h3 .wm-flags, .wm-flags-loose { position: static; vertical-align: middle; margin-left: 4px; }
+.wm-flag {
+  position: relative; display: inline-block; width: 22px; height: 22px;
+  pointer-events: auto; border-radius: 4px; text-decoration: none;
+}
+.wm-flag::before {   /* the pole */
+  content: ''; position: absolute; left: 7px; top: 4px; width: 2px; height: 14px;
+  background: var(--wm-flag-pole); border-radius: 1px;
+}
+.wm-flag::after {    /* the pennant */
+  content: ''; position: absolute; left: 9px; top: 4px; width: 10px; height: 8px;
+  background: var(--wm-flag); clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.wm-flag:hover::after { transform: scale(1.15); transform-origin: left center; }
+.wm-flag:focus-visible { outline: 2px solid var(--wm-flag); outline-offset: 0; }
+@media (max-width: 760px) {
+  .wm-flags { top: -12px; right: -11px; }
+}

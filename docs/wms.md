@@ -68,7 +68,7 @@ centre with every zone and bin from state. No tables; read-only.
 - Every place carries `data-place` / `data-id` hooks. Docks, pallets,
   staged orders and bins also carry `data-open` (focusable): a click
   or Enter opens that item's Witness page (Task 2). Map flags are
-  Task 4.
+  Task 4 (below).
 - One numbers page: Shift Summary (`#/summary`). The KPI dashboard
   that used to be the home was folded into it (open tasks, inbound
   x / y with trucks at a door, orders shipped, fill rate, inventory
@@ -76,6 +76,33 @@ centre with every zone and bin from state. No tables; read-only.
   deleted. All figures come from `W.dashboard` / `W.shiftSummary`.
 - The `?look=` switcher stays. Only the default look ("Today") shows
   the map; the other looks keep their own home until Task 6.
+
+## Flags on the map (console Task 4, 2026-11-02)
+
+The one voice the map is allowed. A small red pennant marks anything
+whose record already says a human is needed now. No new urgency
+model: `flags()` in js/wms-map.js only reads what is there.
+
+| The record says | The flag sits on | A click opens |
+| --- | --- | --- |
+| A bin is on hold | that bin | the bin's Witness page |
+| A pallet is on hold | that pallet | the pallet's Witness page |
+| An OS&D finding is open (count or camera, awaiting a decision) | the inbound dock it came in at | the shipment's Witness page |
+| A worker flag is open (can't verify; a human decides) | the pallet, bin, order or dock its task works on (else its zone) | the task's Witness page |
+
+- One flag per item, however many reasons it has. When the human
+  decides (finding closed, hold released, flag closed), the flag goes.
+  When nothing is urgent, the map has no flag.
+- A flag marks; it does not explain: no words, no counts, no legend
+  entry. Its name ("Needs a human now — …") is for screen readers and
+  hover only.
+- A flag is a real link (`<a data-flag href="#/witness/…">`). It sits
+  inside the place it marks; wms-ui.js lets a flag click follow its own
+  link instead of opening the place underneath.
+- Never dropped: an item the walls cannot place is flagged under the
+  map, in the "Not on a wall" line. A worker flag with no task opens
+  the Flags & Incidents page (there is no item page to land on).
+- Flags are the map home's voice only; the task slices carry none.
 
 ## The Witness page: an item's record (console Task 2, 2026-11-02)
 
@@ -144,7 +171,8 @@ node test/wms-store-test.js  # 15  — desk-record seam, stubbed fetch
 node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
 node test/wms-witness-test.js # 43 — the Witness page: events, transcript, empty-honest
 node test/wms-flow-test.js   # 36  — flow-sliced task views (inbound / outbound)
-node test/wms-ui-smoke.js    # 28  — real browser (Playwright), stubbed Worker; skips without Playwright
+node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
+node test/wms-ui-smoke.js    # 33  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 
 ## Left out, and why

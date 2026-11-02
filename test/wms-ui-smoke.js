@@ -198,6 +198,32 @@ server.listen(0, async function () {
   check('Witness page fits a phone width', !(await page.evaluate(function () { return document.documentElement.scrollWidth > window.innerWidth + 1; })));
   await page.setViewportSize({ width: 1280, height: 900 });
 
+  /* Flags on the map (Console Task 4): only urgent items carry one;
+     a flag click lands on that item's own Witness page. */
+  await go('#/dashboard');
+  var fl = await page.evaluate(function () {
+    return Array.prototype.map.call(document.querySelectorAll('.wmap [data-flag]'), function (a) {
+      var host = a.closest('[data-place]');
+      return { href: a.getAttribute('href'), host: host ? host.dataset.place + '/' + host.dataset.id : null };
+    });
+  });
+  var heldPallet = await page.evaluate(function () { var p = window.WitnessWmsPage.getState().staging.filter(function (x) { return x.hold; })[0]; return p ? p.id : null; });
+  var calmPallet = await page.evaluate(function () { var p = window.WitnessWmsPage.getState().staging.filter(function (x) { return !x.hold; })[0]; return p ? p.id : null; });
+  check('a held pallet carries a flag on the map', !!heldPallet && fl.some(function (f) { return f.href === '#/witness/pallet/' + encodeURIComponent(heldPallet) && f.host === 'pallet/' + heldPallet; }));
+  check('a pallet with nothing urgent carries no flag', !!calmPallet && (await page.$$('.wmap [data-place="pallet"][data-id="' + calmPallet + '"] [data-flag]')).length === 0);
+  await click('.wmap [data-place="pallet"][data-id="' + heldPallet + '"] [data-flag]');
+  var landed = await page.evaluate(function () { var pg = document.querySelector('.wp-page'); return { hash: location.hash, title: pg ? pg.querySelector('h1').textContent : '' }; });
+  check('a flag click lands on that item\'s Witness page', landed.hash === '#/witness/pallet/' + encodeURIComponent(heldPallet) && landed.title === 'Pallet ' + heldPallet);
+  await go('#/dashboard');
+  var osdFlag = fl.filter(function (f) { return /^#\/witness\/shipment\//.test(f.href); })[0];
+  check('an open OS&D finding flags its dock', !!osdFlag && /^dock\//.test(osdFlag.host));
+  if (osdFlag) {
+    await click('.wmap [data-flag][href="' + osdFlag.href + '"]');
+    check('the OS&D flag lands on the shipment\'s Witness page', await page.evaluate(function () { return location.hash; }) === osdFlag.href &&
+      /^Shipment /.test(await page.textContent('.wp-page h1')));
+    await go('#/dashboard');
+  }
+
   /* Every view renders */
   var views = ['dashboard', 'dock', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'rf'];
   var bad = [];
