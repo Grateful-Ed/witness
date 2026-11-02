@@ -28,7 +28,7 @@
     rcvShip: null, rcvLines: null, rcvTranscript: '', rcvSource: 'typed', rcvPhoto: null, rcvPhotoFlags: [],
     selBin: null, zoneFilter: '', binSearch: '', taskType: '', taskZone: '', taskStatus: 'active',
     recKind: '', rfUnit: null, rfReply: '', rfHeard: '', rfPhoto: null, rfPhotoRead: null,
-    flagWords: '', ask: null, askBusy: false, camFor: null
+    flagWords: '', ask: null, askBusy: false, camFor: null, pin: null
   };
 
   var store = S.create({
@@ -218,7 +218,8 @@
     return '<div class="crumbs">DC-01 › ' + esc(crumb) + '</div><div class="page-head"><div><h1>' + esc(title) + '</h1>' +
       (desc ? '<p>' + desc + '</p>' : '') + '</div><div class="toolbar">' + (tools || '') +
       '<button class="btn" data-act="refresh" title="Read the desk record again">⟳ Refresh</button></div></div>' +
-      (store.practice() ? '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record.</div>' : '');
+      (store.practice() ? '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record.</div>' : '') +
+      '<!--/head-->';
   }
 
   function panel(title, body, sub, flush) {
@@ -311,6 +312,7 @@
 
   function recordsHtml(list) {
     if (!list.length) return '<div class="empty">Nothing recorded yet.</div>';
+    if (LOOK === 'record') return ledgerHtml(list);
     return table(['Time', 'Kind', 'What happened'], list.map(function (r) {
       return '<tr><td class="id">' + time(r.ts) + '</td><td>' + chip(r.kind || 'note', r.kind === 'incident' ? 'bad' : (r.kind === 'ship' || r.kind === 'complete' ? 'ok' : '')) + '</td><td>' + esc(r.text) + '</td></tr>';
     }));
@@ -414,10 +416,10 @@
     var rows = state.tasks.filter(function (t) { return t.type === 'putaway' && t.status !== 'done'; }).map(function (t) {
       var p = null; state.staging.forEach(function (x) { if (x.id === t.stagingId) p = x; });
       return '<tr><td class="id">' + esc(t.stagingId) + '</td><td>' + esc(p ? p.desc : '') + '</td><td class="num">' + esc(p ? p.qty : '') + '</td><td>' + esc(p ? p.door : '') + '</td><td class="id">' +
-        esc(t.toBinId || '—') + '</td><td>' + taskChip(t) + '</td><td>' + esc(t.assignee ? uname(t.assignee) : '—') + '</td><td class="actions">' +
+        esc(t.toBinId ? dest(t.toBinId) : '—') + '</td><td>' + taskChip(t) + '</td><td>' + esc(t.assignee ? uname(t.assignee) : '—') + '</td><td class="actions">' +
         '<input class="cell" style="width:70px" id="pa-' + esc(t.id) + '" placeholder="' + esc(t.toBinId || '') + '"> <button class="btn small" data-act="pa-confirm" data-id="' + esc(t.id) + '">Confirm</button></td></tr>';
     });
-    html += panel('Directed putaway', table(['Pallet', 'Item', 'Qty', 'At', 'Stage', 'Status', 'Worker', 'Confirm bin'], rows, 'No pallets waiting for putaway.'), null, true);
+    html += panel('Directed putaway', table(['Pallet', 'Item', 'Qty', 'At', 'Destination', 'Status', 'Worker', 'Confirm bin'], rows, 'No pallets waiting for putaway.'), null, true);
     var held = state.staging.filter(function (p) { return p.hold; }).map(function (p) {
       return '<tr><td class="id">' + esc(p.id) + '</td><td>' + esc(p.desc) + '</td><td class="num">' + p.qty + '</td><td>' + esc(p.door) + '</td><td>' + esc(p.hold.reason) + '</td><td class="actions">' +
         '<button class="btn small" data-act="release" data-stg="' + esc(p.id) + '">Release</button></td></tr>';
@@ -671,7 +673,7 @@
         '<p class="law">A proposal, not a decision. Nothing was moved.</p><details><summary class="hint">Everything it was given</summary><pre class="evidence">' + esc(a.summary) + '</pre></details></div>' : '') +
       (a && a.error ? '<div class="notice bad">' + esc(a.error) + '</div>' : ''));
     var dec = state.wms.decisions.slice().reverse().map(function (x) {
-      return '<tr><td class="id">' + time(x.ts) + '</td><td>' + esc(uname(x.unitId)) + '</td><td>' + esc(x.fromZone) + ' → ' + esc(x.toZone) + '</td><td>' + (x.approved ? chip('Approved', 'ok') : chip('Declined')) + '</td><td>' + esc(uname(x.by)) + '</td></tr>';
+      return '<tr><td class="id">' + time(x.ts) + '</td><td>' + esc(uname(x.unitId)) + '</td><td>' + esc(x.fromZone) + ' → ' + esc(x.toZone) + '</td><td>' + (LOOK === 'record' ? stamp(x.approved ? 'Approved' : 'Declined', x.by, x.ts) : (x.approved ? chip('Approved', 'ok') : chip('Declined'))) + '</td><td>' + esc(uname(x.by)) + '</td></tr>';
     });
     html += panel('Decisions', table(['Time', 'Worker', 'Move', 'Decision', 'By'], dec, 'No decisions yet.'), null, true);
     return html;
@@ -680,11 +682,7 @@
   /* ---- Flags ---- */
   VIEWS.flags = function () {
     var html = head('Control › Flags & Incidents', 'Flags & Incidents', 'Workers report problems by voice. A flag is a short label plus the speaker\'s exact words — no category fields. It pins to the task in hand and closes nothing.');
-    var who = isManager() ? (ui.rfUnit || workers()[0].id) : me;
-    html += panel('Report a problem', '<div class="form wide"><div class="field"><label>Who is reporting</label><select id="flWho"' + (isManager() ? '' : ' disabled') + '>' + workers().map(function (u) { return opt(u.id, u.name, u.id === who); }).join('') + '</select></div></div>' +
-      '<div class="field" style="margin-top:8px"><label>What happened (their words)</label><textarea id="flWords" placeholder="Forklift is leaking oil by B-03">' + esc(ui.flagWords) + '</textarea></div>' +
-      '<div class="form-actions"><button class="btn talk" id="flTalk" type="button">🎙 Hold to report by voice</button><button class="btn primary" data-act="flag">File flag</button><span class="hint" id="flStatus"></span></div>' +
-      '<p class="law">The label comes from Muse Spark; the words are kept exactly as said.</p>');
+    html += panel('Report a problem', flagForm());
     var rows = state.wms.flags.slice().reverse().map(function (f) {
       var t = f.taskId ? E.taskById(state, f.taskId) : null;
       return '<tr><td class="id">' + esc(f.id) + '</td><td><b>' + esc(f.label) + '</b></td><td><span class="quote">' + esc(f.words) + '</span></td><td>' + esc(uname(f.by)) + '</td><td>' + esc(t ? t.title : 'No task in hand') + '</td><td>' + esc(f.zone || '—') +
@@ -694,6 +692,14 @@
     html += panel('Flags', table(['Flag', 'Label', 'Exact words', 'Reported by', 'Task', 'Zone', 'Time', 'Status', ''], rows, 'No flags yet.'), null, true);
     return html;
   };
+
+  function flagForm() {
+    var who = isManager() ? (ui.rfUnit || workers()[0].id) : me;
+    return '<div class="form wide"><div class="field"><label>Who is reporting</label><select id="flWho"' + (isManager() ? '' : ' disabled') + '>' + workers().map(function (u) { return opt(u.id, u.name, u.id === who); }).join('') + '</select></div></div>' +
+      '<div class="field" style="margin-top:8px"><label>What happened (their words)</label><textarea id="flWords" placeholder="Forklift is leaking oil by B-03">' + esc(ui.flagWords) + '</textarea></div>' +
+      '<div class="form-actions"><button class="btn talk" id="flTalk" type="button">🎙 Hold to report by voice</button><button class="btn primary" data-act="flag">File flag</button><span class="hint" id="flStatus"></span></div>' +
+      '<p class="law">The label comes from Muse Spark; the words are kept exactly as said.</p>';
+  }
 
   /* ---- Shift summary ---- */
   VIEWS.summary = function () {
@@ -751,13 +757,13 @@
       var blk = W.blocked(state, cur);
       screen += '<div class="rf-type">' + esc(cur.type) + ' · ' + esc(cur.id.replace(/^t-/, '')) + '</div>';
       if (cur.type === 'pick') screen += '<div class="rf-big">BIN ' + esc(cur.binId) + ' · QTY ' + cur.qty + '</div><div class="rf-title">' + esc(cur.desc) + '</div><div class="rf-detail">For ' + esc(cur.orderId) + '. Say "picked ' + cur.qty + '".</div>';
-      else if (cur.type === 'putaway') screen += '<div class="rf-big">Stage: ' + esc(cur.toBinId || '?') + '</div><div class="rf-title">' + esc(cur.title) + '</div><div class="rf-detail">' + esc(cur.detail) + '. Say "in ' + esc(cur.toBinId) + '" or photograph the bin label.</div>';
+      else if (cur.type === 'putaway') screen += '<div class="rf-big">' + esc(dest(cur.toBinId)) + '</div><div class="rf-title">' + esc(cur.title) + '</div><div class="rf-detail">' + esc(cur.detail) + '. Say "in ' + esc(cur.toBinId) + '" or photograph the bin label.</div>';
       else if (cur.type === 'count') screen += '<div class="rf-big">COUNT BIN ' + esc(cur.binId) + '</div><div class="rf-detail">Blind count. Say the number, or enter each item below.</div>';
       else if (cur.type === 'receive') {
         var rs = E.shipmentById(state, cur.shipmentId);
         screen += '<div class="rf-title">' + esc(cur.title) + '</div><div class="rf-detail">' + esc(rs ? rs.desc : '') + '. Count it against BOL ' + esc(rs && rs.bol ? rs.bol.bolNumber : '(on file)') + ' and post the receipt on the Receiving screen.</div>';
       }
-      else if (cur.type === 'move' || cur.type === 'replen') screen += '<div class="rf-big">Stage: ' + esc(cur.toBinId) + '</div><div class="rf-title">' + esc(cur.qty + ' × ' + cur.desc) + '</div><div class="rf-detail">From ' + esc(cur.fromBinId) + '. Say "done" when it is in.</div>';
+      else if (cur.type === 'move' || cur.type === 'replen') screen += '<div class="rf-big">' + esc(dest(cur.toBinId)) + '</div><div class="rf-title">' + esc(cur.qty + ' × ' + cur.desc) + '</div><div class="rf-detail">From ' + esc(cur.fromBinId) + '. Say "done" when it is in.</div>';
       else screen += '<div class="rf-title">' + esc(cur.title) + '</div><div class="rf-detail">' + esc(cur.detail) + '</div>';
       if (blk) screen += '<div class="rf-warn">ON HOLD: ' + esc(blk) + '</div>';
       (cur.notes || []).forEach(function (n) { screen += '<div class="rf-warn">NOTED: “' + esc(n.text) + '”</div>'; });
@@ -793,9 +799,632 @@
         (rd.item ? ' · Item: ' + esc(rd.item) : '') + (rd.flags.length ? '<br>' + rd.flags.map(function (f) { return chip(f.label, 'warn') + ' ' + esc(f.detail); }).join('<br>') : '') +
         (rd.binLabel ? '<div class="form-actions"><button class="btn primary" data-act="rf-photo-confirm">Confirm putaway in ' + esc(rd.binLabel) + '</button></div>' : '<p class="hint">No bin label read — say or type the bin.</p>') + '</div>' : '<p class="hint" id="rfPhotoStatus">Reading the photo…</p>');
     }
+    if (LOOK !== 'current' && ui.rfPhoto && ui.rfPhotoRead && cur && cur.type === 'putaway') photo = putawayWitness(cur, ui.rfPhotoRead) + photo;
     html += '<div class="rf">' + screen + keys + '<div class="rf-inputs">' + inputs + photo + '</div><p class="hint" id="rfStatus"></p></div>';
     return html;
   };
+
+  /* ==================================================================
+     LOOKS — three design directions for this console, on the real
+     page. Presentation only: every look reads the same state and
+     calls the same actions. Nothing here changes the record.
+       stand  — The Witness Stand: the comparison is the layout.
+       floor  — The Floor: the building is the landmark.
+       record — The Record: the grids, read as evidence.
+       current — the console as it was before the looks.
+     ================================================================== */
+
+  /* The look in use. To pick a winner: set this word, then delete
+     the LOOK SWITCHER block below. */
+  var LOOK = 'current';
+  var LOOK_NAMES = { current: 'Today', stand: 'Witness Stand', floor: 'The Floor', record: 'The Record' };
+
+  /* ===== LOOK SWITCHER — design review only. Delete from here to
+     "end LOOK SWITCHER" once a look is picked. ===== */
+  (function () {
+    var want = params.get('look');
+    if (want && LOOK_NAMES[want]) LOOK = want;
+    var css = document.createElement('style');
+    css.textContent = '.look-switch{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 12px;background:#2b2b2b;color:#f4f4f4;' +
+      'font:600 12px/1.3 system-ui,sans-serif;border-bottom:2px dashed #f2c94c}.look-switch b{color:#f2c94c;letter-spacing:.06em;text-transform:uppercase;font-size:11px}' +
+      '.look-switch button{font:inherit;background:#444;color:#fff;border:1px solid #666;border-radius:12px;padding:2px 10px;cursor:pointer}' +
+      '.look-switch button[aria-pressed="true"]{background:#f2c94c;color:#222;border-color:#f2c94c}@media print{.look-switch{display:none}}';
+    document.head.appendChild(css);
+    var bar = document.createElement('div');
+    bar.className = 'look-switch';
+    bar.setAttribute('aria-label', 'Design review: switch the look');
+    bar.innerHTML = '<b>Design review</b><span>Look:</span>' + Object.keys(LOOK_NAMES).map(function (k) {
+      return '<button type="button" data-look="' + k + '" aria-pressed="' + (k === LOOK) + '">' + esc(LOOK_NAMES[k]) + '</button>';
+    }).join('');
+    bar.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-look]');
+      if (!b) return;
+      var p = new URLSearchParams(location.search);
+      if (b.dataset.look === 'current') p.delete('look'); else p.set('look', b.dataset.look);
+      var q = p.toString();
+      location.href = location.pathname + (q ? '?' + q : '') + location.hash;
+    });
+    document.body.insertBefore(bar, document.body.firstChild);
+  })();
+  /* ===== end LOOK SWITCHER ===== */
+
+  (function applyLook() {
+    document.body.setAttribute('data-look', LOOK);
+    if (LOOK === 'current') return;
+    var l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'css/wms-look-' + LOOK + '.css';
+    document.head.appendChild(l);
+  })();
+
+  var LOOK_VIEWS = { stand: {}, floor: {}, record: {} };
+
+  /* ---------- shared by the looks: the two witnesses ---------------- */
+
+  /* Bin law: a destination reads plainly "Stage: Bin #". */
+  function dest(binId) { return 'Stage: Bin ' + (binId || '?'); }
+  function num(v) { if (v === '' || v == null) return null; var x = parseInt(v, 10); return isNaN(x) ? null : x; }
+  function shortDesc(d) { return String(d || '').replace(/ — .*/, ''); }
+  function initials(id) { return uname(id).split(' ').map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase(); }
+
+  var VERDICT = { agree: 'Agree', flag: 'Flag', cant: 'Can\'t verify' };
+  var VERDICT_MARK = { agree: '✓', flag: '!', cant: '?' };
+  function verdictTag(v, big) {
+    return '<span class="verdict v-' + v + (big ? ' big' : '') + '"><i aria-hidden="true">' + VERDICT_MARK[v] + '</i>' + VERDICT[v] + '</span>';
+  }
+
+  /* What the camera said, sorted: "Looks sound", "Cannot verify", or a problem. */
+  function photoKind(f) {
+    var t = String(f.label || '');
+    if (/can.?n?o?t verify|can't verify|out of (frame|view)|not visible|unclear/i.test(t)) return 'cant';
+    if (/sound|intact|no (visible )?damage|undamaged|looks (good|fine|ok)/i.test(t)) return 'sound';
+    return 'problem';
+  }
+  function camera(flags) {
+    flags = flags || [];
+    var c = { has: flags.length > 0, problems: [], sound: false, blind: [] };
+    flags.forEach(function (f) {
+      var k = photoKind(f);
+      if (k === 'problem') c.problems.push(f); else if (k === 'sound') c.sound = true; else c.blind.push(f);
+    });
+    c.text = c.problems.length ? c.problems.map(function (f) { return f.label + (f.detail ? ' — ' + f.detail : ''); }).join(' · ')
+      : c.sound ? 'Photo shows the freight sound.'
+      : c.blind.length ? 'Photo could not see it: ' + c.blind.map(function (f) { return f.detail || f.label; }).join(' · ')
+      : '';
+    return c;
+  }
+
+  /* Compare the worker's voice with the camera's eye for one receipt
+     (posted, or the one on screen). Plain rules, said out loud:
+       Agree        — both witnesses say the same thing.
+       Flag         — they disagree, or one reports what the other doesn't.
+       Can't verify — one witness was not there, or cannot see that point
+                      (a photo cannot count cases). */
+  function witness(lines, photoFlags, transcript) {
+    var cam = camera(photoFlags);
+    var points = [];
+    var spokeDamage = false, any = false;
+    (lines || []).forEach(function (l) {
+      var rec = num(l.received), dmg = num(l.damaged) || 0;
+      if (rec == null) return;
+      any = true;
+      if (dmg > 0) {
+        spokeDamage = true;
+        points.push({ point: 'Damage · ' + shortDesc(l.desc), words: l.quote || '', says: dmg + ' damaged',
+          camera: cam.problems.length || cam.sound ? cam.text : '', verdict: cam.problems.length ? 'agree' : cam.sound ? 'flag' : 'cant' });
+      }
+      if (rec !== l.expected) {
+        points.push({ point: (rec < l.expected ? 'Short · ' : 'Over · ') + shortDesc(l.desc), words: l.quote || '', says: rec + ' counted, BOL says ' + l.expected,
+          camera: 'A photo cannot count cases.', verdict: 'cant', blind: true });
+      }
+    });
+    if (!spokeDamage && (any || cam.has)) {
+      points.push({ point: 'Condition', words: transcript || '', says: any ? 'No damage spoken' : 'Nothing spoken yet',
+        camera: cam.text, verdict: cam.problems.length ? 'flag' : cam.sound && any ? 'agree' : 'cant' });
+    }
+    return points;
+  }
+  function tally(points) {
+    var t = { agree: 0, flag: 0, cant: 0 };
+    points.forEach(function (p) { t[p.verdict]++; });
+    return t;
+  }
+  function tallyHtml(t) {
+    return '<span class="tally">' + ['agree', 'flag', 'cant'].map(function (k) {
+      return '<span class="t-' + k + '"><b>' + t[k] + '</b> ' + esc(VERDICT[k]) + '</span>';
+    }).join('') + '</span>';
+  }
+  function receiptById(id) { var r = null; state.wms.receipts.forEach(function (x) { if (x.id === id) r = x; }); return r; }
+  function receiptChecks() {
+    return state.wms.receipts.map(function (r) {
+      var s = E.shipmentById(state, r.shipmentId);
+      return { id: r.id, ts: r.ts, by: r.by, where: s ? s.door : '', shipmentId: r.shipmentId, bolNumber: r.bolNumber,
+        transcript: r.transcript, points: witness(r.lines, r.photoFlags, r.transcript), receipt: r };
+    });
+  }
+  /* One OS&D finding, seen by both witnesses. */
+  function findingWitness(f) {
+    var r = receiptById(f.receiptId);
+    var cam = camera(r ? r.photoFlags : []);
+    var spoke = !!(r && r.lines.some(function (l) { return l.damaged > 0; }));
+    if (f.type === 'photo') {
+      var k = photoKind(f);
+      return { words: '', says: spoke ? 'Receiver spoke of damage' : 'Receiver spoke of no damage', camera: f.label + (f.words ? ' — ' + f.words : ''),
+        verdict: k === 'cant' ? 'cant' : k === 'sound' ? (spoke ? 'flag' : 'agree') : (spoke ? 'agree' : 'flag'), fromCamera: true };
+    }
+    var says = f.type === 'damage' ? f.qty + ' damaged' : (f.received + ' counted, BOL says ' + f.expected);
+    var words = /^\(typed/.test(f.words || '') ? '' : f.words;
+    if (f.type === 'damage') return { words: words, says: says, camera: cam.problems.length || cam.sound ? cam.text : '', verdict: cam.problems.length ? 'agree' : cam.sound ? 'flag' : 'cant' };
+    return { words: words, says: says, camera: 'A photo cannot count cases.', verdict: 'cant', blind: true };
+  }
+
+  /* The human's decision — always drawn as a stamp, never as a chip. */
+  function stamp(verb, by, ts, note) {
+    return '<span class="stamp"><b>' + esc(verb) + '</b><span class="st-who">' + esc(uname(by)) + '</span>' +
+      (ts ? '<span class="st-ts">' + time(ts) + '</span>' : '') + (note ? '<span class="st-note">' + esc(note) + '</span>' : '') + '</span>';
+  }
+  function awaiting(text) { return '<span class="stamp pending"><b>' + esc(text || 'Waiting for a human') + '</b></span>'; }
+
+  function saidHtml(words, by, says) {
+    return (words ? '<blockquote class="said"><span class="q">' + esc(words) + '</span>' + (by ? '<cite>' + esc(uname(by)) + '</cite>' : '') + '</blockquote>'
+      : '<p class="said none">No words on record' + (says ? '' : ' — typed') + '</p>') +
+      (says ? '<p class="says">' + esc(says) + '</p>' : '');
+  }
+  function cameraHtml(text, blind) {
+    return text ? '<p class="seen' + (blind ? ' blind' : '') + '">' + esc(text) + '</p>' : '<p class="seen none">No photo. The camera did not see this.</p>';
+  }
+
+  /* One witness row: voice | verdict | camera. */
+  function witnessRow(p, by) {
+    return '<div class="w-row v-' + p.verdict + '"><div class="w-voice"><div class="w-point">' + esc(p.point || '') + '</div>' + saidHtml(p.words, by, p.says) + '</div>' +
+      '<div class="w-verdict">' + verdictTag(p.verdict, true) + '</div>' +
+      '<div class="w-camera"><div class="w-point w-point-cam">' + esc(p.point || '') + '</div>' + cameraHtml(p.camera, p.blind) + '</div></div>';
+  }
+
+  /* Putaway on the handheld: where the work was sent vs the bin label the camera read. */
+  function putawayWitness(cur, rd) {
+    var v = !rd.binLabel ? 'cant' : String(rd.binLabel).toUpperCase() === String(cur.toBinId).toUpperCase() ? 'agree' : 'flag';
+    return '<div class="pa-witness w-row v-' + v + '"><div class="w-voice"><div class="w-point">Directed</div><p class="says big">' + esc(dest(cur.toBinId)) + '</p>' +
+      (ui.rfHeard ? '<blockquote class="said"><span class="q">' + esc(ui.rfHeard) + '</span></blockquote>' : '') + '</div>' +
+      '<div class="w-verdict">' + verdictTag(v, true) + '</div>' +
+      '<div class="w-camera"><div class="w-point">Camera</div><p class="says big">' + esc(rd.binLabel ? 'Label reads ' + rd.binLabel : 'No label read') + '</p></div></div>';
+  }
+
+  function injectAfterHead(html, extra) { return html.replace('<!--/head-->', '<!--/head-->' + extra); }
+
+  /* ================== LOOK 1 — THE WITNESS STAND ==================== */
+
+  function standCase(c, hero) {
+    var t = tally(c.points);
+    var open = c.receipt.osdIds.filter(function (id) { var f = null; state.wms.osd.forEach(function (x) { if (x.id === id) f = x; }); return f && f.status === 'open'; }).length;
+    return '<section class="case' + (hero ? ' hero' : '') + '"><header class="case-h"><div><span class="case-kicker">' + esc(c.where) + ' · ' + esc(c.shipmentId) +
+      (c.bolNumber ? ' · BOL ' + esc(c.bolNumber) : '') + '</span><h2>Receipt ' + esc(c.id) + '</h2></div>' + tallyHtml(t) + '</header>' +
+      '<div class="w-head"><span>The worker\'s voice</span><span>Verdict</span><span>The camera\'s eye</span></div>' +
+      c.points.map(function (p) { return witnessRow(p, c.by); }).join('') +
+      '<footer class="human">' + stamp('Posted', c.by, c.ts) +
+      (open ? '<a class="human-open" href="#/osd">' + open + ' finding' + (open === 1 ? '' : 's') + ' still open — a human closes ' + (open === 1 ? 'it' : 'them') + '</a>' : '<span class="human-open done">Every finding settled</span>') +
+      '</footer></section>';
+  }
+
+  function flagCase(f) {
+    var t = f.taskId ? E.taskById(state, f.taskId) : null;
+    return '<section class="case small"><header class="case-h"><div><span class="case-kicker">Report from the floor · Zone ' + esc(f.zone || '—') + (t ? ' · ' + esc(t.title) : '') +
+      '</span><h2>' + esc(f.label) + '</h2></div></header>' +
+      witnessRow({ point: 'Reported', words: f.words, says: '', camera: '', verdict: 'cant' }, f.by) +
+      '<footer class="human">' + (f.status === 'open' ? awaiting('Open — waiting for a human') + (isManager() ? '<button class="btn" data-act="flag-close" data-id="' + esc(f.id) + '">Close…</button>' : '')
+        : stamp('Closed', f.closedBy, f.closedAt, f.note)) + '</footer></section>';
+  }
+
+  LOOK_VIEWS.stand.dashboard = function () {
+    var d = W.dashboard(state);
+    var checks = receiptChecks().reverse();
+    var html = head('Overview', 'The Witness Stand', 'Two witnesses at every check: the worker\'s voice and the camera\'s eye. The page compares them. A human decides.');
+    if (!checks.length) {
+      html += '<section class="stand-empty"><h2>No one has testified yet.</h2><p>Receive a shipment: speak the count, take a photo of the freight. The two witnesses meet here.</p>' +
+        '<a class="btn primary" href="#/receiving">Go to Receiving</a></section>';
+    } else {
+      var all = [];
+      checks.forEach(function (c) { all = all.concat(c.points); });
+      html += '<div class="stand-tally"><span class="st-label">Across ' + checks.length + ' receipt' + (checks.length === 1 ? '' : 's') + '</span>' + tallyHtml(tally(all)) + '</div>';
+      html += standCase(checks[0], true);
+      if (checks.length > 1) html += '<h3 class="stand-sub">Earlier testimony</h3>' + checks.slice(1, 4).map(function (c) { return standCase(c, false); }).join('');
+    }
+    var flags = state.wms.flags.slice().reverse().slice(0, 3);
+    if (flags.length) html += '<h3 class="stand-sub">Reports from the floor</h3>' + flags.map(flagCase).join('');
+    var rec = [
+      ['Open tasks', d.tasks.open + d.tasks.assigned, 'queues'], ['Open flags', d.flagsOpen, 'flags'], ['OS&D open', d.osdOpen, 'osd'],
+      ['Inbound received', d.inbound.received, 'receiving'], ['Loads shipped', d.outbound.loadsClosed, 'ship'],
+      ['Fill rate', d.fillRate == null ? '—' : d.fillRate + '%', 'picking'], ['Replenishment', d.replen, 'replen']
+    ];
+    html += '<section class="record-strip"><h3>The record</h3><div>' + rec.map(function (r) {
+      return '<a href="#/' + r[2] + '"><b>' + esc(r[1]) + '</b> ' + esc(r[0]) + '</a>';
+    }).join('') + '</div></section>';
+    return html;
+  };
+
+  LOOK_VIEWS.stand.receiving = function () {
+    var html = head('Inbound › Receiving', 'Receiving', 'The receiver speaks the count. The camera looks at the freight. The page compares the two. A human checks the numbers and posts.');
+    var s = ui.rcvShip ? E.shipmentById(state, ui.rcvShip) : null;
+    if (s && s.status === 'staged at door') {
+      var exp = W.expectedLines(s);
+      if (!ui.rcvLines || ui.rcvLines.length !== exp.length) {
+        ui.rcvLines = exp.map(function (l) { return { desc: l.desc, expected: l.expected, received: '', damaged: '', quote: '' }; });
+      }
+      var points = witness(ui.rcvLines, ui.rcvPhotoFlags, ui.rcvTranscript);
+      var bol = s.bol || {};
+      html += '<section class="case hero live"><header class="case-h"><div><span class="case-kicker">' + esc(s.door) + ' · ' + esc(s.id) + ' · BOL ' + esc(bol.bolNumber || 'not on file') +
+        ' · claims ' + esc(bol.piecesClaimed == null ? '—' : bol.piecesClaimed) + ' pieces</span><h2>' + esc(s.desc) + '</h2></div>' + (points.length ? tallyHtml(tally(points)) : '') + '</header>' +
+        '<div class="stand-live"><div class="sl-voice"><h3>The worker\'s voice</h3><button class="btn talk big" id="rcvTalk" type="button">🎙 Hold to speak the count</button><span class="hint" id="rcvStatus"></span>' +
+        (ui.rcvTranscript ? '<blockquote class="said"><span class="q">' + esc(ui.rcvTranscript) + '</span><cite>' + esc(uname(me)) + '</cite></blockquote>' : '<p class="said none">Nothing said yet. Say what you count and what you see.</p>') + '</div>' +
+        '<div class="sl-verdicts"><h3>Verdict</h3>' + (points.length ? points.map(function (p) {
+          return '<div class="sl-point v-' + p.verdict + '"><span>' + esc(p.point) + '</span>' + verdictTag(p.verdict, true) + '</div>';
+        }).join('') : '<p class="said none">Waiting for both witnesses.</p>') + '</div>' +
+        '<div class="sl-camera"><h3>The camera\'s eye</h3><button class="btn big" data-act="cam" data-for="dock">📷 Photo of the freight</button>' +
+        (ui.rcvPhoto ? '<img class="photo-preview" src="' + ui.rcvPhoto + '" alt="Freight photo">' : '') +
+        (ui.rcvPhotoFlags.length ? ui.rcvPhotoFlags.map(function (f) { return '<p class="seen">' + esc(f.label) + (f.detail ? ' — ' + esc(f.detail) : '') + '</p>'; }).join('')
+          : '<p class="seen none">No photo yet.</p>') + '</div></div>';
+      var lrows = ui.rcvLines.map(function (l, i) {
+        return '<tr><td>' + esc(l.desc) + '</td><td class="num">' + l.expected + '</td><td class="num"><input class="cell" data-rcv="received" data-i="' + i + '" inputmode="numeric" value="' + esc(l.received == null ? '' : l.received) + '"></td>' +
+          '<td class="num"><input class="cell" data-rcv="damaged" data-i="' + i + '" inputmode="numeric" value="' + esc(l.damaged == null ? '' : l.damaged) + '"></td><td>' +
+          (l.quote ? '<span class="quote">' + esc(l.quote) + '</span>' : '<span class="hint">—</span>') + '</td></tr>';
+      });
+      html += '<div class="stand-record"><h3>The numbers — check them</h3>' + table(['Item', 'BOL qty', 'Received', 'Damaged', 'Receiver\'s words'], lrows) + '</div>' +
+        '<footer class="human act"><p>The machine fills in what it heard. Nothing posts on its own.</p><button class="btn primary human-btn" data-act="rcv-post">I checked it — post receipt</button>' +
+        '<button class="btn" data-act="rcv-clear">Clear</button><a class="btn" href="index.html">Full two-scan cross-check ↗</a></footer></section>';
+    } else {
+      html += '<section class="stand-empty"><h2>Pick a trailer at a door.</h2><p>Check a trailer in at Dock & Yard, then press Receive below.</p></section>';
+    }
+    var rows = state.inbound.map(function (x) {
+      var st = W.inboundStatus(state, x);
+      return '<tr class="' + (ui.rcvShip === x.id ? 'sel' : '') + '"><td class="id">' + esc(x.id) + '</td><td>' + esc(x.desc) + '</td><td>' + esc(x.door) + '</td><td>' + stageChip(st) + '</td><td class="actions">' +
+        (x.status === 'staged at door' ? '<button class="btn small primary" data-act="rcv-open" data-id="' + esc(x.id) + '">Receive</button>' : '') + '</td></tr>';
+    });
+    html += '<div class="recede">' + panel('Trailers', table(['Shipment', 'Description', 'Door', 'Status', ''], rows), null, true) + '</div>';
+    var checks = receiptChecks().reverse();
+    if (checks.length) html += '<h3 class="stand-sub">Posted testimony</h3>' + checks.slice(0, 3).map(function (c) { return standCase(c, false); }).join('');
+    return html;
+  };
+
+  LOOK_VIEWS.stand.osd = function () {
+    var html = head('Inbound › OS&D', 'OS&D Findings', 'Every finding at receiving, with both witnesses side by side. Records stay open: a human closes a finding with a note.');
+    var list = state.wms.osd.slice().reverse();
+    if (!list.length) return html + '<section class="stand-empty"><h2>No findings.</h2><p>Receive a shipment to create them.</p></section>';
+    html += list.map(function (f) {
+      var w = findingWitness(f);
+      var r = receiptById(f.receiptId);
+      return '<section class="case small"><header class="case-h"><div><span class="case-kicker">' + esc(f.id) + ' · ' + esc(f.shipmentId) + (r ? ' · ' + esc(r.id) : '') + '</span><h2>' +
+        esc(f.type === 'photo' ? 'Camera: ' + f.label : f.type.charAt(0).toUpperCase() + f.type.slice(1) + (f.desc ? ' · ' + shortDesc(f.desc) : '')) + '</h2></div></header>' +
+        witnessRow({ point: '', words: w.words, says: w.says, camera: w.camera, verdict: w.verdict, blind: w.blind }, f.by) +
+        '<footer class="human">' + (f.status === 'open' ? awaiting('Open — waiting for a human') + '<button class="btn" data-act="osd-close" data-id="' + esc(f.id) + '">Close…</button>'
+          : stamp('Closed', f.closedBy, f.closedAt, f.note)) + '</footer></section>';
+    }).join('');
+    return html;
+  };
+
+  LOOK_VIEWS.stand.flags = function () {
+    var html = head('Control › Flags & Incidents', 'Flags & Incidents', 'A worker says what is wrong. The words are kept exactly. The camera did not see it, so it reads Can\'t verify until a human looks.');
+    html += '<section class="case hero live"><header class="case-h"><div><span class="case-kicker">The worker\'s voice</span><h2>Report a problem</h2></div></header><div class="stand-form">' + flagForm() + '</div></section>';
+    var list = state.wms.flags.slice().reverse();
+    html += list.length ? list.map(flagCase).join('') : '<section class="stand-empty"><h2>No reports yet.</h2></section>';
+    return html;
+  };
+
+  /* ===================== LOOK 2 — THE FLOOR ========================= */
+
+  function bays() {
+    /* Each zone is a bay running from the dock wall to the back wall. */
+    var by = {};
+    state.zones.forEach(function (z) { by[z] = { zone: z, doors: [], bins: [] }; });
+    state.doors.forEach(function (d) { if (by[d.zone]) by[d.zone].doors.push(d); });
+    state.bins.forEach(function (b) { if (by[b.zone]) by[b.zone].bins.push(b); });
+    return state.zones.map(function (z) { return by[z]; });
+  }
+
+  function floorModel() {
+    var m = { bin: {}, door: {}, zonePins: {}, crew: {}, pack: { tasks: [] } };
+    state.bins.forEach(function (b) { m.bin[b.id] = { inc: [], out: [], pins: [], here: [] }; });
+    state.doors.forEach(function (d) { m.door[d.id] = { pins: [], staged: [], here: [] }; });
+    state.zones.forEach(function (z) { m.zonePins[z] = []; m.crew[z] = []; });
+    state.staging.forEach(function (p) { if (m.door[p.door]) m.door[p.door].staged.push(p); });
+    state.tasks.forEach(function (t) {
+      if (t.status === 'done') return;
+      if (t.toBinId && m.bin[t.toBinId]) m.bin[t.toBinId].inc.push(t);
+      var src = t.type === 'pick' || t.type === 'count' ? t.binId : t.fromBinId;
+      if (src && m.bin[src]) m.bin[src].out.push(t);
+      if (t.type === 'pack') m.pack.tasks.push(t);
+    });
+    state.labor.forEach(function (u) {
+      if (u.role !== 'worker') return;
+      var t = W.currentOf(state, u.id);
+      var r = taskRoute(t);
+      if (m.crew[u.zone]) m.crew[u.zone].push({ u: u, t: t, route: r });
+      if (t && r.at) {
+        if (r.at.bin && m.bin[r.at.bin]) m.bin[r.at.bin].here.push(u);
+        else if (r.at.door && m.door[r.at.door]) m.door[r.at.door].here.push(u);
+      }
+    });
+    state.wms.flags.forEach(function (f) {
+      if (f.status !== 'open') return;
+      var t = f.taskId ? E.taskById(state, f.taskId) : null;
+      var b = t && (t.binId || t.toBinId || t.fromBinId);
+      var pin = { kind: 'flag', id: f.id, label: f.label, verdict: 'cant' };
+      if (b && m.bin[b]) m.bin[b].pins.push(pin); else if (m.zonePins[f.zone]) m.zonePins[f.zone].push(pin);
+    });
+    state.wms.osd.forEach(function (f) {
+      if (f.status !== 'open') return;
+      var s = E.shipmentById(state, f.shipmentId);
+      var pin = { kind: 'osd', id: f.id, label: f.type === 'photo' ? f.label : f.type + (f.desc ? ' · ' + shortDesc(f.desc) : ''), verdict: findingWitness(f).verdict };
+      if (s && m.door[s.door]) m.door[s.door].pins.push(pin);
+    });
+    return m;
+  }
+
+  /* Where a task takes its worker: from → to, in floor words. */
+  function taskRoute(t) {
+    if (!t) return { text: 'Free', at: null };
+    if (t.type === 'putaway') {
+      var p = null; state.staging.forEach(function (x) { if (x.id === t.stagingId) p = x; });
+      return { text: (p ? p.door : 'Dock') + ' → ' + dest(t.toBinId), at: { bin: t.toBinId } };
+    }
+    if (t.type === 'pick') return { text: 'Bin ' + t.binId + ' → Pack 1', at: { bin: t.binId } };
+    if (t.type === 'move' || t.type === 'replen') return { text: 'Bin ' + t.fromBinId + ' → ' + dest(t.toBinId), at: { bin: t.toBinId } };
+    if (t.type === 'count') return { text: 'Counting Bin ' + t.binId, at: { bin: t.binId } };
+    if (t.type === 'receive') { var s = E.shipmentById(state, t.shipmentId); return { text: 'Receiving at ' + (s ? s.door : 'the dock'), at: { door: s ? s.door : null } }; }
+    if (t.type === 'pack') return { text: 'Packing at Pack 1', at: { door: 'Door 4' } };
+    if (t.type === 'load') return { text: 'Loading at Door 4', at: { door: 'Door 4' } };
+    return { text: t.title, at: null };
+  }
+
+  function pinHtml(p) {
+    return '<button type="button" class="pin v-' + p.verdict + (ui.pin === p.id ? ' sel' : '') + '" data-act="pin" data-id="' + esc(p.id) + '" title="' + esc(p.id + ' — ' + p.label + ' — ' + VERDICT[p.verdict]) + '">' +
+      '<i aria-hidden="true">' + VERDICT_MARK[p.verdict] + '</i><span>' + esc(p.label) + '</span></button>';
+  }
+  function avatar(u) { return '<span class="ava" title="' + esc(u.name) + '">' + esc(initials(u.id)) + '</span>'; }
+
+  function floorMap(opts) {
+    opts = opts || {};
+    var m = floorModel();
+    var q = (ui.binSearch || '').toLowerCase();
+    var faces = {}; state.wms.slots.forEach(function (s) { faces[s.binId] = s; });
+    var html = '<div class="floor' + (opts.compact ? ' compact' : '') + (opts.focus ? ' focus-' + opts.focus : '') + '">' +
+      '<div class="fl-wall"><span>Dock wall</span></div><div class="fl-bays">';
+    bays().forEach(function (bay) {
+      html += '<section class="fl-bay"><div class="fl-dock">';
+      bay.doors.forEach(function (d) {
+        var di = m.door[d.id];
+        var what = '';
+        if (d.shipmentId) { var s = E.shipmentById(state, d.shipmentId); what = d.shipmentId + (s && s.bol ? ' · BOL ' + s.bol.bolNumber : ''); }
+        else if (d.loadId) what = 'Outbound ' + d.loadId;
+        html += '<div class="fl-door st-' + esc(d.state) + '"><div class="fl-door-h"><b>' + esc(d.id) + '</b><span class="fl-state">' + esc(d.state) + '</span></div>' +
+          (what ? '<div class="fl-what">' + esc(what) + '</div>' : '') +
+          (di.staged.length ? '<div class="fl-pallets" title="Pallets staged at ' + esc(d.id) + '">' + di.staged.map(function (p) {
+            return '<span class="pallet' + (p.hold ? ' held' : '') + '" title="' + esc(p.id + ' · ' + p.qty + ' × ' + p.desc + (p.hold ? ' · ON HOLD' : '')) + '">' + p.qty + '</span>';
+          }).join('') + '</div>' : '') +
+          (di.here.length ? '<div class="fl-here">' + di.here.map(avatar).join('') + '</div>' : '') +
+          (di.pins.length ? '<div class="fl-pins">' + di.pins.map(pinHtml).join('') + '</div>' : '') + '</div>';
+      });
+      if (bay.doors.some(function (d) { return d.id === 'Door 4'; })) {
+        html += '<div class="fl-door fl-pack"><div class="fl-door-h"><b>Pack 1</b><span class="fl-state">' + (m.pack.tasks.length ? m.pack.tasks.length + ' to pack' : 'clear') + '</span></div></div>';
+      }
+      html += '</div><div class="fl-racks"><span class="fl-aisle" aria-hidden="true">aisle</span>';
+      bay.bins.forEach(function (b) {
+        var bi = m.bin[b.id];
+        var match = !q || b.id.toLowerCase().indexOf(q) !== -1 || b.contents.some(function (c) { return c.desc.toLowerCase().indexOf(q) !== -1; });
+        var qty = 0; b.contents.forEach(function (c) { qty += c.qty; });
+        html += '<button type="button" class="fl-bin' + (b.status === 'hold' ? ' held' : '') + (!b.contents.length ? ' empty' : '') + (bi.inc.length ? ' inc' : '') + (bi.out.length ? ' out' : '') +
+          (ui.selBin === b.id ? ' sel' : '') + (match ? '' : ' dim') + '" data-act="bin" data-id="' + esc(b.id) + '">' +
+          '<span class="fl-bin-id">' + esc(b.id) + (faces[b.id] ? ' <small>PICK</small>' : '') + '</span>' +
+          (opts.compact ? '' : '<span class="fl-bin-what">' + (b.contents.length ? esc(qty + ' · ' + shortDesc(b.contents[0].desc)) + (b.contents.length > 1 ? ' +' + (b.contents.length - 1) : '') : 'Empty') + '</span>') +
+          (b.status === 'hold' ? '<span class="fl-tag hold">HOLD</span>' : '') +
+          (bi.inc.length ? '<span class="fl-tag inc" title="Work on its way in">▼ ' + bi.inc.length + '</span>' : '') +
+          (bi.out.length ? '<span class="fl-tag out" title="Work leaving from here">▲ ' + bi.out.length + '</span>' : '') +
+          (bi.here.length ? '<span class="fl-here">' + bi.here.map(avatar).join('') + '</span>' : '') +
+          (bi.pins.length ? '<span class="fl-pins">' + bi.pins.map(function (p) { return '<i class="pin-dot v-' + p.verdict + '" title="' + esc(p.label) + '">' + VERDICT_MARK[p.verdict] + '</i>'; }).join('') + '</span>' : '') +
+          '</button>';
+      });
+      var crew = m.crew[bay.zone];
+      var waiting = state.tasks.filter(function (t) { return t.zone === bay.zone && t.status !== 'done'; }).length;
+      html += '</div><div class="fl-crew"><div class="fl-zone"><b>Zone ' + esc(bay.zone) + '</b><span>' + waiting + ' task' + (waiting === 1 ? '' : 's') + ' waiting</span></div>' +
+        (m.zonePins[bay.zone].length ? '<div class="fl-pins">' + m.zonePins[bay.zone].map(pinHtml).join('') + '</div>' : '') +
+        (opts.compact ? '<div class="fl-crew-row">' + crew.map(function (c) { return avatar(c.u); }).join('') + '</div>'
+          : crew.map(function (c) { return '<div class="fl-worker' + (c.t ? ' busy' : '') + '">' + avatar(c.u) + '<span><b>' + esc(c.u.name.split(' ')[0]) + '</b> ' + esc(c.route.text) + '</span></div>'; }).join('')) +
+        '</div></section>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
+  function floorLegend() {
+    return '<div class="fl-legend"><span><i class="pin-dot v-flag">!</i> Flag</span><span><i class="pin-dot v-agree">✓</i> Agree</span><span><i class="pin-dot v-cant">?</i> Can\'t verify</span>' +
+      '<span><b class="fl-tag inc">▼</b> work coming in</span><span><b class="fl-tag out">▲</b> work going out</span><span><b class="pallet">n</b> pallet at a door</span><span><b class="pallet held">n</b> on hold</span></div>';
+  }
+
+  function pinDetail() {
+    var f = null, kind = null;
+    state.wms.flags.forEach(function (x) { if (x.id === ui.pin) { f = x; kind = 'flag'; } });
+    state.wms.osd.forEach(function (x) { if (x.id === ui.pin) { f = x; kind = 'osd'; } });
+    if (!f) return '';
+    var body;
+    if (kind === 'flag') {
+      body = '<h3>' + esc(f.label) + '</h3>' + witnessRow({ point: 'Reported · Zone ' + (f.zone || '—'), words: f.words, says: '', camera: '', verdict: 'cant' }, f.by) +
+        '<div class="human">' + (f.status === 'open' ? awaiting() + (isManager() ? '<button class="btn" data-act="flag-close" data-id="' + esc(f.id) + '">Close…</button>' : '') : stamp('Closed', f.closedBy, f.closedAt, f.note)) + '</div>';
+    } else {
+      var w = findingWitness(f);
+      var s = E.shipmentById(state, f.shipmentId);
+      body = '<h3>' + esc(f.type === 'photo' ? 'Camera: ' + f.label : f.type + (f.desc ? ' · ' + shortDesc(f.desc) : '')) + '</h3><p class="hint">' + esc(f.shipmentId + (s ? ' at ' + s.door : '')) + '</p>' +
+        witnessRow({ point: '', words: w.words, says: w.says, camera: w.camera, verdict: w.verdict, blind: w.blind }, f.by) +
+        '<div class="human">' + (f.status === 'open' ? awaiting() + '<button class="btn" data-act="osd-close" data-id="' + esc(f.id) + '">Close…</button>' : stamp('Closed', f.closedBy, f.closedAt, f.note)) + '</div>';
+    }
+    return panel('Pinned ' + f.id, body + '<p><button class="btn small" data-act="pin" data-id="">Back to the floor</button></p>');
+  }
+
+  function pinList() {
+    var m = floorModel(), pins = [];
+    Object.keys(m.door).forEach(function (k) { m.door[k].pins.forEach(function (p) { pins.push([k, p]); }); });
+    Object.keys(m.bin).forEach(function (k) { m.bin[k].pins.forEach(function (p) { pins.push(['Bin ' + k, p]); }); });
+    Object.keys(m.zonePins).forEach(function (k) { m.zonePins[k].forEach(function (p) { pins.push(['Zone ' + k, p]); }); });
+    return panel('Pinned on the floor', pins.length ? '<ul class="fl-pinlist">' + pins.map(function (x) {
+      return '<li><span class="hint">' + esc(x[0]) + '</span>' + pinHtml(x[1]) + '</li>';
+    }).join('') + '</ul>' : '<p class="empty">Nothing pinned. No open flags or findings.</p>', 'open flags & findings');
+  }
+
+  LOOK_VIEWS.floor.dashboard = function () {
+    var d = W.dashboard(state);
+    var html = head('Overview', 'The Floor', 'The building, live. Doors along the dock wall, zones behind them, every bin in its place. Work shows where it is going; problems are pinned where they happened.');
+    html += '<div class="fl-strip"><span><b>' + (d.tasks.open + d.tasks.assigned) + '</b> tasks open</span><span><b>' + d.inbound.atDoor + '</b> trailers at a door</span><span><b>' +
+      d.flagsOpen + '</b> flags open</span><span><b>' + d.osdOpen + '</b> OS&D open</span><span><b>' + d.outbound.loadsClosed + '</b> loads shipped</span>' +
+      (d.bottleneck ? '<span class="bad">Backing up: <b>Zone ' + esc(d.bottleneck.zone) + '</b></span>' : '') + '</div>';
+    var side = ui.pin ? pinDetail() : ui.selBin ? binDetail() + '<p><button class="btn small" data-act="pin" data-id="">Back to the floor</button></p>' : pinList();
+    var props = W.proposals(state);
+    if (props.length) side += panel('Labor proposals', props.map(function (p) { return '<p><b>Move ' + esc(p.unitName) + '</b> Zone ' + esc(p.fromZone) + ' → ' + esc(p.toZone) + '<br><span class="hint">' + esc(p.why) + '</span></p>'; }).join('') +
+      '<p class="law">A proposal, not a decision. <a href="#/labor">Decide in Labor Management</a>.</p>');
+    html += '<div class="fl-layout"><div>' + floorMap({}) + floorLegend() + '</div><div class="fl-side">' + side + '</div></div>';
+    return html;
+  };
+
+  LOOK_VIEWS.floor.locations = function () {
+    var html = head('Inventory › Locations', 'Locations', 'Every bin where it stands. Hatched bins are on hold. Tap a bin to see what is in it.');
+    html += '<div class="filters fl-filter"><div class="field"><label>Find an item or bin</label><input id="fBin" type="search" value="' + esc(ui.binSearch) + '" placeholder="e.g. peaches"></div></div>';
+    html += '<div class="fl-layout"><div>' + floorMap({}) + floorLegend() + '</div><div class="fl-side">' + binDetail() + '</div></div>';
+    return html;
+  };
+
+  /* The other floor screens keep their work lists, under a small map of the building. */
+  [['dock', 'dock'], ['receiving', 'dock'], ['putaway', 'racks'], ['picking', 'racks'], ['ship', 'dock'], ['osd', 'pins'], ['flags', 'pins'], ['queues', 'crew'], ['counts', 'racks'], ['replen', 'racks']].forEach(function (x) {
+    LOOK_VIEWS.floor[x[0]] = function () { return injectAfterHead(VIEWS[x[0]](), floorMap({ compact: true, focus: x[1] })); };
+  });
+
+  /* ===================== LOOK 3 — THE RECORD ======================== */
+
+  /* A case entry: the worker's words, quoted and attributed. */
+  function entryWords(words, by, ts) {
+    if (!words || /^\(typed/.test(words)) return '<span class="entry-none">No words on record (typed)</span>';
+    return '<blockquote class="entry-q"><span class="q">' + esc(words) + '</span><cite>' + esc(uname(by)) + (ts ? ', ' + time(ts) : '') + '</cite></blockquote>';
+  }
+
+  LOOK_VIEWS.record.dashboard = function () {
+    var d = W.dashboard(state);
+    var k = function (label, v, sub, cls, href) {
+      return '<a class="kpi ' + (cls || '') + '" href="#/' + href + '"><div class="k-label">' + esc(label) + '</div><div class="k-val">' + esc(v == null ? '—' : v) + '</div><div class="k-sub">' + esc(sub || '') + '</div></a>';
+    };
+    var all = [];
+    receiptChecks().forEach(function (c) { all = all.concat(c.points); });
+    var t = tally(all);
+    var html = head('Overview', 'The Record', 'Everything here is evidence: counted from the desk record, quoted in the worker\'s own words, decided by a human.');
+    html += '<div class="kpis">' +
+      k('Agree', t.agree, 'voice and camera match', 'ok', 'receiving') +
+      k('Flag', t.flag, 'voice and camera differ', t.flag ? 'bad' : '', 'osd') +
+      k('Can\'t verify', t.cant, 'one witness could not see', t.cant ? 'warn' : '', 'osd') +
+      k('Open findings', d.osdOpen + d.flagsOpen, d.osdOpen + ' OS&D · ' + d.flagsOpen + ' flags', d.osdOpen + d.flagsOpen ? 'bad' : 'ok', 'osd') +
+      k('Open tasks', d.tasks.open + d.tasks.assigned, d.tasks.assigned + ' in progress · ' + d.tasks.blocked + ' blocked', d.tasks.blocked ? 'warn' : '', 'queues') +
+      k('Inbound', d.inbound.received + ' / ' + (d.inbound.received + d.inbound.atDoor + d.inbound.expected), d.inbound.unitsIn + ' units counted', '', 'receiving') +
+      k('Outbound loads', d.outbound.loadsClosed, d.outbound.unitsOut + ' units shipped', d.outbound.loadsClosed ? 'ok' : '', 'ship') +
+      k('Fill rate', d.fillRate == null ? '—' : d.fillRate + '%', d.shortPicks + ' short pick' + (d.shortPicks === 1 ? '' : 's'), d.shortPicks ? 'warn' : '', 'picking') +
+      '</div>';
+    var waiting = [];
+    state.wms.osd.forEach(function (f) { if (f.status === 'open') waiting.push({ ts: f.ts, html: '<tr><td class="id">' + esc(f.id) + '</td><td>' + esc(f.type === 'photo' ? 'Camera: ' + f.label : f.type + (f.desc ? ' · ' + shortDesc(f.desc) : '')) + '</td><td>' + (findingWitness(f).fromCamera ? '<span class="entry-none">Seen by the camera</span>' : entryWords(f.words, f.by, f.ts)) + '</td><td>' + verdictTag(findingWitness(f).verdict) + '</td><td><a class="btn small" href="#/osd">Decide</a></td></tr>' }); });
+    state.wms.flags.forEach(function (f) { if (f.status === 'open') waiting.push({ ts: f.ts, html: '<tr><td class="id">' + esc(f.id) + '</td><td>' + esc(f.label) + '</td><td>' + entryWords(f.words, f.by, f.ts) + '</td><td>' + verdictTag('cant') + '</td><td><a class="btn small" href="#/flags">Decide</a></td></tr>' }); });
+    W.proposals(state).forEach(function (p) { waiting.push({ ts: '', html: '<tr><td class="id">Labor</td><td>Move ' + esc(p.unitName) + ', Zone ' + esc(p.fromZone) + ' → ' + esc(p.toZone) + '</td><td><span class="entry-none">' + esc(p.why) + '</span></td><td>—</td><td><a class="btn small" href="#/labor">Decide</a></td></tr>' }); });
+    waiting.sort(function (a, b) { return a.ts < b.ts ? 1 : -1; });
+    var left = panel('Awaiting a human decision', table(['Entry', 'Finding', 'Words on record', 'Verdict', ''], waiting.map(function (w) { return w.html; }), 'Nothing is waiting for a decision.'), waiting.length + ' open', true) +
+      panel('Dock doors', doorsHtml(), 'live');
+    var right = panel('Latest on the record', recordsHtml(state.records.slice(-8).reverse()), '<a href="#/audit">Full record</a>', true);
+    html += '<div class="grid2"><div>' + left + '</div><div>' + right + '</div></div>';
+    return html;
+  };
+
+  LOOK_VIEWS.record.receiving = function () {
+    var html = head('Inbound › Receiving', 'Receiving', 'Receive against the BOL on file. Each line is entered as evidence: what the receiver said, what the camera saw, and whether the two agree. A human posts the receipt.');
+    var rows = state.inbound.map(function (s) {
+      var st = W.inboundStatus(state, s);
+      return '<tr class="' + (ui.rcvShip === s.id ? 'sel' : '') + '"><td class="id">' + esc(s.id) + '</td><td class="id">' + esc(s.bol ? s.bol.bolNumber : '—') + '</td><td>' + esc(s.desc) + '</td><td>' + esc(s.door) +
+        '</td><td class="num">' + esc(s.pallets) + '</td><td>' + stageChip(st) + ' <span class="hint">' + esc(st.words) + '</span></td><td class="actions">' +
+        (s.status === 'staged at door' ? '<button class="btn small primary" data-act="rcv-open" data-id="' + esc(s.id) + '">Receive</button>' : '') + '</td></tr>';
+    });
+    html += panel('Inbound shipments (ASN / BOL on file)', table(['Shipment', 'BOL #', 'Description', 'Door', 'Pallets', 'Status', ''], rows), null, true);
+    var s = ui.rcvShip ? E.shipmentById(state, ui.rcvShip) : null;
+    if (s && s.status === 'staged at door') {
+      var exp = W.expectedLines(s);
+      if (!ui.rcvLines || ui.rcvLines.length !== exp.length) {
+        ui.rcvLines = exp.map(function (l) { return { desc: l.desc, expected: l.expected, received: '', damaged: '', quote: '' }; });
+      }
+      var cam = camera(ui.rcvPhotoFlags);
+      var lrows = ui.rcvLines.map(function (l, i) {
+        var pts = witness([l], ui.rcvPhotoFlags, '').filter(function (p) { return p.point !== 'Condition'; });
+        var v = pts.length ? (pts.some(function (p) { return p.verdict === 'flag'; }) ? 'flag' : pts.some(function (p) { return p.verdict === 'cant'; }) ? 'cant' : 'agree') : null;
+        return '<tr><td>' + esc(l.desc) + '</td><td class="num">' + l.expected + '</td><td class="num"><input class="cell" data-rcv="received" data-i="' + i + '" inputmode="numeric" value="' + esc(l.received == null ? '' : l.received) + '"></td>' +
+          '<td class="num"><input class="cell" data-rcv="damaged" data-i="' + i + '" inputmode="numeric" value="' + esc(l.damaged == null ? '' : l.damaged) + '"></td><td>' +
+          (l.quote ? entryWords(l.quote, me) : '<span class="entry-none">—</span>') + '</td><td>' + (cam.text ? '<span class="entry-seen">' + esc(cam.text) + '</span>' : '<span class="entry-none">No photo</span>') + '</td><td>' + (v ? verdictTag(v) : '—') + '</td></tr>';
+      });
+      var bol = s.bol || {};
+      var body = '<p class="hint">BOL <b>' + esc(bol.bolNumber || 'not on file') + '</b> · ' + esc(bol.carrier || '') + ' · shipper ' + esc(bol.shipper || '—') +
+        ' · claims ' + esc(bol.piecesClaimed == null ? '—' : bol.piecesClaimed) + ' pieces · at ' + esc(s.door) + '</p>' +
+        table(['Item', 'BOL qty', 'Received', 'Damaged', 'Voice — receiver\'s words', 'Camera — photo', 'Verdict'], lrows) +
+        witness(ui.rcvLines, ui.rcvPhotoFlags, ui.rcvTranscript).filter(function (p) { return p.point === 'Condition'; }).map(function (p) {
+          return '<p class="entry-cond"><b>Condition</b> Voice: ' + esc(p.says) + ' · Camera: ' + esc(p.camera || 'no photo') + ' ' + verdictTag(p.verdict) + '</p>';
+        }).join('') +
+        '<div class="form-actions">' +
+        '<button class="btn talk" id="rcvTalk" type="button">🎙 Hold to speak the count</button>' +
+        '<button class="btn" data-act="cam" data-for="dock">📷 Photo of the freight</button>' +
+        '<a class="btn" href="index.html">Full two-scan cross-check ↗</a>' +
+        '<span class="hint" id="rcvStatus"></span></div>' +
+        (ui.rcvTranscript ? '<div class="heard"><b>Heard — entered as said</b>' + entryWords(ui.rcvTranscript, me) + '</div>' : '') +
+        (ui.rcvPhoto ? '<img class="photo-preview" src="' + ui.rcvPhoto + '" alt="Freight photo">' : '') +
+        '<div class="form-actions"><button class="btn primary" data-act="rcv-post">Post receipt — I checked it</button><button class="btn" data-act="rcv-clear">Clear</button></div>' +
+        '<p class="law">The machine fills in what it heard; a human checks the numbers and posts. Nothing posts on its own.</p>';
+      html += panel('Receive ' + s.id + ' — ' + s.desc, body, 'counts against the BOL on file');
+    } else {
+      html += panel('Receive', '<p class="empty">Check a trailer in at Dock & Yard, then pick a shipment at a door above.</p>');
+    }
+    var rr = receiptChecks().reverse().map(function (c) {
+      var r = c.receipt, units = 0, dmg = 0;
+      r.lines.forEach(function (l) { units += l.received; dmg += l.damaged; });
+      return '<tr><td class="id">' + esc(r.id) + '</td><td class="id">' + esc(r.shipmentId) + '<br>' + esc(r.bolNumber || '—') + '</td><td class="num">' + units + '</td><td class="num">' + dmg +
+        '</td><td>' + entryWords(r.transcript, r.by, null) + '</td><td>' + (camera(r.photoFlags).text ? '<span class="entry-seen">' + esc(camera(r.photoFlags).text) + '</span>' : '<span class="entry-none">No photo</span>') +
+        '</td><td>' + tallyHtml(tally(c.points)) + '</td><td>' + stamp('Posted', r.by, r.ts) + '</td></tr>';
+    });
+    html += panel('Receipts on the record', table(['Receipt', 'Shipment / BOL', 'Units', 'Dmg', 'Voice', 'Camera', 'Verdicts', 'Decision'], rr, 'No receipts yet.'), null, true);
+    return html;
+  };
+
+  LOOK_VIEWS.record.osd = function () {
+    var html = head('Inbound › OS&D', 'OS&D Findings', 'Case entries from receiving. Each one quotes the receiver, shows what the camera saw, and carries a human\'s stamp when it is settled. Records stay open.');
+    var rows = state.wms.osd.slice().reverse().map(function (f) {
+      var w = findingWitness(f);
+      var cls = f.type === 'damage' ? 'bad' : f.type === 'shortage' ? 'warn' : f.type === 'overage' ? 'info' : '';
+      return '<tr><td class="id">' + esc(f.id) + '<br><span class="hint">' + esc(f.shipmentId) + '</span></td><td>' + chip(f.type === 'photo' ? 'Photo: ' + f.label : f.type, cls) + '<br>' + esc(f.desc ? shortDesc(f.desc) : '') +
+        (f.qty != null ? ' <b>' + esc(f.qty) + '</b>' : '') + '</td><td>' + (w.fromCamera ? '<span class="entry-none">' + esc(w.says) + '</span>' : entryWords(f.words, f.by, f.ts)) + '</td><td>' +
+        (w.camera ? '<span class="entry-seen' + (w.blind ? ' blind' : '') + '">' + esc(w.camera) + '</span>' : '<span class="entry-none">No photo</span>') + '</td><td>' + verdictTag(w.verdict) + '</td><td>' +
+        (f.status === 'open' ? awaiting() + ' <button class="btn small" data-act="osd-close" data-id="' + esc(f.id) + '">Close…</button>' : stamp('Closed', f.closedBy, f.closedAt, f.note)) + '</td></tr>';
+    });
+    html += panel('Case entries', table(['Entry', 'Finding', 'Voice — on the record', 'Camera', 'Verdict', 'Decision'], rows, 'No OS&D findings. Receive a shipment to create them.'), null, true);
+    return html;
+  };
+
+  LOOK_VIEWS.record.flags = function () {
+    var html = head('Control › Flags & Incidents', 'Flags & Incidents', 'A flag is an entry on the record: a short label and the speaker\'s exact words. It closes nothing. A human closes it, and the stamp says who.');
+    html += panel('Report a problem', flagForm());
+    var rows = state.wms.flags.slice().reverse().map(function (f) {
+      var t = f.taskId ? E.taskById(state, f.taskId) : null;
+      return '<tr><td class="id">' + esc(f.id) + '</td><td><b>' + esc(f.label) + '</b><br><span class="hint">' + esc(t ? t.title : 'No task in hand') + ' · Zone ' + esc(f.zone || '—') + '</span></td><td>' +
+        entryWords(f.words, f.by, f.ts) + '</td><td>' + verdictTag('cant') + '<br><span class="hint">no photo</span></td><td>' +
+        (f.status === 'open' ? awaiting() + (isManager() ? ' <button class="btn small" data-act="flag-close" data-id="' + esc(f.id) + '">Close…</button>' : '') : stamp('Closed', f.closedBy, f.closedAt, f.note)) + '</td></tr>';
+    });
+    html += panel('Entries', table(['Entry', 'Label', 'Exact words', 'Verdict', 'Decision'], rows, 'No flags yet.'), null, true);
+    return html;
+  };
+
+  var DECISION_KINDS = { ship: 'Shipped', 'osd-closed': 'Closed', 'flag-closed': 'Closed', wave: 'Released', hold: 'Held', release: 'Released', reassign: 'Reassigned' };
+  function ledgerHtml(list) {
+    var total = state.records.length;
+    return table(['Entry', 'Time', 'What happened', 'Decided by'], list.map(function (r) {
+      var verb = r.kind === 'labor-move' ? (r.approved ? 'Approved' : 'Declined') : r.kind === 'complete' && r.receiptId ? 'Posted' : DECISION_KINDS[r.kind];
+      var human = r.by && E.unitById(state, r.by);
+      var i = state.records.indexOf(r);
+      return '<tr><td class="id">No. ' + (i >= 0 ? i + 1 : total) + '</td><td class="id">' + time(r.ts) + '</td><td>' + chip(r.kind || 'note', r.kind === 'incident' ? 'bad' : '') + ' ' + esc(r.text) + '</td><td>' +
+        (verb && human ? stamp(verb, r.by, null) : '<span class="entry-none">' + (human ? esc(uname(r.by)) : 'System') + '</span>') + '</td></tr>';
+    }));
+  }
 
   /* ---------- render ------------------------------------------------ */
 
@@ -806,7 +1435,7 @@
     var cur = route();
     renderWho();
     renderNav(cur);
-    var v = VIEWS[cur] || VIEWS.dashboard;
+    var v = (LOOK_VIEWS[LOOK] || {})[cur] || VIEWS[cur] || VIEWS.dashboard;
     var scroll = window.scrollY;
     $('main').innerHTML = v();
     window.scrollTo(0, scroll);
@@ -973,7 +1602,12 @@
       var b = val('pa-' + el.dataset.id).trim();
       act(function (s) { return W.complete(s, el.dataset.id, { by: me, binId: b || undefined }); });
     },
-    bin: function (el) { ui.selBin = el.dataset.id; render(); },
+    bin: function (el) { ui.selBin = el.dataset.id; ui.pin = null; render(); },
+    pin: function (el) {
+      ui.pin = el.dataset.id || null; ui.selBin = null;
+      if (ui.pin && route() !== 'dashboard') { location.hash = '#/dashboard'; return; }
+      render();
+    },
     hold: function (el) { var why = val('holdWhy'); act(function (s) { return W.hold(s, { binId: el.dataset.bin }, me, why); }, function (r) { return 'On hold.' + (r.freed && r.freed.length ? ' Back to the queue from ' + r.freed.join(', ') + '.' : ''); }); },
     release: function (el) {
       var t = el.dataset.bin ? { binId: el.dataset.bin } : { stagingId: el.dataset.stg };

@@ -1,0 +1,147 @@
+/* =====================================================================
+   wms-look-record.css — LOOK 3, THE RECORD.
+   The enterprise console, kept: same grids, same menu, same masthead.
+   What changes is what the grids mean. Findings read as case entries
+   that quote the worker; verdicts read as tags on the evidence; a
+   human's decision is a stamp on the record. Loaded on top of wms.css.
+   ===================================================================== */
+:root {
+  --navy: #14233b;
+  --navy-2: #1b2e4c;
+  --navy-3: #26406a;
+  --accent: #2a55a8;
+  --accent-2: #1f4386;
+  --bg: #f3f0e8;
+  --panel: #fffdf8;
+  --panel-2: #f8f5ed;
+  --line: #d8d0bf;
+  --line-2: #e7e1d4;
+  --head: #efe9dc;
+  --ink: #1d2433;
+  --ink-2: #4a5160;
+  --ink-3: #737a87;
+  --ok: #1d6e3f; --ok-bg: #e2f1e6;
+  --warn: #8a5a00; --warn-bg: #f9edd2;
+  --bad: #a2241c; --bad-bg: #f8e2df;
+  --info: #24518f; --info-bg: #e1eaf7;
+  --mute-bg: #ebe6da;
+  --stamp: #2340a0;
+  --serif: "Iowan Old Style", "Charter", "Georgia", "Times New Roman", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --navy: #0b1220; --navy-2: #101a2d; --navy-3: #1c2b47;
+    --accent: #7ea2ff; --accent-2: #9db8ff;
+    --bg: #121418; --panel: #1a1d23; --panel-2: #20242b;
+    --line: #333944; --line-2: #2a2f38; --head: #22262e;
+    --ink: #ebe6da; --ink-2: #bdb7aa; --ink-3: #8f8a80;
+    --ok: #6fd39a; --ok-bg: #173325;
+    --warn: #f0c060; --warn-bg: #3a2e12;
+    --bad: #ff8a80; --bad-bg: #3d1a18;
+    --info: #9cbcff; --info-bg: #182640;
+    --mute-bg: #2a2e36;
+    --stamp: #9db4ff;
+  }
+}
+
+body { font-size: 14.5px; line-height: 1.5; background: var(--bg); color: var(--ink); }
+.topbar { background: var(--navy); border-bottom: 3px double var(--stamp); }
+.brand .mark { background: transparent; border: 2px solid #fff; border-radius: 2px; }
+.sidenav { background: var(--panel-2); border-right-color: var(--line); }
+.nav-item { color: var(--ink); }
+.nav-item:hover { background: var(--head); }
+.nav-item.active { background: var(--panel); color: var(--accent-2); border-left-color: var(--stamp); }
+.page-head h1 { font-family: var(--serif); font-size: 26px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; }
+.page-head p { font-size: 14.5px; }
+.crumbs { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+.panel { background: var(--panel); border-color: var(--line); border-radius: 2px; box-shadow: 0 1px 0 var(--line-2); }
+.panel-h { background: var(--head); border-bottom: 1px solid var(--line); }
+.panel-h h2 { color: var(--ink); font-family: var(--serif); text-transform: none; font-size: 15.5px; letter-spacing: 0; }
+.kpi { background: var(--panel); border-color: var(--line); border-top-width: 4px; border-radius: 2px; }
+.kpi .k-val { color: var(--ink); font-family: var(--serif); font-size: 30px; }
+.kpi .k-label { color: var(--ink-2); }
+
+/* grids */
+table.grid { font-size: 14px; }
+.grid th { background: var(--panel-2); color: var(--ink-2); border-bottom: 2px solid var(--line); font-size: 11.5px; }
+.grid td { border-bottom-color: var(--line-2); padding: 8px 9px; }
+.grid tr:nth-child(even) td { background: transparent; }
+.grid tr:hover td { background: var(--panel-2); }
+.grid tr.sel td { background: var(--info-bg) !important; }
+.grid td.id { color: var(--ink-2); }
+.quote { color: var(--ink); font-family: var(--serif); }
+
+/* controls */
+.btn { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.btn:hover { background: var(--panel-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent-2); color: #fff; }
+@media (prefers-color-scheme: dark) { .btn.primary { color: #0b1220; } }
+.field input, .field select, .field textarea, input.cell, select.cell { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.filters { background: var(--panel-2); border-bottom-color: var(--line-2); }
+.bar { background: var(--line-2); }
+.door { background: var(--panel-2); border-color: var(--line); }
+.door .d-id { color: var(--ink); }
+.bin { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.bin .b-id { color: var(--ink); }
+.bin.emptyb { background: var(--panel-2); }
+.bin.held { background: repeating-linear-gradient(45deg, var(--panel), var(--panel) 6px, var(--bad-bg) 6px, var(--bad-bg) 12px); }
+.wcard { background: var(--panel); border-color: var(--line); }
+.wcard .w-h { background: var(--panel-2); border-bottom-color: var(--line); }
+.answer, .evidence { background: var(--panel-2); border-color: var(--line-2); color: var(--ink); }
+.law { border-left-color: var(--stamp); }
+.notice.practice { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.notice.bad { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); }
+.notice.info { background: var(--info-bg); color: var(--info); border-color: var(--info); }
+.chip { background: var(--mute-bg); color: var(--ink-2); }
+.chip.type { background: var(--mute-bg); color: var(--ink-2); }
+
+/* ---------- evidence: verdict tags ---------- */
+.verdict { display: inline-flex; align-items: center; gap: 4px; font: 700 11px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px; border: 1.5px solid; border-radius: 2px; white-space: nowrap; }
+.verdict::before { content: "["; } .verdict::after { content: "]"; }
+.verdict i { font-style: normal; }
+.verdict.v-agree { color: var(--ok); background: var(--ok-bg); }
+.verdict.v-flag { color: var(--bad); background: var(--bad-bg); }
+.verdict.v-cant { color: var(--warn); background: var(--warn-bg); }
+.verdict.big { font-size: 13px; padding: 6px 9px; }
+.tally { display: inline-flex; gap: 10px; flex-wrap: wrap; font: 600 12px/1.2 var(--mono); }
+.tally b { font-size: 15px; }
+.t-agree { color: var(--ok); } .t-flag { color: var(--bad); } .t-cant { color: var(--warn); }
+
+/* ---------- evidence: the worker's words ---------- */
+.entry-q, .said { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15px; line-height: 1.4; color: var(--ink); border-left: 3px solid var(--line); padding: 1px 0 1px 10px; }
+.entry-q .q::before, .said .q::before { content: "“"; } .entry-q .q::after, .said .q::after { content: "”"; }
+.entry-q cite, .said cite { display: block; font: normal 11.5px/1.4 "Segoe UI", Roboto, sans-serif; color: var(--ink-3); margin-top: 2px; }
+.entry-q cite::before, .said cite::before { content: "— said by "; }
+.entry-none, .said.none, .seen.none { color: var(--ink-3); font-style: italic; font-size: 12.5px; border: 0; padding: 0; }
+.entry-seen, .seen { font-size: 13px; color: var(--ink-2); margin: 0; }
+.entry-seen:not(.blind)::before, .seen:not(.none):not(.blind)::before { content: "Photo: "; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.says { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.entry-cond { margin: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink-2); }
+
+/* ---------- the human's decision: a stamp ---------- */
+.stamp { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 9px 5px; border: 2.5px double var(--stamp); border-radius: 3px;
+  color: var(--stamp); transform: rotate(-2deg); font: 600 11.5px/1.25 var(--mono); text-transform: uppercase; letter-spacing: .04em; max-width: 260px; }
+.stamp b { font-size: 14px; letter-spacing: .14em; }
+.stamp .st-who, .stamp .st-ts { display: inline; }
+.stamp .st-ts { display: block; }
+.stamp .st-note { text-transform: none; letter-spacing: 0; font: italic 12px/1.3 var(--serif); }
+.stamp.pending { border: 1.5px dashed var(--ink-3); color: var(--ink-3); transform: none; }
+.stamp.pending b { font-size: 11px; letter-spacing: .06em; }
+
+/* ---------- witness rows (pin details, handheld) ---------- */
+.w-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line-2); }
+.w-point { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 4px; }
+.w-point-cam { visibility: hidden; }
+.w-verdict { padding-top: 16px; }
+.pa-witness { background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; margin-top: 10px; }
+.says.big { font: 700 16px/1.2 var(--mono); color: var(--ink); }
+.human { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+
+@media (max-width: 760px) {
+  body { font-size: 14px; }
+  .w-row { grid-template-columns: minmax(0, 1fr); }
+  .w-point-cam { display: none; }
+  .w-verdict { padding-top: 0; }
+  .stamp { max-width: 200px; }
+  .page-head h1 { font-size: 22px; }
+}
