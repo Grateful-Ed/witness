@@ -77,7 +77,7 @@ check('match: expected truck — chain is arrive, receive, put away, all waiting
   r.chain.length === 3 && r.chain.every(function (x) { return x.key === 'waiting'; }));
 check('match: expected truck — no receive task is made by the scan', !E.taskById(s, 't-receive-IN-1004'));
 check('match: expected truck — next step is logging the truck, no task id',
-  r.next.taskId === null && /Log the truck at Door 2/.test(r.next.title));
+  r.next.taskId === null && /Log the truck at Inbound Door 2/.test(r.next.title));
 check('match: stage words come from the engine', r.stage.key === 'expected');
 
 check('match: case and punctuation don\'t matter ("brfl tl 001")',
@@ -85,7 +85,7 @@ check('match: case and punctuation don\'t matter ("brfl tl 001")',
 
 /* A shipment at the door: the receive task is the next task. */
 var r1 = S.summon(s, read({ bol_number: 'BRFL-1001' }));
-check('match: BRFL-1001 summons IN-1001 at Door 1', r1.status === 'match' && r1.shipment.id === 'IN-1001');
+check('match: BRFL-1001 summons IN-1001 at Inbound Door 1', r1.status === 'match' && r1.shipment.id === 'IN-1001');
 check('match: IN-1001 next task is its receive task, open',
   r1.next.taskId === 't-receive-IN-1001' && /Open/.test(r1.next.words));
 check('match: IN-1001 chain — arrived done, receive open',

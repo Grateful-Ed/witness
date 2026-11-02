@@ -50,15 +50,26 @@ The desk home (`#/dashboard`) is the building from William's sketch
 on one wall, Outbound Docks 1–4 on the other, the pink Receiving Bay
 and Staging bands inside them, the yellow Bay Locations block in the
 centre with every zone and bin from state. No tables; read-only.
-The old KPI dashboard moved one click away to `#/numbers` (Shift
-Numbers).
 
-- The state has four dock doors, each usable in or out. Inbound Dock N
-  shows the inbound side of Door N (trailer, pallets waiting for
-  putaway); Outbound Dock N shows the outbound side of the same door
-  (load, orders staged to ship). Each dock names its door.
+- Eight doors, for real (data/world.js): `Inbound Door 1–4`
+  (`direction: 'in'`) and `Outbound Door 1–4` (`direction: 'out'`).
+  The map renders doors straight from state: Inbound Dock N is
+  Inbound Door N, Outbound Dock N is Outbound Door N. Outbound Door 4
+  is the loading door (engine `DEFAULT_OUTBOUND_DOOR`).
+- Trucks come in only at inbound doors: `arriveShipment` (engine) and
+  `schedule` (WMS) refuse an outbound door; the Dock & Yard door list
+  shows inbound doors only.
+- A door with no direction (a save from the old four-door world), a
+  pallet not at an inbound door, or an order staged away from an
+  outbound door is listed under the map as "Not on a wall" — never
+  dropped.
 - Every place carries `data-place` / `data-id` hooks for the Witness
   page (Task 2) and map flags (Task 4). No click handlers yet.
+- One numbers page: Shift Summary (`#/summary`). The KPI dashboard
+  that used to be the home was folded into it (open tasks, inbound
+  x / y with trucks at a door, orders shipped, fill rate, inventory
+  accuracy, dock to stock, replenishment, done per zone) and then
+  deleted. All figures come from `W.dashboard` / `W.shiftSummary`.
 - The `?look=` switcher stays. Only the default look ("Today") shows
   the map; the other looks keep their own home until Task 6.
 
@@ -84,11 +95,11 @@ No Worker change was needed.
 ## Tests
 
 ```
-node test/wms-test.js        # 127 — the WMS logic end to end
+node test/wms-test.js        # 128 — the WMS logic end to end
 node test/wms-ai-test.js     # 20  — Meta API calls, stubbed /chat
 node test/wms-store-test.js  # 15  — desk-record seam, stubbed fetch
-node test/wms-map-test.js    # 26  — the warehouse map, from the seed world
-node test/wms-ui-smoke.js    # 21  — real browser (Playwright), stubbed Worker; skips without Playwright
+node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
+node test/wms-ui-smoke.js    # 22  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 
 ## Left out, and why

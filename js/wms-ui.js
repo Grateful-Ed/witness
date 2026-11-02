@@ -160,7 +160,6 @@
   var NAV = [
     { group: 'Overview' },
     { id: 'dashboard', label: 'Warehouse Map' },
-    { id: 'numbers', label: 'Shift Numbers' },
     { group: 'Inbound' },
     { id: 'dock', label: 'Dock & Yard' },
     { id: 'receiving', label: 'Receiving' },
@@ -260,46 +259,6 @@
     return head('Overview', 'Warehouse', 'The building, live from the desk record.') + window.WitnessWmsMap.html(state, W);
   };
 
-  /* The numbers that used to be the home, one click away. */
-  VIEWS.numbers = function () {
-    var d = W.dashboard(state);
-    var k = function (label, v, sub, cls, href) {
-      return '<a class="kpi ' + (cls || '') + '" href="#/' + href + '"><div class="k-label">' + esc(label) + '</div><div class="k-val">' +
-        esc(v == null ? '—' : v) + '</div><div class="k-sub">' + esc(sub || '') + '</div></a>';
-    };
-    var html = head('Overview › Shift Numbers', 'Operations Dashboard', 'Computed from the live desk record — tasks, flags, zone loads, shipments in and out. Nobody types these numbers.');
-    html += '<div class="kpis">' +
-      k('Open tasks', d.tasks.open + d.tasks.assigned, d.tasks.assigned + ' in progress · ' + d.tasks.blocked + ' blocked', d.tasks.blocked ? 'warn' : '', 'queues') +
-      k('Tasks done', d.tasks.done, 'this shift', 'ok', 'summary') +
-      k('Open flags', d.flagsOpen, 'worker reports', d.flagsOpen ? 'bad' : 'ok', 'flags') +
-      k('OS&D open', d.osdOpen, 'receiving findings', d.osdOpen ? 'bad' : 'ok', 'osd') +
-      k('Inbound', d.inbound.received + ' / ' + (d.inbound.received + d.inbound.atDoor + d.inbound.expected), d.inbound.atDoor + ' at a door · ' + d.inbound.unitsIn + ' units in', '', 'receiving') +
-      k('Outbound loads', d.outbound.loadsClosed, d.outbound.shipped + ' order' + (d.outbound.shipped === 1 ? '' : 's') + ' shipped · ' + d.outbound.unitsOut + ' units', d.outbound.loadsClosed ? 'ok' : '', 'ship') +
-      k('Fill rate', d.fillRate == null ? '—' : d.fillRate + '%', d.shortPicks + ' short pick' + (d.shortPicks === 1 ? '' : 's'), d.shortPicks ? 'warn' : '', 'picking') +
-      k('Inventory accuracy', d.accuracy == null ? '—' : d.accuracy + '%', d.countsDone + ' cycle count' + (d.countsDone === 1 ? '' : 's'), '', 'counts') +
-      k('Dock to stock', d.dockToStockMin == null ? '—' : d.dockToStockMin + ' min', 'avg, received → last pallet binned', '', 'putaway') +
-      k('Replenishment', d.replen, 'pick faces below min', d.replen ? 'warn' : 'ok', 'replen') +
-      '</div>';
-
-    var maxLoad = 0;
-    d.zones.forEach(function (z) { maxLoad = Math.max(maxLoad, z.load); });
-    var zrows = d.zones.map(function (z) {
-      var pct = maxLoad ? Math.round(100 * z.load / maxLoad) : 0;
-      var cls = d.bottleneck && d.bottleneck.zone === z.zone ? 'bad' : (pct > 66 ? 'warn' : '');
-      return '<tr><td><b>Zone ' + esc(z.zone) + '</b></td><td class="num">' + z.pending + '</td><td class="num">' + z.workers + '</td><td class="num">' +
-        (Math.round(z.load * 10) / 10).toFixed(1) + '</td><td style="width:40%"><div class="bar ' + cls + '"><span style="width:' + pct + '%"></span></div></td><td class="num">' + z.done + '</td></tr>';
-    });
-    var props = W.proposals(state);
-    var left = panel('Zone load', table(['Zone', 'Waiting', 'Workers', 'Per worker', 'Load', 'Done'], zrows), 'pending tasks per labor unit', true) +
-      panel('Dock doors', doorsHtml(), 'live');
-    var right = panel('Labor proposals', props.length ? props.map(function (p) {
-      return '<p><b>Move ' + esc(p.unitName) + '</b> zone ' + esc(p.fromZone) + ' → ' + esc(p.toZone) + '<br><span class="hint">' + esc(p.why) + '</span></p>';
-    }).join('') + '<p class="law">A proposal, not a decision. <a href="#/labor">Decide in Labor Management</a>.</p>' : '<p class="empty">No zone is backing up past the threshold. No move proposed.</p>') +
-      panel('Recent activity', recordsHtml(state.records.slice(-8).reverse()), '<a href="#/audit">Audit trail</a>', true);
-    html += '<div class="grid2"><div>' + left + '</div><div>' + right + '</div></div>';
-    return html;
-  };
-
   function doorsHtml() {
     return '<div class="doors">' + state.doors.map(function (d) {
       var what = '';
@@ -338,7 +297,7 @@
     var ships = state.inbound.filter(function (s) { return s.status !== 'received' && s.status !== 'staged at door'; });
     var form = ships.length ? '<div class="form">' +
       '<div class="field"><label>Shipment</label><select id="apShip">' + ships.map(function (s) { return opt(s.id, s.id + ' — ' + s.desc); }).join('') + '</select></div>' +
-      '<div class="field"><label>Door</label><select id="apDoor">' + state.doors.map(function (d) { return opt(d.id, d.id + ' (Zone ' + d.zone + ')'); }).join('') + '</select></div>' +
+      '<div class="field"><label>Door</label><select id="apDoor">' + state.doors.filter(function (d) { return d.direction !== 'out'; }).map(function (d) { return opt(d.id, d.id + ' (Zone ' + d.zone + ')'); }).join('') + '</select></div>' +
       '<div class="field"><label>Day</label><select id="apDay">' + opt('Today', 'Today') + opt('Tomorrow', 'Tomorrow') + '</select></div>' +
       '<div class="field"><label>Start</label><input id="apStart" type="time" value="13:00"></div>' +
       '<div class="field"><label>End</label><input id="apEnd" type="time" value="14:00"></div>' +
@@ -715,17 +674,30 @@
     var html = head('Control › Shift Summary', 'Shift Summary', 'Counted from the records and the live state. Nobody writes this up.', '<button class="btn" data-act="print">Print</button>');
     var types = Object.keys(s.base.doneByType).sort().map(function (k) { return '<tr><td>' + esc(k) + '</td><td class="num">' + s.base.doneByType[k] + '</td></tr>'; });
     var per = s.base.perUnit.map(function (u) { return '<tr><td>' + esc(u.name) + '</td><td>' + esc(u.zone || '—') + '</td><td class="num">' + u.done + '</td></tr>'; });
+    /* The one numbers surface. Every figure comes from W.dashboard
+       (s.dash) or the shift's records (s.base, s.flags, s.osd). */
+    var k = function (label, v, sub, cls, href) {
+      return '<a class="kpi ' + (cls || '') + '" href="#/' + href + '"><div class="k-label">' + esc(label) + '</div><div class="k-val">' +
+        esc(v == null ? '—' : v) + '</div>' + (sub ? '<div class="k-sub">' + esc(sub) + '</div>' : '') + '</a>';
+    };
+    var pl = function (n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); };
     html += '<div class="kpis">' +
-      '<div class="kpi ok"><div class="k-label">Tasks done</div><div class="k-val">' + s.base.tasksDone + '</div></div>' +
-      '<div class="kpi"><div class="k-label">Shipments in</div><div class="k-val">' + d.inbound.received + '</div><div class="k-sub">' + d.inbound.unitsIn + ' units counted</div></div>' +
-      '<div class="kpi"><div class="k-label">Loads out</div><div class="k-val">' + d.outbound.loadsClosed + '</div><div class="k-sub">' + d.outbound.unitsOut + ' units shipped</div></div>' +
-      '<div class="kpi ' + (d.flagsOpen ? 'bad' : 'ok') + '"><div class="k-label">Open flags</div><div class="k-val">' + d.flagsOpen + '</div><div class="k-sub">' + s.flags.length + ' reported</div></div>' +
-      '<div class="kpi ' + (d.osdOpen ? 'bad' : 'ok') + '"><div class="k-label">OS&D open</div><div class="k-val">' + d.osdOpen + '</div><div class="k-sub">' + s.osd.length + ' found</div></div>' +
-      '<div class="kpi"><div class="k-label">Holds now</div><div class="k-val">' + s.base.holdsNow.length + '</div></div></div>';
+      k('Tasks done', s.base.tasksDone, 'this shift', 'ok', 'queues') +
+      k('Open tasks', d.tasks.open + d.tasks.assigned, d.tasks.assigned + ' in progress · ' + d.tasks.blocked + ' blocked', d.tasks.blocked ? 'warn' : '', 'queues') +
+      k('Shipments in', d.inbound.received + ' / ' + (d.inbound.received + d.inbound.atDoor + d.inbound.expected), d.inbound.atDoor + ' at a door · ' + d.inbound.unitsIn + ' units counted', '', 'receiving') +
+      k('Loads out', d.outbound.loadsClosed, pl(d.outbound.shipped, 'order') + ' shipped · ' + d.outbound.unitsOut + ' units', d.outbound.loadsClosed ? 'ok' : '', 'ship') +
+      k('Open flags', d.flagsOpen, s.flags.length + ' reported', d.flagsOpen ? 'bad' : 'ok', 'flags') +
+      k('OS&D open', d.osdOpen, s.osd.length + ' found', d.osdOpen ? 'bad' : 'ok', 'osd') +
+      k('Holds now', s.base.holdsNow.length, '', '', 'putaway') +
+      k('Fill rate', d.fillRate == null ? '—' : d.fillRate + '%', pl(d.shortPicks, 'short pick'), d.shortPicks ? 'warn' : '', 'picking') +
+      k('Inventory accuracy', d.accuracy == null ? '—' : d.accuracy + '%', pl(d.countsDone, 'cycle count'), '', 'counts') +
+      k('Dock to stock', d.dockToStockMin == null ? '—' : d.dockToStockMin + ' min', 'avg, received → last pallet binned', '', 'putaway') +
+      k('Replenishment', d.replen, 'pick faces below min', d.replen ? 'warn' : 'ok', 'replen') +
+      '</div>';
     html += '<div class="grid2 even"><div>' + panel('Done by type', table(['Type', 'Done'], types, 'Nothing done yet.'), null, true) +
       panel('Done by worker', table(['Worker', 'Zone', 'Done'], per), null, true) + '</div><div>' +
-      panel('Zone loads now', table(['Zone', 'Waiting', 'Workers', 'Per worker'], d.zones.map(function (z) {
-        return '<tr><td>Zone ' + esc(z.zone) + '</td><td class="num">' + z.pending + '</td><td class="num">' + z.workers + '</td><td class="num">' + (Math.round(z.load * 10) / 10).toFixed(1) + '</td></tr>';
+      panel('Zone loads now', table(['Zone', 'Waiting', 'Workers', 'Per worker', 'Done'], d.zones.map(function (z) {
+        return '<tr><td>Zone ' + esc(z.zone) + '</td><td class="num">' + z.pending + '</td><td class="num">' + z.workers + '</td><td class="num">' + (Math.round(z.load * 10) / 10).toFixed(1) + '</td><td class="num">' + z.done + '</td></tr>';
       })), d.bottleneck ? 'bottleneck: zone ' + d.bottleneck.zone : 'no bottleneck', true) +
       panel('Shipments', table(['In / out', 'ID', 'Detail'], s.receipts.map(function (r) {
         return '<tr><td>' + chip('In', 'info') + '</td><td class="id">' + esc(r.shipmentId) + '</td><td>' + esc(r.id) + ' · ' + r.osdIds.length + ' OS&D</td></tr>';
@@ -1177,8 +1149,8 @@
     if (t.type === 'move' || t.type === 'replen') return { text: 'Bin ' + t.fromBinId + ' → ' + dest(t.toBinId), at: { bin: t.toBinId } };
     if (t.type === 'count') return { text: 'Counting Bin ' + t.binId, at: { bin: t.binId } };
     if (t.type === 'receive') { var s = E.shipmentById(state, t.shipmentId); return { text: 'Receiving at ' + (s ? s.door : 'the dock'), at: { door: s ? s.door : null } }; }
-    if (t.type === 'pack') return { text: 'Packing at Pack 1', at: { door: 'Door 4' } };
-    if (t.type === 'load') return { text: 'Loading at Door 4', at: { door: 'Door 4' } };
+    if (t.type === 'pack') return { text: 'Packing at Pack 1', at: { door: 'Outbound Door 4' } };
+    if (t.type === 'load') return { text: 'Loading at Outbound Door 4', at: { door: 'Outbound Door 4' } };
     return { text: t.title, at: null };
   }
 
@@ -1210,7 +1182,7 @@
           (di.here.length ? '<div class="fl-here">' + di.here.map(avatar).join('') + '</div>' : '') +
           (di.pins.length ? '<div class="fl-pins">' + di.pins.map(pinHtml).join('') + '</div>' : '') + '</div>';
       });
-      if (bay.doors.some(function (d) { return d.id === 'Door 4'; })) {
+      if (bay.doors.some(function (d) { return d.id === 'Outbound Door 4'; })) {
         html += '<div class="fl-door fl-pack"><div class="fl-door-h"><b>Pack 1</b><span class="fl-state">' + (m.pack.tasks.length ? m.pack.tasks.length + ' to pack' : 'clear') + '</span></div></div>';
       }
       html += '</div><div class="fl-racks"><span class="fl-aisle" aria-hidden="true">aisle</span>';

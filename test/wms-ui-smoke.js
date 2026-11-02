@@ -86,8 +86,12 @@ server.listen(0, async function () {
   });
   check('home is the map: 4 inbound docks, 4 outbound docks, receiving, staging, bays', home.docksIn === 4 && home.docksOut === 4 && home.rcv && home.stg && home.bays && home.bins === 24);
   check('no data tables on the map', home.tables === 0);
-  await go('#/numbers');
-  check('the numbers moved one click away (Shift Numbers)', await page.$('.kpis') !== null);
+  await go('#/summary');
+  var labels = await page.$$eval('.kpi .k-label', function (els) { return els.map(function (e) { return e.textContent; }); });
+  check('one numbers page: Shift Summary carries every figure', ['Tasks done', 'Open tasks', 'Shipments in', 'Loads out', 'Open flags', 'OS&D open', 'Holds now',
+    'Fill rate', 'Inventory accuracy', 'Dock to stock', 'Replenishment'].every(function (l) { return labels.indexOf(l) !== -1; }));
+  check('Shift Numbers is gone: no sidebar entry, no #/numbers page', (await page.$('a[href="#/numbers"]')) === null &&
+    (await page.evaluate(async function () { location.hash = '#/numbers'; await new Promise(function (r) { setTimeout(r, 150); }); return !!document.querySelector('.wmap') && !document.querySelector('.kpis'); })));
   await go('#/dashboard');
 
   var s = await st();
@@ -97,7 +101,7 @@ server.listen(0, async function () {
   await go('#/dock');
   await click('[data-act="checkin"][data-id="APT-102"]');
   s = await st();
-  check('check-in brings IN-1002 to Door 3', s.inbound[1].status === 'staged at door');
+  check('check-in brings IN-1002 to Inbound Door 3', s.inbound[1].status === 'staged at door');
 
   /* Receiving: voice read is driven through the AI layer directly
      (no microphone in a headless browser), then posted from the UI. */
@@ -144,7 +148,7 @@ server.listen(0, async function () {
   await click('[data-act="pack"][data-id="t-pack-ORD-502"]');
   await click('[data-act="load"][data-id="t-load-ORD-502"]');
   s = await st();
-  check('packed and loaded; an outbound load is open at Door 4', s.wms.loads.length === 1 && s.wms.loads[0].status === 'loading');
+  check('packed and loaded; an outbound load is open at Outbound Door 4', s.wms.loads.length === 1 && s.wms.loads[0].status === 'loading');
   await page.fill('#seal-LD-001', 'SL-7781');
   await click('[data-act="close-load"][data-id="LD-001"]');
   s = await st();
@@ -168,7 +172,7 @@ server.listen(0, async function () {
   check('RF console hands the worker a task', !!cur);
 
   /* Every view renders */
-  var views = ['dashboard', 'numbers', 'dock', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'rf'];
+  var views = ['dashboard', 'dock', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'rf'];
   var bad = [];
   for (var i = 0; i < views.length; i++) {
     await go('#/' + views[i]);

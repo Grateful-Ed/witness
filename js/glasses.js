@@ -182,7 +182,7 @@
     if (task.type === 'putaway') return task.toBinId ? 'Bin ' + task.toBinId : null;
     if (task.type === 'consolidate') return 'Bin ' + task.fromBinId;
     if (task.type === 'breakdown' || task.type === 'pick') return 'Bin ' + task.binId;
-    var m = /(Door \d+)/.exec(task.title || '');
+    var m = /((?:Inbound |Outbound )?Door \d+)/.exec(task.title || '');
     return m ? m[1] : null;
   }
 

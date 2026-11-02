@@ -457,7 +457,7 @@
         }
       });
       if (o.lines.every(function (l) { return l.done; })) {
-        o.door = o.door || 'Door 4';
+        o.door = o.door || 'Outbound Door 4';
         o.status = 'staged at door';
       } else {
         o.status = 'picking';
@@ -608,6 +608,7 @@
     if (s.status === 'staged at door' || s.status === 'received') return no(s.id + ' is already here.');
     var d = door(state, a.door);
     if (!d) return no('Pick a dock door.');
+    if (d.direction === 'out') return no(d.id + ' is an outbound door. Trucks coming in use an inbound door.');
     if (!HHMM.test(a.start || '') || !HHMM.test(a.end || '')) return no('Times are 24-hour HH:MM.');
     if (a.start >= a.end) return no('The window has to end after it starts.');
     var day = a.day === 'Tomorrow' ? 'Tomorrow' : 'Today';
@@ -890,7 +891,7 @@
       lines.push({ desc: l.desc, qty: q });
     }
     if (!lines.length) return no('Add at least one line.');
-    var d = door(state, o.door || 'Door 4') ? (o.door || 'Door 4') : 'Door 4';
+    var d = door(state, o.door || 'Outbound Door 4') ? (o.door || 'Outbound Door 4') : 'Outbound Door 4';
     var rec = { id: nextId(state, 'ord', 'ORD-', 3), customer: customer, priority: o.priority === 'High' ? 'High' : 'Normal',
       shipDate: o.shipDate === 'Tomorrow' ? 'Tomorrow' : 'Today', door: d, carrier: o.carrier || 'Coastal Express',
       lines: lines, status: 'new', createdAt: api.now() };

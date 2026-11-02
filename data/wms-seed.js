@@ -39,13 +39,13 @@
     },
 
     /* Dock appointments. day is 'Today' or 'Tomorrow'; times are
-       24-hour HH:MM. IN-1001 is already at Door 1 (checked in). */
+       24-hour HH:MM. IN-1001 is already at Inbound Door 1 (checked in). */
     appointments: [
-      { id: 'APT-101', shipmentId: 'IN-1001', door: 'Door 1', day: 'Today', start: '06:00', end: '07:30',
+      { id: 'APT-101', shipmentId: 'IN-1001', door: 'Inbound Door 1', day: 'Today', start: '06:00', end: '07:30',
         carrier: 'Blue Ridge Freight Lines', trailer: 'BRF-5521', status: 'checked in' },
-      { id: 'APT-102', shipmentId: 'IN-1002', door: 'Door 3', day: 'Today', start: '10:00', end: '11:30',
+      { id: 'APT-102', shipmentId: 'IN-1002', door: 'Inbound Door 3', day: 'Today', start: '10:00', end: '11:30',
         carrier: 'Southeast Line', trailer: 'SEL-2208', status: 'scheduled' },
-      { id: 'APT-103', shipmentId: 'IN-1003', door: 'Door 2', day: 'Tomorrow', start: '07:00', end: '08:30',
+      { id: 'APT-103', shipmentId: 'IN-1003', door: 'Inbound Door 2', day: 'Tomorrow', start: '07:00', end: '08:30',
         carrier: 'Blue Ridge Freight Lines', trailer: 'BRF-5610', status: 'scheduled' }
     ],
 
@@ -75,11 +75,11 @@
        reserves real stock and picks are generated. The seeded
        outbound orders (ORD-501..503) are wave W-000, already out. */
     orders: [
-      { id: 'ORD-601', customer: 'Harbor Street Market', priority: 'High', shipDate: 'Today', door: 'Door 4',
+      { id: 'ORD-601', customer: 'Harbor Street Market', priority: 'High', shipDate: 'Today', door: 'Outbound Door 4',
         carrier: 'Coastal Express', lines: [{ desc: 'Canned peaches — cases', qty: 20 }, { desc: 'Pasta — cases', qty: 6 }] },
-      { id: 'ORD-602', customer: 'Northside Pantry Co-op', priority: 'Normal', shipDate: 'Today', door: 'Door 4',
+      { id: 'ORD-602', customer: 'Northside Pantry Co-op', priority: 'Normal', shipDate: 'Today', door: 'Outbound Door 4',
         carrier: 'Coastal Express', lines: [{ desc: 'Coffee — cases', qty: 4 }, { desc: 'Tea — cases', qty: 5 }] },
-      { id: 'ORD-603', customer: 'Lakeview Grocers', priority: 'Normal', shipDate: 'Tomorrow', door: 'Door 4',
+      { id: 'ORD-603', customer: 'Lakeview Grocers', priority: 'Normal', shipDate: 'Tomorrow', door: 'Outbound Door 4',
         carrier: 'Piedmont Haulers', lines: [{ desc: 'Dog food — bags', qty: 10 }] }
     ],
 
