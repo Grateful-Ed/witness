@@ -111,7 +111,7 @@ server.listen(0, async function () {
     var P = window.WitnessWmsPage, s = P.getState();
     var exp = window.WitnessWms.expectedLines(window.WitnessEngine.shipmentById(s, 'IN-1002'));
     return window.WitnessWmsAi.readReceiving(window.fetch.bind(window), 'detergent four pallets, one sixteen cases, four crushed. towels all six pallets, a hundred twenty', exp)
-      .then(function (r) { P.ui.rcvLines = r.lines; P.ui.rcvSource = 'voice'; });
+      .then(function (r) { P.ui.rcvLines = r.lines; P.ui.rcvSource = 'voice'; P.ui.rcvTranscript = 'detergent four pallets, one sixteen cases, four crushed. towels all six pallets, a hundred twenty'; });
   });
   await go('#/dashboard'); await go('#/receiving');
   var v = await page.inputValue('input[data-rcv="received"][data-i="0"]');
@@ -170,6 +170,33 @@ server.listen(0, async function () {
   var unitId = await page.evaluate(function () { return window.WitnessWmsPage.ui.rfUnit; });
   var cur = s.labor.find(function (u) { return u.id === unitId; }).currentTaskId;
   check('RF console hands the worker a task', !!cur);
+
+  /* The Witness page: click a pallet on the map, read its record. */
+  await go('#/dashboard');
+  var postsBefore = posts;
+  var palletId = await page.getAttribute('[data-place="receiving"][data-id="Inbound Door 3"] [data-place="pallet"]', 'data-id');
+  await click('[data-place="pallet"][data-id="' + palletId + '"]');
+  var wp = await page.evaluate(function () {
+    var m = document.querySelector('#main'), pg = m.querySelector('.wp-page');
+    if (!pg) return null;
+    var order = ['[data-slot="agent"]', '[data-panel="events"]', '[data-panel="transcript"]'].map(function (q) { var el = pg.querySelector(q); return el ? el.getBoundingClientRect() : null; });
+    return { hash: location.hash, title: pg.querySelector('h1').textContent, events: pg.querySelectorAll('.wp-ev').length,
+      lines: Array.prototype.map.call(pg.querySelectorAll('.wp-line blockquote'), function (b) { return b.textContent; }),
+      agentTop: order[0] && order[1] && order[0].bottom <= order[1].top, leftRight: order[1] && order[2] && order[1].left < order[2].left && Math.abs(order[1].top - order[2].top) < 2 };
+  });
+  check('a pallet click on the map opens its Witness page', !!wp && wp.hash === '#/witness/pallet/' + encodeURIComponent(palletId) && wp.title === 'Pallet ' + palletId);
+  check('Witness page: agent chair on top, events left, transcript right', !!wp && wp.agentTop && wp.leftRight);
+  check('Witness page: events from the record, and the receiver\'s words verbatim', !!wp && wp.events >= 2 &&
+    wp.lines.indexOf('detergent four pallets, one sixteen cases, four crushed. towels all six pallets, a hundred twenty') !== -1);
+  check('opening a Witness page saves nothing', posts === postsBefore);
+  await go('#/dashboard');
+  await page.focus('[data-place="bin"][data-id="C-08"]');
+  await page.keyboard.press('Enter'); await page.waitForTimeout(200);
+  var empty = await page.evaluate(function () { var pg = document.querySelector('.wp-page'); return pg && { ev: pg.querySelector('[data-panel="events"] .wp-empty') ? pg.querySelector('[data-panel="events"] .wp-empty').textContent : '', tr: pg.querySelector('[data-panel="transcript"] .wp-empty') ? pg.querySelector('[data-panel="transcript"] .wp-empty').textContent : '' }; });
+  check('Enter on a bin opens it; an untouched bin is empty-honest', !!empty && /Nothing on the record yet/.test(empty.ev) && /^Not said\./.test(empty.tr));
+  await page.setViewportSize({ width: 390, height: 800 });
+  check('Witness page fits a phone width', !(await page.evaluate(function () { return document.documentElement.scrollWidth > window.innerWidth + 1; })));
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   /* Every view renders */
   var views = ['dashboard', 'dock', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'rf'];

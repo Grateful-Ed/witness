@@ -37,6 +37,8 @@ computed from real state.
 | `js/wms-ui.js` | Page rendering and actions. |
 | `js/wms-map.js` | The warehouse map — the console home (console Task 1). Pure model + HTML from state. |
 | `css/wms-map.css` | The map's styling: pink receiving/staging bands, yellow bay block, light and dark. |
+| `js/wms-witness.js` | The Witness page — one item's record (console Task 2). Pure model + HTML from state. |
+| `css/wms-witness.css` | The Witness page's styling, and the map's openable items. |
 | `warehouse.html` | One added masthead link to the WMS. |
 
 Voice uses `js/warehouse-mic.js` unchanged (`/asr`, Muse Voice
@@ -63,8 +65,10 @@ centre with every zone and bin from state. No tables; read-only.
   pallet not at an inbound door, or an order staged away from an
   outbound door is listed under the map as "Not on a wall" — never
   dropped.
-- Every place carries `data-place` / `data-id` hooks for the Witness
-  page (Task 2) and map flags (Task 4). No click handlers yet.
+- Every place carries `data-place` / `data-id` hooks. Docks, pallets,
+  staged orders and bins also carry `data-open` (focusable): a click
+  or Enter opens that item's Witness page (Task 2). Map flags are
+  Task 4.
 - One numbers page: Shift Summary (`#/summary`). The KPI dashboard
   that used to be the home was folded into it (open tasks, inbound
   x / y with trucks at a door, orders shipped, fill rate, inventory
@@ -72,6 +76,33 @@ centre with every zone and bin from state. No tables; read-only.
   deleted. All figures come from `W.dashboard` / `W.shiftSummary`.
 - The `?look=` switcher stays. Only the default look ("Today") shows
   the map; the other looks keep their own home until Task 6.
+
+## The Witness page: an item's record (console Task 2, 2026-11-02)
+
+`#/witness/<place>/<id>` — opened from the map. Places: `dock`,
+`pallet`, `order`, `bin` (from the map), and `shipment`, `load`,
+`task`. A dock with a truck opens that shipment; a dock that is
+loading opens that load; a clear dock is its own, empty page.
+
+Top to bottom: the agent's chair (reserved and drawn empty — the live
+agent is Task 3), then two panels.
+
+- **The events** (left), oldest first, derived only from real data:
+  the records ledger (arrived, checked, put away, picked, held,
+  released, shipped, updates…), OS&D findings and flags (and who
+  closed them), and the hold a receipt puts on damaged stock. Every
+  event names the person who did it; holds, releases, closes and
+  ship confirms show "Decided by <name>".
+- **The full transcript** (right), verbatim and in order: task
+  updates and flag words, the receiver's spoken count, words said
+  with a count or a short pick. Each line names its speaker, so one
+  item shows many voices.
+- Empty-honest: no event → "Nothing on the record yet"; no words →
+  "Not said". An item no longer in the record (a pallet put away, an
+  order gone) says so; nothing stands in its place.
+- Read-only. Opening the page saves nothing.
+- A pallet carries its truck's arrival, receipt and spoken count, and
+  only the findings for its own item — not its sibling pallets' work.
 
 ## Where state lives
 
@@ -99,7 +130,8 @@ node test/wms-test.js        # 128 — the WMS logic end to end
 node test/wms-ai-test.js     # 20  — Meta API calls, stubbed /chat
 node test/wms-store-test.js  # 15  — desk-record seam, stubbed fetch
 node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
-node test/wms-ui-smoke.js    # 22  — real browser (Playwright), stubbed Worker; skips without Playwright
+node test/wms-witness-test.js # 43 — the Witness page: events, transcript, empty-honest
+node test/wms-ui-smoke.js    # 28  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 
 ## Left out, and why

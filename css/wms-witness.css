@@ -1,0 +1,116 @@
+/* =====================================================================
+   wms-witness.css — the Witness page (js/wms-witness.js) and the
+   map's openable items. Same calm palette as the map: restful
+   surfaces, one pink landmark (events) and one yellow (transcript)
+   taken from William's sketch, AA text in light and dark.
+   Scoped to .wp-page and .wmap [data-open] so nothing else changes.
+   ===================================================================== */
+
+/* Map items that open a Witness page. */
+.wmap [data-open] { cursor: pointer; }
+.wmap [data-open]:hover { filter: brightness(0.96); box-shadow: 0 0 0 2px var(--wm-dock-edge); }
+.wmap [data-open]:focus-visible { outline: 3px solid var(--wm-dock-edge); outline-offset: 2px; }
+
+.wp-page {
+  --wp-ground: #f7f6f2;
+  --wp-panel: #ffffff;
+  --wp-ink: #1f2a33;
+  --wp-ink-2: #4d5965;
+  --wp-line: #dcdfe3;
+  --wp-pink: #fbe6ee;
+  --wp-pink-edge: #d6517f;
+  --wp-pink-ink: #8f2350;
+  --wp-yellow: #fdf3cf;
+  --wp-yellow-edge: #d9a514;
+  --wp-yellow-ink: #6b4f00;
+  --wp-human: #1e6b45;
+  --wp-human-bg: #e3f3e9;
+  --wp-agent: #eef2f6;
+  --wp-agent-edge: #8aa0b3;
+  color: var(--wp-ink);
+  background: var(--wp-ground);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  .wp-page {
+    --wp-ground: #171c21;
+    --wp-panel: #20272e;
+    --wp-ink: #e8edf1;
+    --wp-ink-2: #b4c0ca;
+    --wp-line: #36414b;
+    --wp-pink: #3a2230;
+    --wp-pink-edge: #e07aa2;
+    --wp-pink-ink: #f4b8cf;
+    --wp-yellow: #3a321a;
+    --wp-yellow-edge: #e3bb45;
+    --wp-yellow-ink: #f3dc95;
+    --wp-human: #9fe0b9;
+    --wp-human-bg: #1d3a2a;
+    --wp-agent: #1c252d;
+    --wp-agent-edge: #6f8aa0;
+  }
+}
+
+.wp-back { display: inline-block; margin-bottom: 10px; color: var(--wp-ink-2); font-size: 13px; text-decoration: none; }
+.wp-back:hover { text-decoration: underline; }
+
+.wp-head { margin-bottom: 12px; }
+.wp-kind { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--wp-ink-2); }
+.wp-head h1 { margin: 2px 0 4px; font-size: 24px; line-height: 1.2; }
+.wp-sub { margin: 0; color: var(--wp-ink-2); }
+.wp-facts { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.wp-fact { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--wp-yellow); color: var(--wp-yellow-ink); border: 1px solid var(--wp-yellow-edge); }
+
+/* The agent's chair: at the top, reserved, plainly empty. */
+.wp-agent {
+  border: 2px dashed var(--wp-agent-edge);
+  background: var(--wp-agent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.wp-agent-h { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.wp-soon { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--wp-agent-edge); color: var(--wp-ink-2); }
+.wp-agent p { margin: 6px 0 0; color: var(--wp-ink-2); font-size: 14px; }
+
+/* Two panels: events left, transcript right. */
+.wp-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 820px) { .wp-panels { grid-template-columns: minmax(0, 1fr); } }
+
+.wp-panel { background: var(--wp-panel); border: 1px solid var(--wp-line); border-radius: 10px; overflow: hidden; }
+.wp-panel-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 10px 14px; flex-wrap: wrap; }
+.wp-panel-h h2 { margin: 0; font-size: 15px; }
+.wp-panel-h span { font-size: 12px; color: var(--wp-ink-2); }
+[data-panel="events"] .wp-panel-h { background: var(--wp-pink); border-bottom: 3px solid var(--wp-pink-edge); }
+[data-panel="events"] .wp-panel-h h2 { color: var(--wp-pink-ink); }
+[data-panel="transcript"] .wp-panel-h { background: var(--wp-yellow); border-bottom: 3px solid var(--wp-yellow-edge); }
+[data-panel="transcript"] .wp-panel-h h2 { color: var(--wp-yellow-ink); }
+
+.wp-empty { margin: 0; padding: 18px 14px; color: var(--wp-ink-2); font-style: italic; }
+
+.wp-events, .wp-transcript { list-style: none; margin: 0; padding: 4px 0; }
+
+.wp-ev { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; padding: 9px 14px; border-top: 1px solid var(--wp-line); font-size: 14px; line-height: 1.4; }
+.wp-ev:first-child { border-top: 0; }
+.wp-ev time { color: var(--wp-ink-2); font-variant-numeric: tabular-nums; font-size: 13px; }
+.wp-ev time small { display: block; font-size: 11px; }
+.wp-verb { font-weight: 700; }
+.wp-ev-flagged .wp-verb { color: var(--wp-pink-ink); }
+.wp-text { overflow-wrap: anywhere; }
+
+.wp-who { font-size: 12px; color: var(--wp-ink-2); }
+.wp-who.none { font-style: italic; }
+.wp-who.decided { display: inline-block; margin-top: 3px; padding: 1px 8px; border-radius: 999px; background: var(--wp-human-bg); color: var(--wp-human); font-weight: 600; }
+
+.wp-line { padding: 10px 14px; border-top: 1px solid var(--wp-line); }
+.wp-line:first-child { border-top: 0; }
+.wp-line-h { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.wp-line-h time { margin-left: auto; color: var(--wp-ink-2); font-variant-numeric: tabular-nums; }
+.wp-src { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--wp-ink-2); }
+.wp-line blockquote { margin: 5px 0 3px; padding: 6px 10px; border-left: 3px solid var(--wp-yellow-edge); background: var(--wp-ground); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.wp-about { font-size: 12px; color: var(--wp-ink-2); }
+
+.wp-missing h2 { margin: 4px 0; }
+.wp-missing p { color: var(--wp-ink-2); }
