@@ -176,7 +176,116 @@
     return out;
   }
 
-  var api = { model: model, html: html, DOCKS_PER_WALL: DOCKS_PER_WALL };
+  /* ---------- task slices: the flow views (Console Task 5) --------
+     A task view never shows the whole building. It shows the slice
+     the freight moves through, top to bottom, the way it flows:
+
+       inbound  (truck → check → putaway):  Inbound Docks → Receiving Bay → Bay Locations
+       outbound (pick → stage → load):      Bay Locations → Staging → Outbound Docks
+
+     Only bins with a reason to be there are drawn (William's bin
+     law): inbound, a putaway destination or a hold; outbound, a pick
+     source or a hold. The page's own panels ride under the stage
+     they concern (anchors), so every existing action stays as it was. */
+
+  var FLOW = {
+    'in': [
+      { key: 'docks', label: 'Inbound Docks', next: 'unload and check' },
+      { key: 'rcv', label: 'Receiving Bay', next: 'put away' },
+      { key: 'bays', label: 'Bay Locations' }
+    ],
+    'out': [
+      { key: 'bays', label: 'Bay Locations', next: 'pick, pack and stage' },
+      { key: 'stg', label: 'Staging', next: 'load' },
+      { key: 'docks', label: 'Outbound Docks' }
+    ]
+  };
+
+  /* Why a bin belongs in this slice, or null. */
+  function binReasons(state, dir) {
+    var r = {};
+    function add(id, why) { if (!id) return; (r[id] = r[id] || []).indexOf(why) === -1 && r[id].push(why); }
+    (state.tasks || []).forEach(function (t) {
+      if (t.status === 'done') return;
+      if (dir === 'in' && t.type === 'putaway') add(t.toBinId, 'Put away here');
+      if (dir === 'out' && t.type === 'pick') add(t.binId, 'Pick from here');
+    });
+    (state.bins || []).forEach(function (b) { if (b.status === 'hold') add(b.id, 'On hold'); });
+    return r;
+  }
+
+  function slice(state, W, dir) {
+    if (!FLOW[dir]) throw new Error('slice: direction must be "in" or "out"');
+    var m = model(state, W);
+    var docks = dir === 'in' ? m.inbound : m.outbound;
+    var why = binReasons(state, dir);
+    var zones = m.zones.map(function (z) {
+      return { zone: z.zone, bins: z.bins.filter(function (b) { return why[b.id]; }).map(function (b) {
+        return { id: b.id, stocked: b.stocked, held: b.held, title: b.title, why: why[b.id] };
+      }) };
+    }).filter(function (z) { return z.bins.length; });
+    var loose = dir === 'in' ? { doors: m.loose.doors, pallets: m.loose.pallets, orders: [] } : { doors: m.loose.doors, pallets: [], orders: m.loose.orders };
+    return {
+      dir: dir,
+      stages: FLOW[dir].map(function (st) {
+        var o = { key: st.key, label: st.label, next: st.next || null };
+        if (st.key === 'docks') o.docks = docks;
+        if (st.key === 'rcv' || st.key === 'stg') o.lanes = docks.map(function (d) { return { doorId: d.doorId, name: d.name, items: d.lane }; });
+        if (st.key === 'bays') o.zones = zones;
+        return o;
+      }),
+      columns: Math.max(DOCKS_PER_WALL, docks.length),
+      loose: loose
+    };
+  }
+
+  function sliceBinHtml(b) {
+    return '<span class="wm-bin wf-bin' + (b.stocked ? ' stocked' : '') + (b.held ? ' held' : '') + '" data-place="bin" data-id="' + esc(b.id) + '" title="' +
+      esc(b.id + ' — ' + b.title + ' · ' + b.why.join(', ')) + '"><b>' + esc(b.id) + '</b><small>' + esc(b.why.join(' · ')) + '</small></span>';
+  }
+
+  function stripHtml(sl, st) {
+    var side = sl.dir;
+    var cols = ' style="--wf-cols:' + sl.columns + '"';
+    if (st.docks) {
+      return '<div class="wf-row wf-docks"' + cols + '>' + st.docks.map(function (d) { return '<div class="wf-cell">' + dockHtml(side, d) + '</div>'; }).join('') + '</div>';
+    }
+    if (st.lanes) {
+      var place = st.key === 'rcv' ? 'receiving' : 'staging';
+      return '<div class="wf-row wf-lanes"' + cols + '>' + st.lanes.map(function (l) {
+        return '<div class="wm-lane wf-lane" data-place="' + place + '" data-id="' + esc(l.doorId) + '" title="' + esc(st.label + ' at ' + l.name) + '">' +
+          l.items.map(st.key === 'rcv' ? palletHtml : orderHtml).join('') + '</div>';
+      }).join('') + '</div>';
+    }
+    if (!st.zones.length) return '<p class="wf-none">No bin has a reason to be here right now.</p>';
+    return '<div class="wf-zones">' + st.zones.map(function (z) {
+      return '<section class="wm-zone" data-place="zone" data-id="' + esc(z.zone) + '"><h3>Zone ' + esc(z.zone) + '</h3><div class="wf-bins">' +
+        z.bins.map(sliceBinHtml).join('') + '</div></section>';
+    }).join('') + '</div>';
+  }
+
+  /* anchors: { docks, rcv | stg, bays } → HTML of the page's own panels,
+     placed under the stage they concern. Panels sit OUTSIDE the
+     .wm-surface strip so they keep the console's own colours. */
+  function sliceHtml(state, W, dir, anchors) {
+    var sl = slice(state, W, dir);
+    anchors = anchors || {};
+    var names = sl.stages.map(function (st) { return st.label; }).join(', then ');
+    var out = '<div class="wf wf-' + dir + '" data-flow="' + dir + '" role="group" aria-label="' + esc((dir === 'in' ? 'Inbound flow, top to bottom: ' : 'Outbound flow, top to bottom: ') + names) + '">';
+    sl.stages.forEach(function (st, i) {
+      out += '<section class="wf-stage wf-' + st.key + '" data-stage="' + st.key + '">' +
+        '<div class="wm-surface wf-strip"><div class="wf-label">' + esc(st.label) + '</div>' + stripHtml(sl, st) + '</div>' +
+        (anchors[st.key] ? '<div class="wf-panels">' + anchors[st.key] + '</div>' : '') + '</section>';
+      if (i < sl.stages.length - 1) out += '<div class="wf-arrow" aria-hidden="true"><span>↓ ' + esc(st.next) + '</span></div>';
+    });
+    var lo = looseHtml(sl.loose);
+    out += (lo ? '<div class="wm-surface wf-foot">' + lo + '</div>' : '') + '</div>';
+    /* Witness-page opening is wired for the map home only (.wmap); a
+       slice item must not claim to be a link it cannot follow. */
+    return out.split(OPEN).join('');
+  }
+
+  var api = { model: model, html: html, slice: slice, sliceHtml: sliceHtml, FLOW: FLOW, DOCKS_PER_WALL: DOCKS_PER_WALL };
   root.WitnessWmsMap = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

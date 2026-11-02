@@ -1,0 +1,84 @@
+/* =====================================================================
+   wms-flow.css — flow-sliced task views (Console Task 5).
+   A task view shows only the slice of the building its freight moves
+   through, stacked so the freight flows DOWN the screen:
+     inbound:  Inbound Docks → Receiving Bay → Bay Locations
+     outbound: Bay Locations → Staging → Outbound Docks
+   The strips reuse the map's tokens (css/wms-map.css, .wm-surface);
+   the page's own panels sit under each strip in the console's colours.
+   ===================================================================== */
+.wf { margin-bottom: 14px; }
+.wf-stage { margin: 0; }
+.wf-strip {
+  margin-bottom: 10px;
+  padding: 0 12px 12px;
+  border-radius: 6px;
+}
+.wf-label {
+  padding: 8px 0 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+}
+
+/* Landmark colours: docks sit in the wall; pink = receiving / staging; yellow = bays. */
+.wf-stage.wf-docks .wf-label { color: var(--wm-ink-2); }
+.wf-stage.wf-docks .wf-strip { background: var(--wm-floor); border: 6px solid var(--wm-wall); }
+.wf-in .wf-stage.wf-docks .wf-strip { border-bottom-width: 1px; }
+.wf-out .wf-stage.wf-docks .wf-strip { border-top-width: 1px; }
+.wf-stage.wf-rcv .wf-strip, .wf-stage.wf-stg .wf-strip {
+  background: var(--wm-pink); border: 3px solid var(--wm-pink-edge);
+}
+.wf-stage.wf-rcv .wf-label, .wf-stage.wf-stg .wf-label { color: var(--wm-pink-ink); }
+.wf-stage.wf-bays .wf-strip { background: var(--wm-yellow); border: 3px solid var(--wm-yellow-edge); }
+.wf-stage.wf-bays .wf-label { color: var(--wm-yellow-ink); }
+
+/* Docks and lanes share columns, so a lane sits under (or over) its own door. */
+.wf-row {
+  display: grid;
+  grid-template-columns: repeat(var(--wf-cols, 4), minmax(0, 1fr));
+  gap: 10px;
+}
+.wf-cell { display: flex; min-width: 0; }
+.wf-row .wm-dock {
+  border: 1px solid var(--wm-dock-edge); border-radius: 6px;
+  margin: 0;
+}
+.wf-in .wf-row .wm-dock { border-top: 5px solid var(--wm-dock-edge); }
+.wf-out .wf-row .wm-dock { border-bottom: 5px solid var(--wm-dock-edge); }
+.wf-lane {
+  display: flex; min-height: 34px; min-width: 0;
+  background: rgba(255, 255, 255, .35);
+  border: 1px dashed var(--wm-pink-edge); border-radius: 4px;
+}
+
+/* Bays: only bins with a reason to be here (destination, source, hold). */
+.wf-zones { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.wf-bins { display: flex; flex-wrap: wrap; gap: 6px; }
+.wm-bin.wf-bin { display: inline-flex; flex-direction: column; align-items: center; min-width: 74px; padding: 4px 8px; gap: 1px; }
+.wf-bin b { font-weight: 700; }
+.wf-bin small { font-family: inherit; font-size: 10.5px; font-weight: 600; color: var(--wm-ink-2); }
+.wm-bin.held.wf-bin small { color: var(--wm-ink); }
+.wf-none { margin: 0; font-size: 12.5px; color: var(--wm-yellow-ink); }
+
+/* The flow arrow between stages: says the verb that moves the freight on. */
+.wf-arrow { margin: -4px 0 6px; text-align: center; }
+.wf-arrow span {
+  display: inline-block; padding: 2px 10px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-2, #4a5a6b); background: var(--mute-bg, #eceff3); border-radius: 999px;
+}
+
+.wf-panels { margin: 0 0 6px; }
+.wf-foot { margin-top: 4px; }
+
+@media (prefers-color-scheme: dark) {
+  .wf-strip.wm-surface { padding: 0 12px 12px; }
+  .wf-lane { background: rgba(0, 0, 0, .2); }
+}
+
+@media (max-width: 760px) {
+  .wf-row { gap: 5px; }
+  .wf-row .wm-dock { padding: 6px 5px; overflow-wrap: anywhere; }
+  .wf-row .wm-dock-name, .wf-row .wm-dock-state { font-size: 11px; }
+  .wf-strip { padding: 0 8px 8px; }
+  .wm-bin.wf-bin { min-width: 64px; }
+}
