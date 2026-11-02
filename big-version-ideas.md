@@ -448,3 +448,22 @@ is created). Demo video spine v3: one continuous kitchen run (scan →
 confirm → putaway run by voice → problem beat → summary), then the
 pull-back to the warehouse. Brief: briefs/claude-brief-kitchen-demo.md
 (builds after the BOL slice; reuses js/bol.js, never forks it).
+
+## Bin presentation — a bin shows only with a reason (William, 2026-11-01)
+
+William's rule for how a bin (a location) may appear on any surface:
+
+- **A bin is shown only when it has a reason to be there** — it is the
+  source, the destination, the hold, the problem. Never decoration,
+  never filler. If nothing about the bin is the news, it is not shown.
+- **A destination bin reads plainly: "Stage: Bin #"** — when the bin is
+  where the freight is going, the label is the terse standard form
+  (e.g. "Stage: B-04"), nothing added.
+- **An availability question gets the status and nothing else.** Ask
+  whether a location is available and the answer is its status — no
+  counts, no commentary, no proposal attached.
+
+The held-bin confession passes the test: the bin is on the line because
+it is the source, and the hold is the news ("from B-04 — bin on hold").
+This law binds the warehouse page, Ask-the-building answers, and the
+glasses when that segment resumes.
