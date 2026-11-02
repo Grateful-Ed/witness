@@ -117,6 +117,30 @@ check('zoneStats covers all zones with workers',
 check('records grew across completions', fresh.records.length >= 1 &&
   fresh.records.every(function (r) { return r.ts && typeof r.text === 'string' && r.text.length > 0; }));
 
+/* --- fixed home locations (kitchen slice) ------------------------------ */
+/* A staged item may name its home bin: it wins when free and not held;
+   otherwise the emptiest-bin rule, unchanged. */
+function homeWorld(home, binSetup) {
+  var s = engine.seedWorld();
+  s.staging = [{ id: 'STG-H', door: 'Door 3', desc: 'Test item', qty: 5, home: home }];
+  s.tasks = [];
+  if (binSetup) binSetup(s);
+  engine.generateTasks(s);
+  return engine.taskById(s, 't-putaway-STG-H');
+}
+var noHome = homeWorld(null);
+check('home: an item without a home goes to the emptiest bin, as before', noHome && noHome.toBinId === 'B-03');
+var homeFree = homeWorld('B-07', function (s) { engine.binById(s, 'B-07').contents = []; });
+check('home: a free home bin is respected', homeFree && homeFree.toBinId === 'B-07');
+var homeHeld = homeWorld('B-07', function (s) {
+  var b = engine.binById(s, 'B-07'); b.contents = []; b.status = 'hold';
+});
+check('home: a held home bin falls back to the emptiest bin', homeHeld && homeHeld.toBinId === 'B-03');
+var homeFull = homeWorld('B-07');
+check('home: an occupied home bin falls back to the emptiest bin', homeFull && homeFull.toBinId === 'B-03');
+var homeMixed = homeWorld('B-07', function (s) { engine.binById(s, 'B-07').mixed = true; });
+check('home: a mixed bin (built to hold many items) is not "occupied"', homeMixed && homeMixed.toBinId === 'B-07');
+
 console.log('---');
 console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED');
 process.exit(failures === 0 ? 0 : 1);
