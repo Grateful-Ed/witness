@@ -344,8 +344,7 @@
       html += '<div class="labor-row"><strong>' + esc(o.id) + '</strong> ' + stageChip(st.key) +
         '<br>' + esc(st.words) +
         '<br><span class="labor-now">' + o.lines.map(function (l) {
-          return esc(l.qty + ' × ' + l.desc) + (l.done ? ' — picked' : l.allocated ? ' — from ' + esc(l.binId) +
-            ((E.binById(state, l.binId) || {}).status === 'hold' ? ' (bin on hold — waits)' : '') : ' — short');
+          return esc(l.qty + ' × ' + l.desc) + (l.done ? ' — picked' : l.allocated ? ' — ' + esc(E.lineSource(state, l)) : ' — short');
         }).join('<br>') + '</span></div>';
     });
     $('ordersList').innerHTML = html;

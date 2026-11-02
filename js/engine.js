@@ -807,6 +807,13 @@
     return { key: 'allocated', words: 'Allocated — ' + n + ' line' + (n === 1 ? '' : 's') + ' reserved, waiting to pick.' };
   }
 
+  /* Where an allocated line picks from, as the page says it. If the
+     source bin went on hold after the line was allocated, the words
+     confess it. Display only: the reservation itself is untouched. */
+  function lineSource(state, line) {
+    return 'from ' + line.binId + (isHeldBin(binById(state, line.binId)) ? ' — bin on hold' : '');
+  }
+
   /* ---------- shift summary: computed, never hand-written --------------- */
 
   function shiftSummary(state) {
@@ -871,6 +878,7 @@
     blockedBy: blockedBy,
     inboundStage: inboundStage,
     orderStage: orderStage,
+    lineSource: lineSource,
     shiftSummary: shiftSummary,
     upgradeState: upgradeState,
     orderById: orderById,
