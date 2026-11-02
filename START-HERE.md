@@ -64,6 +64,10 @@ Already built (for reference): `claude-conversational-layer.md`,
   is the intake. (Full note: big-version-ideas.md.)
 - Flags, not fields: flag anything in a transcript that sounds like
   it belongs in a report, quoted in the speaker's own words.
+- Bin presentation (William, 2026-11-01): a bin is shown only when
+  it has a reason to be there (source, destination, hold, problem).
+  A destination bin reads plainly "Stage: Bin #". An availability
+  question gets the status and nothing else.
 - Tracker (William's, kept current by Faye):
   https://docs.google.com/spreadsheets/d/1MsNmodgNmrbtIFo0FECQ674y0dKl-4ghT8m-26iwggI/edit
 
