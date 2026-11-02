@@ -21,7 +21,23 @@
    Every place carries data-place / data-id hooks. The items a person
    can open (a dock, a pallet, an order staged to ship, a bin) are
    focusable (data-open); wms-ui.js routes a click or Enter on one to
-   that item's Witness page (js/wms-witness.js). Flags come next.
+   that item's Witness page (js/wms-witness.js).
+
+   FLAGS (Console Task 4) are the one voice the map is allowed: a
+   small mark on anything whose record already says a human is needed
+   now. No new urgency model — flags() only reads what is there:
+     - a bin on hold                    → flag on the bin,  opens the bin
+     - a pallet on hold                 → flag on the pallet, opens the pallet
+     - an open OS&D finding (a receipt
+       discrepancy, or a camera finding
+       awaiting a decision)             → flag on the dock it came in at,
+                                          opens the shipment
+     - an open worker flag (can't
+       verify — a human must decide)    → flag on the place its task
+                                          touches, opens the task
+   A flag marks; it does not explain: no words, no counts, no legend
+   entry on the map (its name is for screen readers and hover only).
+   When nothing is urgent, the map carries no flag.
 
    model() is pure (node-testable); html() renders the model.
    ===================================================================== */
@@ -108,46 +124,132 @@
     return { inbound: inbound, outbound: outbound, rows: n, zones: zones, loose: loose };
   }
 
+  /* ---------- flags: what already says a human is needed now ------ */
+
+  function hrefOf(place, id) { return '#/witness/' + place + '/' + encodeURIComponent(id); }
+
+  /* Pure. Returns [{ href, place, id, host: { place, id } | null, why }],
+     one per item to open. host is where the mark sits on the map; a
+     null host means the walls cannot place it (said under the map). */
+  function flags(state, W) {
+    var m = model(state, W);
+    var on = { dock: {}, pallet: {}, order: {}, bin: {}, zone: {} };
+    m.inbound.forEach(function (d) { on.dock[d.doorId] = 1; d.lane.forEach(function (p) { on.pallet[p.id] = 1; }); });
+    m.outbound.forEach(function (d) { on.dock[d.doorId] = 1; d.lane.forEach(function (o) { on.order[o.id] = 1; }); });
+    m.zones.forEach(function (z) { on.zone[z.zone] = 1; z.bins.forEach(function (b) { on.bin[b.id] = 1; }); });
+    function at(place, id) { return id != null && on[place][id] ? { place: place, id: id } : null; }
+    function find(list, pred) { for (var i = 0; i < (list || []).length; i++) if (pred(list[i])) return list[i]; return null; }
+    function binZone(id) { var b = find(state.bins, function (x) { return x.id === id; }); return b ? b.zone : null; }
+    function doorZone(id) { var d = find(state.doors, function (x) { return x.id === id; }); return d ? d.zone : null; }
+
+    var out = [], seen = {};
+    function push(place, id, host, why, href) {
+      var h = href || hrefOf(place, id);
+      if (seen[h]) { if (seen[h].why.indexOf(why) === -1) seen[h].why.push(why); return; }
+      seen[h] = { href: h, place: place, id: id, host: host, why: [why] };
+      out.push(seen[h]);
+    }
+
+    /* 1. Held bins. */
+    (state.bins || []).forEach(function (b) {
+      if (b.status === 'hold') push('bin', b.id, at('bin', b.id), 'Bin ' + b.id + ' on hold');
+    });
+
+    /* 2. Held pallets. */
+    (state.staging || []).forEach(function (p) {
+      if (p.hold) push('pallet', p.id, at('pallet', p.id) || at('zone', doorZone(p.door)), 'Pallet ' + p.id + ' on hold');
+    });
+
+    /* 3. Open OS&D findings → the shipment, marked at its dock. */
+    var ships = (state.inbound || []);
+    ((state.wms && state.wms.osd) || []).forEach(function (f) {
+      if (f.status !== 'open' || !f.shipmentId) return;
+      var sh = find(ships, function (x) { return x.id === f.shipmentId; });
+      var door = sh ? sh.door : null;
+      push('shipment', f.shipmentId, at('dock', door) || at('zone', doorZone(door)),
+        'Shipment ' + f.shipmentId + ': ' + (f.type === 'photo' ? 'camera finding' : f.type) + ' awaiting a decision');
+    });
+
+    /* 4. Open worker flags → the task, marked where the task works. */
+    ((state.wms && state.wms.flags) || []).forEach(function (f) {
+      if (f.status !== 'open') return;
+      var t = f.taskId ? find(state.tasks, function (x) { return x.id === f.taskId; }) : null;
+      var why = 'Flag ' + f.id + ' awaiting a decision';
+      if (!t) { push(null, f.id, at('zone', f.zone), why, '#/flags'); return; }
+      var shipId = /^t-receive-(.+)$/.exec(t.id);
+      var sh = shipId ? find(ships, function (x) { return x.id === shipId[1]; }) : null;
+      var host = at('pallet', t.stagingId) || at('bin', t.binId) || at('bin', t.toBinId) || at('bin', t.fromBinId) ||
+        at('order', t.orderId) || (sh ? at('dock', sh.door) : null) ||
+        at('zone', t.zone) || at('zone', binZone(t.binId || t.toBinId)) || at('zone', f.zone);
+      push('task', t.id, host, why);
+    });
+    out.forEach(function (x) { x.why = x.why.join('; '); });
+    return out;
+  }
+
+  /* host key → [flag] for one render of the map. */
+  function flagIndex(list) {
+    var ix = {};
+    list.forEach(function (f) { if (!f.host) return; var k = f.host.place + '|' + f.host.id; (ix[k] = ix[k] || []).push(f); });
+    return ix;
+  }
+
+  function flagLink(f) {
+    var name = 'Needs a human now — ' + f.why;
+    return '<a class="wm-flag" data-flag href="' + esc(f.href) + '" aria-label="' + esc(name) + '" title="' + esc(name) + '"></a>';
+  }
+
+  function flagsOn(ix, place, id) {
+    var l = ix && ix[place + '|' + id];
+    return l ? '<span class="wm-flags">' + l.map(flagLink).join('') + '</span>' : '';
+  }
+
   /* ---------- rendering ------------------------------------------- */
 
   /* An item a person can open: its Witness page. */
   var OPEN = ' data-open tabindex="0" role="link"';
 
-  function dockHtml(side, d) {
+  function dockHtml(side, d, ix) {
     if (!d) return '';
+    var fl = flagsOn(ix, 'dock', d.doorId);
     return '<div class="wm-dock wm-' + side + (d.busy ? ' busy' : '') + '" data-place="dock" data-side="' + side + '" data-id="' + esc(d.doorId) + '"' + OPEN + ' title="' +
-      esc(d.name + ' — ' + d.word + (d.ref ? ' ' + d.ref : '')) + '">' +
+      esc(d.name + ' — ' + d.word + (d.ref ? ' ' + d.ref : '')) + '">' + fl +
       '<span class="wm-dock-name">' + esc(d.name) + '</span>' +
       '<span class="wm-dock-state">' + esc(d.word) + (d.ref ? ' <b>' + esc(d.ref) + '</b>' : '') + '</span>' +
       '</div>';
   }
 
-  function palletHtml(p) {
+  function palletHtml(p, ix) {
+    var fl = flagsOn(ix, 'pallet', p.id);
     return '<span class="wm-pallet' + (p.held ? ' held' : '') + '" data-place="pallet" data-id="' + esc(p.id) + '"' + OPEN + ' title="' +
-      esc(p.id + ' · ' + p.qty + ' × ' + p.desc + (p.held ? ' · on hold' : '')) + '"></span>';
+      esc(p.id + ' · ' + p.qty + ' × ' + p.desc + (p.held ? ' · on hold' : '')) + '">' + fl + '</span>';
   }
 
-  function orderHtml(o) {
+  function orderHtml(o, ix) {
+    var fl = flagsOn(ix, 'order', o.id);
     return '<span class="wm-pallet out' + (o.packed ? ' packed' : '') + '" data-place="order" data-id="' + esc(o.id) + '"' + OPEN + ' title="' +
-      esc(o.id + (o.customer ? ' · ' + o.customer : '') + (o.packed ? ' · packed' : ' · picked, not packed')) + '"></span>';
+      esc(o.id + (o.customer ? ' · ' + o.customer : '') + (o.packed ? ' · packed' : ' · picked, not packed')) + '">' + fl + '</span>';
   }
 
-  function binHtml(b) {
+  function binHtml(b, ix) {
+    var fl = flagsOn(ix, 'bin', b.id);
     return '<span class="wm-bin' + (b.stocked ? ' stocked' : '') + (b.held ? ' held' : '') + '" data-place="bin" data-id="' + esc(b.id) + '"' + OPEN + ' title="' +
-      esc(b.id + ' — ' + b.title + (b.held ? ' · on hold' : '')) + '">' + esc(b.id) + '</span>';
+      esc(b.id + ' — ' + b.title + (b.held ? ' · on hold' : '')) + '">' + esc(b.id) + fl + '</span>';
   }
 
   /* Anything the walls cannot place, said plainly — never dropped. */
-  function looseHtml(l) {
+  function looseHtml(l, unplaced) {
     var parts = [];
     if (l.doors.length) parts.push('Doors with no wall: ' + l.doors.join(', '));
     if (l.pallets.length) parts.push('Pallets not at an inbound door: ' + l.pallets.join(', '));
     if (l.orders.length) parts.push('Orders staged away from an outbound door: ' + l.orders.join(', '));
-    return parts.length ? '<p class="wm-loose" data-place="loose">Not on a wall — ' + esc(parts.join(' · ')) + '</p>' : '';
+    var fl = (unplaced || []).map(flagLink).join('');
+    return parts.length || fl ? '<p class="wm-loose" data-place="loose">' + (parts.length ? 'Not on a wall — ' + esc(parts.join(' · ')) : '') + (fl ? ' <span class="wm-flags wm-flags-loose">' + fl + '</span>' : '') + '</p>' : '';
   }
 
   function html(state, W) {
     var m = model(state, W);
+    var fls = flags(state, W), ix = flagIndex(fls);
     var n = m.rows;
     var out = '<div class="wm-surface"><div class="wmap" role="group" aria-label="Warehouse map: inbound docks, receiving bay, bay locations, staging, outbound docks" style="--wm-rows:' + n + '">';
 
@@ -157,22 +259,23 @@
     out += '<div class="wm-band wm-col-stg" style="' + span + '"><span class="wm-band-label">Staging</span></div>';
     out += '<div class="wm-bays-head" style="grid-row:2"><span class="wm-band-label">Bay Locations</span></div>';
     out += '<div class="wm-bays" style="grid-row:3 / span ' + n + '">' + m.zones.map(function (z) {
-      return '<section class="wm-zone" data-place="zone" data-id="' + esc(z.zone) + '"><h3>Zone ' + esc(z.zone) + '</h3><div class="wm-bins">' +
-        z.bins.map(binHtml).join('') + '</div></section>';
+      return '<section class="wm-zone" data-place="zone" data-id="' + esc(z.zone) + '"><h3>Zone ' + esc(z.zone) + flagsOn(ix, 'zone', z.zone) + '</h3><div class="wm-bins">' +
+        z.bins.map(function (b) { return binHtml(b, ix); }).join('') + '</div></section>';
     }).join('') + '</div>';
 
     for (var i = 0; i < n; i++) {
       var row = 'grid-row:' + (i + 3), di = m.inbound[i], dout = m.outbound[i];
-      out += '<div class="wm-cell wm-col-in" style="' + row + '">' + dockHtml('in', di) + '</div>';
-      out += '<div class="wm-cell wm-col-rcv wm-lane" style="' + row + '"' + (di ? ' data-place="receiving" data-id="' + esc(di.doorId) + '">' + di.lane.map(palletHtml).join('') : '>') + '</div>';
-      out += '<div class="wm-cell wm-col-stg wm-lane" style="' + row + '"' + (dout ? ' data-place="staging" data-id="' + esc(dout.doorId) + '">' + dout.lane.map(orderHtml).join('') : '>') + '</div>';
-      out += '<div class="wm-cell wm-col-out" style="' + row + '">' + dockHtml('out', dout) + '</div>';
+      out += '<div class="wm-cell wm-col-in" style="' + row + '">' + dockHtml('in', di, ix) + '</div>';
+      out += '<div class="wm-cell wm-col-rcv wm-lane" style="' + row + '"' + (di ? ' data-place="receiving" data-id="' + esc(di.doorId) + '">' + di.lane.map(function (p) { return palletHtml(p, ix); }).join('') : '>') + '</div>';
+      out += '<div class="wm-cell wm-col-stg wm-lane" style="' + row + '"' + (dout ? ' data-place="staging" data-id="' + esc(dout.doorId) + '">' + dout.lane.map(function (o) { return orderHtml(o, ix); }).join('') : '>') + '</div>';
+      out += '<div class="wm-cell wm-col-out" style="' + row + '">' + dockHtml('out', dout, ix) + '</div>';
     }
 
     out += '</div>';
     out += '<div class="wm-legend"><span><i class="wm-key rcv"></i> Receiving &amp; staging</span><span><i class="wm-key bays"></i> Bay locations</span>' +
       '<span><i class="wm-pallet"></i> Pallet waiting for putaway</span><span><i class="wm-pallet out"></i> Order staged to ship</span>' +
-      '<span><i class="wm-bin stocked"></i> Stocked bin</span><span><i class="wm-bin"></i> Empty bin</span><span><i class="wm-bin held"></i> On hold</span></div>' + looseHtml(m.loose) + '</div>';
+      '<span><i class="wm-bin stocked"></i> Stocked bin</span><span><i class="wm-bin"></i> Empty bin</span><span><i class="wm-bin held"></i> On hold</span></div>' +
+      looseHtml(m.loose, fls.filter(function (f) { return !f.host; })) + '</div>';
     return out;
   }
 
@@ -254,7 +357,7 @@
       var place = st.key === 'rcv' ? 'receiving' : 'staging';
       return '<div class="wf-row wf-lanes"' + cols + '>' + st.lanes.map(function (l) {
         return '<div class="wm-lane wf-lane" data-place="' + place + '" data-id="' + esc(l.doorId) + '" title="' + esc(st.label + ' at ' + l.name) + '">' +
-          l.items.map(st.key === 'rcv' ? palletHtml : orderHtml).join('') + '</div>';
+          l.items.map(function (x) { return st.key === 'rcv' ? palletHtml(x) : orderHtml(x); }).join('') + '</div>';
       }).join('') + '</div>';
     }
     if (!st.zones.length) return '<p class="wf-none">No bin has a reason to be here right now.</p>';
@@ -285,7 +388,7 @@
     return out.split(OPEN).join('');
   }
 
-  var api = { model: model, html: html, slice: slice, sliceHtml: sliceHtml, FLOW: FLOW, DOCKS_PER_WALL: DOCKS_PER_WALL };
+  var api = { model: model, html: html, flags: flags, slice: slice, sliceHtml: sliceHtml, FLOW: FLOW, DOCKS_PER_WALL: DOCKS_PER_WALL };
   root.WitnessWmsMap = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
