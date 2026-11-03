@@ -213,6 +213,22 @@ check('spoken: status lines are not spoken', G.speakable(['…']) === '' && G.sp
 check('spoken: nothing to say → empty', G.speakable(null) === '' && G.speakable([]) === '');
 check('spoken: two lines read as one', G.speakable(['Closed: Pick.', 'Next: Load.']) === 'Closed: Pick. Next: Load.');
 
+/* --- voice wake: "Hey Meta" / "Hey Muse" -------------------------------- */
+check('wake: "Hey Meta" wakes', G.wakeHeard('Hey Meta'));
+check('wake: "Hey Muse" wakes, with punctuation and case', G.wakeHeard('hey, MUSE.'));
+check('wake: heard inside a longer phrase still wakes', G.wakeHeard('um hey meta what is next'));
+check('wake: close mishearings count ("hey metta", "hey muze")', G.wakeHeard('hey metta') && G.wakeHeard('hey muze'));
+check('wake: plain talk does not wake', !G.wakeHeard('the metadata is wrong') && !G.wakeHeard('done') && !G.wakeHeard('hey there'));
+check('wake: "meta" alone, without hey, does not wake', !G.wakeHeard('meta'));
+check('wake: nothing to read → no wake', !G.wakeHeard('') && !G.wakeHeard(null));
+var WT = G.WAKE_TURN;
+check('wake turn: just after the ding, keep listening', G.wakeEndpoint(false, 0, 200) === 'listen');
+check('wake turn: nothing said by the limit → dropped, nothing sent', G.wakeEndpoint(false, 0, WT.NO_SPEECH_MS) === 'none');
+check('wake turn: still talking → keep listening', G.wakeEndpoint(true, 300, 3000) === 'listen');
+check('wake turn: quiet after talking → send', G.wakeEndpoint(true, WT.QUIET_MS, 3000) === 'send');
+check('wake turn: long talk is cut at the limit and sent', G.wakeEndpoint(true, 0, WT.MAX_MS) === 'send');
+check('wake: the wake words are stripped before commands — "hey meta done" is done', C.matchIntent('done').intent === 'done' && G.isHide('hey meta hide'));
+
 Promise.all(pending).then(function () {
   console.log('---');
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED');
