@@ -39,6 +39,7 @@ computed from real state.
 | `css/wms-map.css` | The map's styling: pink receiving/staging bands, yellow bay block, light and dark. |
 | `js/wms-witness.js` | The Witness page — one item's record (console Task 2). Pure model + HTML from state. |
 | `css/wms-witness.css` | The Witness page's styling, and the map's openable items. |
+| `js/wms-agent.js` | The agent in the Witness page's chair (console Task 3): asks Muse Spark from one item's record; adds desk words to the record. |
 | `warehouse.html` | One added masthead link to the WMS. |
 
 Voice uses `js/warehouse-mic.js` unchanged (`/asr`, Muse Voice
@@ -111,8 +112,8 @@ model: `flags()` in js/wms-map.js only reads what is there.
 `task`. A dock with a truck opens that shipment; a dock that is
 loading opens that load; a clear dock is its own, empty page.
 
-Top to bottom: the agent's chair (reserved and drawn empty — the live
-agent is Task 3), then two panels.
+Top to bottom: the agent's chair (the live agent, Task 3 — below),
+then two panels.
 
 - **The events** (left), oldest first, derived only from real data:
   the records ledger (arrived, checked, put away, picked, held,
@@ -127,9 +128,39 @@ agent is Task 3), then two panels.
 - Empty-honest: no event → "Nothing on the record yet"; no words →
   "Not said". An item no longer in the record (a pallet put away, an
   order gone) says so; nothing stands in its place.
-- Read-only. Opening the page saves nothing.
+- Opening the page saves nothing. Only what the desk user tells the
+  agent is saved (below).
 - A pallet carries its truck's arrival, receipt and spoken count, and
   only the findings for its own item — not its sibling pallets' work.
+
+## The agent in the chair (console Task 3, 2026-11-02)
+
+The top of every Witness page. The desk user types, or holds the mic
+button and speaks (`js/warehouse-mic.js` → `/asr`). Code:
+`js/wms-agent.js`.
+
+- **Ask or tell is decided locally**, like the worker's intents: a
+  question mark or a question word asks; anything else is told. The
+  Ask and "Add to the record" buttons force either one.
+- **Ask**: the item's own record (what it is now, its events, its full
+  transcript — the same model the panels show) plus the question go to
+  Muse Spark through `/chat`, bound to answer only from that record.
+  Every number and quoted phrase in the answer is looked up in the
+  record; the page says which were not found. "Everything it was
+  given" shows the exact text sent. Asking saves nothing.
+- **Tell**: the words are saved as one record (`kind: 'desk'`, `by`,
+  `words`, `source` typed/voice, `decision`, `on` = the item's keys).
+  They show in the transcript as a desk entry ("Desk · typed" /
+  "Desk · spoken") under the person's name, and as an event: "Desk
+  update", or "Decided" (by that person) when the words state a
+  decision ("I decided…", "keep it on hold", "send it back", "do not
+  ship"…). A decision moves nothing in the building — the desk
+  controls do that. Questions and the agent's answers are not saved.
+- A desk entry shows on its item and on the pages that hold that
+  item: a pallet's shipment (and, once put away, its bin), an order's
+  load. A dock with a truck files it under that shipment.
+- Enterprise note: in a real enterprise program this agent is
+  manager-gated. This build has no gating.
 
 ## Where state lives
 
@@ -170,9 +201,10 @@ node test/wms-ai-test.js     # 20  — Meta API calls, stubbed /chat
 node test/wms-store-test.js  # 15  — desk-record seam, stubbed fetch
 node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
 node test/wms-witness-test.js # 43 — the Witness page: events, transcript, empty-honest
+node test/wms-agent-test.js  # 48  — the Witness page's agent: ask from the record, desk entries
 node test/wms-flow-test.js   # 36  — flow-sliced task views (inbound / outbound)
 node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
-node test/wms-ui-smoke.js    # 33  — real browser (Playwright), stubbed Worker; skips without Playwright
+node test/wms-ui-smoke.js    # 37  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 
 ## Left out, and why

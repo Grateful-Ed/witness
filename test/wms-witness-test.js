@@ -62,7 +62,7 @@ check('seed pallet page says so plainly', /Nothing on the record yet/.test(h0) &
 check('page order: agent chair at the top, then events (left), then transcript (right)',
   h0.indexOf('data-slot="agent"') !== -1 && h0.indexOf('data-slot="agent"') < h0.indexOf('data-panel="events"') &&
   h0.indexOf('data-panel="events"') < h0.indexOf('data-panel="transcript"'));
-check('the agent chair is reserved and labelled as coming', /The agent <span class="wp-soon">Coming next<\/span>/.test(h0) && !/<input|<textarea|<button/.test(h0));
+check('the agent chair is live (Task 3): ask/tell box, mic, Ask and Add-to-record buttons', /data-slot="agent"/.test(h0) && /<textarea id="agQ"/.test(h0) && /id="agTalk"/.test(h0) && /data-act="agent-ask"/.test(h0) && /data-act="agent-tell"/.test(h0));
 check('an unknown item renders honestly, not a guess', /not in the desk record now/.test(P.html(s, 'pallet', 'STG-999')) && P.events(s, P.subject(s, 'pallet', 'STG-999')).length === 0);
 var dockClear = P.model(s, 'dock', 'Inbound Door 4');
 check('a clear dock is its own page, empty', dockClear.subject.found && dockClear.subject.kind === 'dock' && !dockClear.events.length && !dockClear.transcript.length);

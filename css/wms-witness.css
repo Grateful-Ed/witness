@@ -114,3 +114,43 @@
 
 .wp-missing h2 { margin: 4px 0; }
 .wp-missing p { color: var(--wp-ink-2); }
+
+/* ---------- The agent, live (console Task 3) -------------------------
+   The chair at the top: a calm slate band, solid now that it is in use.
+   The person's own words read as theirs (green, the human colour);
+   the agent's answers read as reports. */
+.wp-agent.ag-live { border-style: solid; border-width: 1px; border-left-width: 4px; }
+.wp-agent.ag-live .wp-agent-h { flex-wrap: wrap; white-space: nowrap; }
+.ag-scope { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--wp-agent-edge); color: var(--wp-ink-2); }
+.wp-agent .ag-intro { margin: 6px 0 10px; }
+.wp-agent .ag-intro b { color: var(--wp-human); }
+
+.ag-log { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+.ag-turn { padding: 8px 10px; border-radius: 8px; background: var(--wp-panel); border: 1px solid var(--wp-line); font-size: 14px; line-height: 1.45; }
+.ag-turn p { margin: 3px 0 0; color: var(--wp-ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.ag-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--wp-ink-2); }
+.ag-you { align-self: flex-end; max-width: 85%; background: var(--wp-ground); }
+.ag-agent { max-width: 92%; }
+.ag-agent.pending p { font-style: italic; color: var(--wp-ink-2); }
+.ag-agent.err { border-color: var(--wp-pink-edge); }
+.ag-rec { border-color: var(--wp-human); background: var(--wp-human-bg); }
+.ag-rec .ag-tag { color: var(--wp-human); }
+.ag-rec blockquote { margin: 5px 0 3px; padding: 5px 9px; border-left: 3px solid var(--wp-human); background: var(--wp-panel); color: var(--wp-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ag-check { margin-top: 6px; font-size: 12px; color: var(--wp-ink-2); overflow-wrap: anywhere; }
+.ag-check.warn { color: var(--wp-pink-ink); font-weight: 600; }
+.ag-law { margin-top: 4px; font-size: 12px; color: var(--wp-ink-2); }
+.ag-turn details { margin-top: 4px; font-size: 12px; color: var(--wp-ink-2); }
+.ag-turn pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 240px; overflow-y: auto; background: var(--wp-ground); padding: 8px; border-radius: 6px; }
+
+.ag-form { display: flex; flex-direction: column; gap: 6px; }
+.ag-label { font-size: 12px; font-weight: 600; color: var(--wp-ink-2); }
+.ag-form textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--wp-agent-edge); background: var(--wp-panel); color: var(--wp-ink); resize: vertical; min-height: 44px; }
+.ag-form textarea:focus-visible { outline: 3px solid var(--wp-agent-edge); outline-offset: 1px; }
+.ag-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ag-status { font-size: 12px; color: var(--wp-ink-2); }
+.wp-agent .ag-hint { margin: 0; font-size: 12px; }
+
+/* Desk entries in the transcript: the desk user's own words. */
+.wp-line.desk blockquote { border-left-color: var(--wp-human); }
+.wp-line.desk .wp-src { color: var(--wp-human); font-weight: 700; }
+.wp-ev-desk-update .wp-verb { color: var(--wp-human); }
