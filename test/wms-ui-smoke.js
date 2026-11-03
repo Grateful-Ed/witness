@@ -100,8 +100,9 @@ server.listen(0, async function () {
   var s = await st();
   check('loaded state carries the WMS layer', !!(s.wms && s.wms.appointments.length === 3));
 
-  /* Dock: check in IN-1002 */
+  /* Dock & Yard is merged into Receiving: the old link lands there */
   await go('#/dock');
+  check('#/dock opens Receiving, no Dock & Yard menu item', (await page.$('a[href="#/dock"]')) === null && /Receiving/.test(await page.textContent('#main h1')));
   await click('[data-act="checkin"][data-id="APT-102"]');
   s = await st();
   check('check-in brings IN-1002 to Inbound Door 3', s.inbound[1].status === 'staged at door');
@@ -270,7 +271,7 @@ server.listen(0, async function () {
   }
 
   /* Every view renders */
-  var views = ['dashboard', 'dock', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'rf'];
+  var views = ['dashboard', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'ontology', 'rf'];
   var bad = [];
   for (var i = 0; i < views.length; i++) {
     await go('#/' + views[i]);

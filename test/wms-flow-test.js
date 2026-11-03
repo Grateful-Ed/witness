@@ -95,12 +95,18 @@ check('an unknown direction is refused', threw);
 /* 8. the console's task views use the slice, in the right direction */
 var ui = fs.readFileSync(path.join(__dirname, '..', 'js', 'wms-ui.js'), 'utf8');
 function viewBody(name) { var i = ui.indexOf('VIEWS.' + name + ' = function'); return ui.slice(i, ui.indexOf('\n  };', i)); }
-check('inbound task views (dock, receiving, osd, putaway) render the inbound flow', ['dock', 'receiving', 'osd', 'putaway'].every(function (v) { return /flow\('in',/.test(viewBody(v)) && !/flow\('out',/.test(viewBody(v)); }));
+function fnBody(name) { var i = ui.indexOf('function ' + name + '('); return ui.slice(i, ui.indexOf('\n  }', i)); }
+check('inbound task views (receiving, osd, putaway) render the inbound flow', ['receiving', 'osd', 'putaway'].every(function (v) { return /flow\('in',/.test(viewBody(v)) && !/flow\('out',/.test(viewBody(v)); }));
 check('outbound task views (picking, ship) render the outbound flow', ['picking', 'ship'].every(function (v) { return /flow\('out',/.test(viewBody(v)) && !/flow\('in',/.test(viewBody(v)); }));
 check('the home stays the whole building (not a slice)', /WitnessWmsMap\.html\(/.test(viewBody('dashboard')) && !/flow\(/.test(viewBody('dashboard')));
 check('the existing task actions are still in the task views', ['data-act="checkin"', 'data-act="schedule"', 'data-act="rcv-open"', 'data-act="rcv-post"', 'data-act="osd-close"',
   'data-act="pa-confirm"', 'data-act="release"', 'data-act="pick"', 'data-act="pack"', 'data-act="load"', 'data-act="close-load"'].every(function (a) {
-  return ['dock', 'receiving', 'osd', 'putaway', 'picking', 'ship'].some(function (v) { return viewBody(v).indexOf(a) !== -1; }); }));
+  return ['receiving', 'osd', 'putaway', 'picking', 'ship'].some(function (v) { return viewBody(v).indexOf(a) !== -1; }) || fnBody('appointmentPanels').indexOf(a) !== -1; }));
+/* design 2026-11-03: Dock & Yard merged into Receiving; Putaway starts at the Receiving Bay */
+check('Receiving carries the door appointments (Dock & Yard merged in)', /appointmentPanels\(\)/.test(viewBody('receiving')) && ui.indexOf('VIEWS.dock = function') === -1);
+check('Putaway leaves the inbound docks strip out', /flow\('in', bands, \['docks'\]\)/.test(viewBody('putaway')));
+var sk = M.sliceHtml(s, W, 'in', {}, ['docks']);
+check('a skipped stage is not drawn, and its arrow goes with it', sk.indexOf('data-stage="docks"') === -1 && sk.indexOf('data-stage="rcv"') !== -1 && (sk.match(/wf-arrow/g) || []).length === 1);
 check('wms.html loads the flow styles', fs.readFileSync(path.join(__dirname, '..', 'wms.html'), 'utf8').indexOf('css/wms-flow.css') !== -1);
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');

@@ -148,21 +148,6 @@
   border-color: var(--wm-hold); color: var(--wm-ink);
 }
 
-/* ---------- legend ---------- */
-.wm-legend {
-  display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 2px 0;
-  font-size: 12px; color: var(--wm-ink-2);
-}
-.wm-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.wm-legend .wm-bin { min-height: 14px; width: 18px; padding: 0; }
-.wm-key { display: inline-block; width: 18px; height: 12px; border-radius: 2px; }
-.wm-key.rcv { background: var(--wm-pink); border: 2px solid var(--wm-pink-edge); }
-.wm-key.bays { background: var(--wm-yellow); border: 2px solid var(--wm-yellow-edge); }
-
-/* The legend sits outside the building, so it needs its own ground in dark mode. */
-@media (prefers-color-scheme: dark) {
-  .wm-surface { background: var(--wm-floor); padding: 10px; border-radius: 8px; }
-}
 
 /* ---------- narrow screens ---------- */
 @media (max-width: 760px) {

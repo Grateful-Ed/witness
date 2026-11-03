@@ -31,7 +31,8 @@
     selBin: null, zoneFilter: '', binSearch: '', taskType: '', taskZone: '', taskStatus: 'active',
     recKind: '', rfUnit: null, rfReply: '', rfHeard: '', rfPhoto: null, rfPhotoRead: null,
     flagWords: '', ask: null, askBusy: false, camFor: null, pin: null,
-    agent: { key: null, turns: [], busy: false, draft: '' }   /* the Witness page's agent: this page's talk only */
+    agent: { key: null, turns: [], busy: false, draft: '' },  /* the Witness page's agent: this page's talk only */
+    folded: {}   /* folded panels, by screen + panel title; this page only */
   };
 
   var store = S.create({
@@ -164,7 +165,6 @@
     { group: 'Overview' },
     { id: 'dashboard', label: 'Warehouse Map' },
     { group: 'Inbound' },
-    { id: 'dock', label: 'Dock & Yard' },
     { id: 'receiving', label: 'Receiving' },
     { id: 'osd', label: 'OS&D Findings', badge: function () { return state.wms.osd.filter(function (f) { return f.status === 'open'; }).length; } },
     { id: 'putaway', label: 'Putaway' },
@@ -184,6 +184,7 @@
     { id: 'flags', label: 'Flags & Incidents', badge: function () { return state.wms.flags.filter(function (f) { return f.status === 'open'; }).length; } },
     { id: 'summary', label: 'Shift Summary' },
     { id: 'audit', label: 'Audit Trail' },
+    { id: 'ontology', label: 'Ontology' },
     { group: 'Floor' },
     { id: 'rf', label: 'RF Console (worker)' }
   ];
@@ -191,6 +192,7 @@
 
   function route() {
     var r = (location.hash || '').replace(/^#\/?/, '') || (isManager() ? 'dashboard' : 'rf');
+    if (r === 'dock') r = 'receiving';   /* Dock & Yard merged into Receiving (design 2026-11-03) */
     if (!isManager() && WORKER_VIEWS.indexOf(r) === -1) r = 'rf';
     return r;
   }
@@ -261,15 +263,21 @@
      under the stage of the building they concern, freight flowing down
      the screen — inbound docks → receiving → bays; bays → staging →
      outbound docks. The slice is drawn by js/wms-map.js. */
-  function flow(dir, bands) {
+  function flow(dir, bands, skip) {
     var a = {};
     Object.keys(bands).forEach(function (k) { a[k] = bands[k].join(''); });
-    return window.WitnessWmsMap.sliceHtml(state, W, dir, a);
+    return window.WitnessWmsMap.sliceHtml(state, W, dir, a, skip);
   }
 
   /* The home: the building itself (js/wms-map.js). No tables here. */
   VIEWS.dashboard = function () {
     return head('Overview', 'Warehouse', 'The building, live from the desk record. Open any dock, pallet, order or bin for its Witness page.') + window.WitnessWmsMap.html(state, W);
+  };
+
+  /* Ontology: an empty page for now, listed after Audit Trail (design
+     2026-11-03). The ontology brief fills it. */
+  VIEWS.ontology = function () {
+    return '<div class="crumbs">DC-01 › Control › Ontology</div><div class="page-head"><div><h1>Ontology</h1></div></div>';
   };
 
   /* The Witness page: one item's record (js/wms-witness.js). Routed
@@ -314,9 +322,10 @@
     }));
   }
 
-  /* ---- Dock & Yard ---- */
-  VIEWS.dock = function () {
-    var html = head('Inbound › Dock & Yard', 'Dock & Yard', 'Door appointments for inbound trailers. A door can hold one window at a time; check-in brings the trailer to the door and opens receiving.');
+  /* ---- Door appointments (was Dock & Yard; now part of Receiving,
+     design 2026-11-03). A door can hold one window at a time; check-in
+     brings the trailer to the door and opens receiving. ---- */
+  function appointmentPanels() {
     var rows = state.wms.appointments.slice().sort(function (a, b) { return (a.day + a.start) < (b.day + b.start) ? -1 : 1; }).map(function (a) {
       var s = E.shipmentById(state, a.shipmentId);
       var st = a.status === 'checked in' ? chip('Checked in', 'info') : a.status === 'complete' ? chip('Complete', 'ok') : chip('Scheduled', 'warn');
@@ -334,15 +343,14 @@
       '<div class="field"><label>Trailer</label><input id="apTrailer" type="text" placeholder="e.g. SEL-2208"></div>' +
       '</div><div class="form-actions"><button class="btn primary" data-act="schedule">Schedule / reschedule</button></div>'
       : '<p class="empty">Every inbound shipment is already at a door or received.</p>';
-    return html + flow('in', { docks: [
-      panel('Dock doors', doorsHtml()),
+    return [
       panel('Appointments', table(['Appt', 'Shipment', 'BOL', 'Carrier', 'Trailer', 'Door', 'Window', 'Status', ''], rows, 'No appointments.'), null, true),
-      panel('Schedule a door', form, 'conflicts on the same door are refused')] });
-  };
+      panel('Schedule a door', form, 'conflicts on the same door are refused')];
+  }
 
   /* ---- Receiving ---- */
   VIEWS.receiving = function () {
-    var html = head('Inbound › Receiving', 'Receiving', 'Receive against the BOL already in the system. Speak the count or type it; a human posts the receipt. Every shortage, overage and damage becomes an OS&D finding, quoted in the receiver\'s own words.');
+    var html = head('Inbound › Receiving', 'Receiving', 'Door appointments and check-in, then receive against the BOL already in the system. Speak the count or type it; a human posts the receipt. Every shortage, overage and damage becomes an OS&D finding, quoted in the receiver\'s own words.');
     var rows = state.inbound.map(function (s) {
       var st = W.inboundStatus(state, s);
       var sel = ui.rcvShip === s.id;
@@ -350,7 +358,7 @@
         '</td><td class="num">' + esc(s.pallets) + '</td><td>' + stageChip(st) + ' <span class="hint">' + esc(st.words) + '</span></td><td class="actions">' +
         (s.status === 'staged at door' ? '<button class="btn small primary" data-act="rcv-open" data-id="' + esc(s.id) + '">Receive</button>' : '') + '</td></tr>';
     });
-    var bands = { docks: [panel('Inbound shipments (ASN / BOL on file)', table(['Shipment', 'BOL #', 'Description', 'Door', 'Pallets', 'Status', ''], rows), null, true)], rcv: [] };
+    var bands = { docks: appointmentPanels().concat([panel('Inbound shipments (ASN / BOL on file)', table(['Shipment', 'BOL #', 'Description', 'Door', 'Pallets', 'Status', ''], rows), null, true)]), rcv: [] };
 
     var s = ui.rcvShip ? E.shipmentById(state, ui.rcvShip) : null;
     if (s && s.status === 'staged at door') {
@@ -381,7 +389,7 @@
         '<p class="law">The machine fills in what it heard; a human checks the numbers and posts. Nothing posts on its own.</p>';
       bands.rcv.push(panel('Receive ' + s.id + ' — ' + s.desc, body, 'counts against the BOL on file'));
     } else {
-      bands.rcv.push(panel('Receive', '<p class="empty">Check a trailer in at Dock & Yard, then pick a shipment at a door above.</p>'));
+      bands.rcv.push(panel('Receive', '<p class="empty">Check a trailer in under Appointments above, then pick a shipment at a door.</p>'));
     }
     var rr = state.wms.receipts.slice().reverse().map(function (r) {
       var units = 0, dmg = 0; r.lines.forEach(function (l) { units += l.received; dmg += l.damaged; });
@@ -425,7 +433,7 @@
         '</td><td>' + esc(uname(t.doneBy)) + '</td><td class="id">' + time(t.doneAt) + '</td></tr>';
     });
     bands.bays.push(panel('Completed putaway', table(['Pallet', 'Task', 'Suggested', 'Actual', 'By', 'Time'], done, 'None yet.'), null, true));
-    return html + flow('in', bands);
+    return html + flow('in', bands, ['docks']);   /* putaway starts at the Receiving Bay */
   };
 
   /* ---- Locations ---- */
@@ -1081,7 +1089,7 @@
         '<footer class="human act"><p>The machine fills in what it heard. Nothing posts on its own.</p><button class="btn primary human-btn" data-act="rcv-post">I checked it — post receipt</button>' +
         '<button class="btn" data-act="rcv-clear">Clear</button><a class="btn" href="index.html">Full two-scan cross-check ↗</a></footer></section>';
     } else {
-      html += '<section class="stand-empty"><h2>Pick a trailer at a door.</h2><p>Check a trailer in at Dock & Yard, then press Receive below.</p></section>';
+      html += '<section class="stand-empty"><h2>Pick a trailer at a door.</h2><p>Check a trailer in under Appointments, then press Receive below.</p></section>';
     }
     var rows = state.inbound.map(function (x) {
       var st = W.inboundStatus(state, x);
@@ -1385,7 +1393,7 @@
         '<p class="law">The machine fills in what it heard; a human checks the numbers and posts. Nothing posts on its own.</p>';
       html += panel('Receive ' + s.id + ' — ' + s.desc, body, 'counts against the BOL on file');
     } else {
-      html += panel('Receive', '<p class="empty">Check a trailer in at Dock & Yard, then pick a shipment at a door above.</p>');
+      html += panel('Receive', '<p class="empty">Check a trailer in under Appointments above, then pick a shipment at a door.</p>');
     }
     var rr = receiptChecks().reverse().map(function (c) {
       var r = c.receipt, units = 0, dmg = 0;
@@ -1450,11 +1458,45 @@
     var v = (LOOK_VIEWS[LOOK] || {})[base] || VIEWS[base] || VIEWS.dashboard;
     var scroll = window.scrollY;
     $('main').innerHTML = v();
+    foldPanels(base);
     window.scrollTo(0, scroll);
     var agLog = document.querySelector('.ag-log');
     if (agLog) agLog.scrollTop = agLog.scrollHeight; /* the newest turn in view */
     wireMics(cur);
   }
+
+  /* ---------- folding panels (design 2026-11-03) --------------------
+     Every console panel folds to its title bar, except on the screens
+     that are one live board: the map, Task Queues, Labor and RF. The
+     fold state lives in this page only, per screen and panel title. */
+  var NO_FOLD = ['dashboard', 'queues', 'labor', 'rf', 'witness', 'ontology'];
+  function foldKey(base, p) { var h = p.querySelector('.panel-h h2'); return base + ':' + (h ? h.textContent.trim() : ''); }
+  function foldPanels(base) {
+    if (NO_FOLD.indexOf(base) !== -1) return;
+    Array.prototype.forEach.call(document.querySelectorAll('#main section.panel'), function (p) {
+      var hd = p.querySelector(':scope > .panel-h');
+      if (!hd) return;
+      var shut = !!ui.folded[foldKey(base, p)];
+      p.classList.add('fold');
+      p.classList.toggle('pc', shut);
+      hd.setAttribute('role', 'button');
+      hd.setAttribute('tabindex', '0');
+      hd.setAttribute('aria-expanded', shut ? 'false' : 'true');
+    });
+  }
+  function foldToggle(e) {
+    var hd = e.target.closest && e.target.closest('#main .panel.fold > .panel-h');
+    if (!hd) return;
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    e.preventDefault();
+    var p = hd.parentNode, k = foldKey(route().split('/')[0], p), shut = !ui.folded[k];
+    ui.folded[k] = shut;
+    p.classList.toggle('pc', shut);
+    hd.setAttribute('aria-expanded', shut ? 'false' : 'true');
+  }
+  document.addEventListener('click', foldToggle);
+  document.addEventListener('keydown', foldToggle);
 
   /* ---------- voice ------------------------------------------------- */
 
