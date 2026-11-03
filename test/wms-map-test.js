@@ -89,5 +89,12 @@ check('a pallet at a door that is not on the inbound wall is listed, not dropped
   var y = M.html(s6, W); return y.indexOf('Pallets not at an inbound door: STG-1 at Outbound Door 2') !== -1;
 })());
 
+/* design 2026-11-03: lane labels follow the dock rows; no legend */
+(function () {
+  var hh = M.html(W.seed(), W);
+  check('lanes are named Receiving Bay 1–4 and Staging 1–4', [1, 2, 3, 4].every(function (n) { return hh.indexOf('>Receiving Bay ' + n + '<') !== -1 && hh.indexOf('>Staging ' + n + '<') !== -1; }));
+  check('the map has no legend', hh.indexOf('wm-legend') === -1);
+})();
+
 console.log('\n' + passes + ' passed, ' + failures + ' failed');
 process.exit(failures ? 1 : 0);

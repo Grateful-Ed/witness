@@ -251,7 +251,7 @@
     var m = model(state, W);
     var fls = flags(state, W), ix = flagIndex(fls);
     var n = m.rows;
-    var out = '<div class="wm-surface"><div class="wmap" role="group" aria-label="Warehouse map: inbound docks, receiving bay, bay locations, staging, outbound docks" style="--wm-rows:' + n + '">';
+    var out = '<div class="wm-surface wm-board"><div class="wmap" role="group" aria-label="Warehouse map: inbound docks, receiving bay, bay locations, staging, outbound docks" style="--wm-rows:' + n + '">';
 
     var span = 'grid-row:2 / span ' + (n + 1);
     out += '<div class="wm-wall-label wm-col-in">Inbound</div><div class="wm-wall-label wm-col-out">Outbound</div>';
@@ -266,16 +266,16 @@
     for (var i = 0; i < n; i++) {
       var row = 'grid-row:' + (i + 3), di = m.inbound[i], dout = m.outbound[i];
       out += '<div class="wm-cell wm-col-in" style="' + row + '">' + dockHtml('in', di, ix) + '</div>';
-      out += '<div class="wm-cell wm-col-rcv wm-lane" style="' + row + '"' + (di ? ' data-place="receiving" data-id="' + esc(di.doorId) + '">' + di.lane.map(function (p) { return palletHtml(p, ix); }).join('') : '>') + '</div>';
-      out += '<div class="wm-cell wm-col-stg wm-lane" style="' + row + '"' + (dout ? ' data-place="staging" data-id="' + esc(dout.doorId) + '">' + dout.lane.map(function (o) { return orderHtml(o, ix); }).join('') : '>') + '</div>';
+      /* Each lane is named for its row: Receiving Bay N beside Inbound
+         Dock N, Staging N beside Outbound Dock N (design 2026-11-03). */
+      out += '<div class="wm-cell wm-col-rcv wm-lane" style="' + row + '"' + (di ? ' data-place="receiving" data-id="' + esc(di.doorId) + '"><span class="wm-lane-label">Receiving Bay ' + (i + 1) + '</span>' + di.lane.map(function (p) { return palletHtml(p, ix); }).join('') : '>') + '</div>';
+      out += '<div class="wm-cell wm-col-stg wm-lane" style="' + row + '"' + (dout ? ' data-place="staging" data-id="' + esc(dout.doorId) + '"><span class="wm-lane-label">Staging ' + (i + 1) + '</span>' + dout.lane.map(function (o) { return orderHtml(o, ix); }).join('') : '>') + '</div>';
       out += '<div class="wm-cell wm-col-out" style="' + row + '">' + dockHtml('out', dout, ix) + '</div>';
     }
 
     out += '</div>';
-    out += '<div class="wm-legend"><span><i class="wm-key rcv"></i> Receiving &amp; staging</span><span><i class="wm-key bays"></i> Bay locations</span>' +
-      '<span><i class="wm-pallet"></i> Pallet waiting for putaway</span><span><i class="wm-pallet out"></i> Order staged to ship</span>' +
-      '<span><i class="wm-bin stocked"></i> Stocked bin</span><span><i class="wm-bin"></i> Empty bin</span><span><i class="wm-bin held"></i> On hold</span></div>' +
-      looseHtml(m.loose, fls.filter(function (f) { return !f.host; })) + '</div>';
+    /* No legend: the board reads on its own (design 2026-11-03). */
+    out += looseHtml(m.loose, fls.filter(function (f) { return !f.host; })) + '</div>';
     return out;
   }
 
@@ -370,9 +370,12 @@
   /* anchors: { docks, rcv | stg, bays } → HTML of the page's own panels,
      placed under the stage they concern. Panels sit OUTSIDE the
      .wm-surface strip so they keep the console's own colours. */
-  function sliceHtml(state, W, dir, anchors) {
+  function sliceHtml(state, W, dir, anchors, skip) {
     var sl = slice(state, W, dir);
     anchors = anchors || {};
+    /* skip: stage keys a view leaves out (Putaway starts at the
+       Receiving Bay — design 2026-11-03). */
+    if (skip && skip.length) sl.stages = sl.stages.filter(function (st) { return skip.indexOf(st.key) === -1; });
     var names = sl.stages.map(function (st) { return st.label; }).join(', then ');
     var out = '<div class="wf wf-' + dir + '" data-flow="' + dir + '" role="group" aria-label="' + esc((dir === 'in' ? 'Inbound flow, top to bottom: ' : 'Outbound flow, top to bottom: ') + names) + '">';
     sl.stages.forEach(function (st, i) {
