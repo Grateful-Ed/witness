@@ -194,6 +194,39 @@ with a reason show: a putaway destination or pick source, or a hold.
 Code: `slice()` / `sliceHtml()` in js/wms-map.js, `flow()` in
 js/wms-ui.js, styles in css/wms-flow.css.
 
+## The dynamic ontology — the digest and prep (js/ontology.js)
+
+The digest is the building's standing summary, shaped for an AI
+reader: every place (doors, zones, bins, pallets) with its status
+and contents, the shipments and orders and where each sits in its
+flow, the open tasks with their destinations and hands, the people,
+a `needsEyes` list (the same urgency set the map flags derive
+from), and a prep queue. It is derived data only — `buildDigest`
+reads state and returns a plain JSON object; nothing is written
+back. `applyChange(state, previousDigest)` is the incremental
+path: it re-derives the digest and keeps the prep queue in
+first-seen order; its content always equals a fresh rebuild of
+the same state (a test proves this across real mutations).
+
+It costs nothing to keep current. The digest updates when the
+state changes — mutations already flow through the store — and the
+module makes no network calls of any kind (a test scans its source
+to prove it). There is no timer and no polling.
+
+Riding on the digest is **predictive prep**: when a change touches
+someone's work — a bin or pallet goes on hold with an open task
+against it, an OS&D finding opens on a shipment a worker is putting
+away, a task is reassigned or its destination corrected — a short
+note is composed from state (templates, no model call) and stashed
+on the digest, addressed to the affected worker or, when no worker
+is attached, the manager. Notes are composed and held, never
+delivered; a note leaves the queue when its condition clears (the
+hold is released, the finding closes, the task finishes).
+
+Read it in the console under Overview → **Witness Digest**: Needs
+eyes and the Prep queue first, then Places, Open tasks and People,
+counts ahead of detail.
+
 ## Tests
 
 ```
@@ -205,6 +238,7 @@ node test/wms-witness-test.js # 43 — the Witness page: events, transcript, emp
 node test/wms-agent-test.js  # 48  — the Witness page's agent: ask from the record, desk entries
 node test/wms-flow-test.js   # 36  — flow-sliced task views (inbound / outbound)
 node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
+node test/ontology-test.js   # 39  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, no network
 node test/wms-ui-smoke.js    # 37  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 
