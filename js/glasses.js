@@ -161,7 +161,32 @@
   function normalise(text) {
     return String(text || '').toLowerCase().replace(/[’‘]/g, "'")
       .replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim()
-      .replace(/^(hey|hi|ok|okay)?\s*muse\b\s*/, '');
+      .replace(/^(hey|hi|ok|okay)?\s*(muse|meta)\b\s*/, '');
+  }
+
+  /* ---------- voice wake: "Hey Meta" / "Hey Muse" (William 2026-11-03)
+     On top of hold-to-talk, never instead of it. The phone's own
+     speech recogniser listens for the wake phrase; on a hit the page
+     plays a ding, then records the request through the same mic path
+     as hold-to-talk and stops by itself when the wearer goes quiet.
+     Recognisers mishear names, so a few close spellings count. */
+  var WAKE_RE = /\b(hey|hay|hi|ok|okay) (meta|metta|mehta|medda|muse|muze|mews|moose)\b/;
+  function wakeHeard(text) {
+    var t = String(text || '').toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return WAKE_RE.test(t);
+  }
+
+  /* When the wake turn stops listening. Fed every ~100 ms with:
+     heard = the wearer has spoken since the ding; quietMs = time
+     since the last loud moment; elapsedMs = time since the mic
+     opened. Answers 'listen' (keep going), 'send' (they finished),
+     or 'none' (nothing said — drop it, send nothing). */
+  var WAKE_TURN = { QUIET_MS: 1200, NO_SPEECH_MS: 5000, MAX_MS: 10000, LEVEL: 0.03 };
+  function wakeEndpoint(heard, quietMs, elapsedMs, cfg) {
+    cfg = cfg || WAKE_TURN;
+    if (!heard) return elapsedMs >= cfg.NO_SPEECH_MS ? 'none' : 'listen';
+    if (quietMs >= cfg.QUIET_MS || elapsedMs >= cfg.MAX_MS) return 'send';
+    return 'listen';
   }
 
   /* Page-level commands, checked BEFORE the converse intents. Both
@@ -387,7 +412,7 @@
     PAD_MAP: PAD_MAP, SCAN_STEPS: SCAN_STEPS, SHOW_MAX: SHOW_MAX, CHAT_BODY_CAP: CHAT_BODY_CAP,
     fitWithin: fitWithin, chooseScanStep: chooseScanStep, moveFocus: moveFocus, stickDir: stickDir,
     readPad: readPad, padEvents: padEvents, padName: padName,
-    isHide: isHide, isWhoFree: isWhoFree, taskPlace: taskPlace, chipsFor: chipsFor, employeeFor: employeeFor,
+    isHide: isHide, isWhoFree: isWhoFree, wakeHeard: wakeHeard, wakeEndpoint: wakeEndpoint, WAKE_TURN: WAKE_TURN, taskPlace: taskPlace, chipsFor: chipsFor, employeeFor: employeeFor,
     scanMessages: scanMessages, scanBody: scanBody, askMessages: askMessages, speakable: speakable, askBody: askBody, sendAsk: sendAsk, normaliseFlags: normaliseFlags, sendScan: sendScan, flagLines: flagLines
   };
 
@@ -486,10 +511,12 @@
     if (opened) return;
     opened = true;
     voiceUnlock(); /* inside the tap */
+    dingUnlock();  /* inside the tap */
     $('start').hidden = true;
     $('view').hidden = false;
     renderChips();
     startCamera(); /* started from the tap, which phones want */
+    Wake.start();
   }
 
   /* ---------- HUD ---------------------------------------------------- */
@@ -707,20 +734,181 @@
 
   /* ---------- talk: the mic, warehouse-mic.js unchanged --------------- */
   /* It is attached to an invisible key (#talkKey). Holding on the view,
-     R2, or X-on-Talk drive it through the keyboard hold it supports. */
+     R2, or X-on-Talk drive it through the keyboard hold it supports.
+     The voice wake drives the same key: down after the ding, up when
+     the wearer goes quiet. */
 
   function talkKey(type) {
     $('talkKey').dispatchEvent(new KeyboardEvent(type, { code: 'Space', key: ' ', bubbles: true }));
   }
+  /* Hold-to-talk: the wake listener lets go of the mic first. */
+  function pttDown() { Wake.pause(); talkKey('keydown'); }
+  function pttUp() { talkKey('keyup'); }
+
+  var wakeTurn = false, dropTurn = false;
+  function turnOver() {
+    Ender.stop();
+    wakeTurn = false;
+    dropTurn = false;
+    Wake.resume();
+  }
   if (root.WitnessMic) {
     root.WitnessMic.attach($('talkKey'), {
-      onListening: function () { hush(); cue('listening…'); },
-      onSending: function () { cue('…'); },
-      onText: function (t) { cue(null); onSpeech(t); },
-      onError: function (m) { cue(null); showText(); say([m]); },
-      onIdle: function () { cue(null); }
+      onListening: function () { hush(); cue('listening…'); if (wakeTurn) Ender.start(); },
+      onSending: function () { Ender.stop(); cue(dropTurn ? null : '…'); },
+      onText: function (t) {
+        cue(null);
+        var drop = dropTurn;
+        turnOver();
+        if (!drop) onSpeech(t);
+      },
+      onError: function (m) {
+        cue(null);
+        var w = wakeTurn, drop = dropTurn;
+        turnOver();
+        if (drop) return;
+        showText();
+        /* The mic's own words say "hold the button" — not true after a wake. */
+        say([w && /Didn't catch any words|came out empty/.test(m) ? 'Didn\'t catch that. Say "Hey Muse" and try again.' : m]);
+      },
+      onIdle: function () { cue(null); turnOver(); }
     });
   }
+
+  /* ---------- the ding: two soft tones, made in the page ------------- */
+  var audio = null;
+  function dingUnlock() {
+    if (audio) return;
+    var AC = root.AudioContext || root.webkitAudioContext;
+    if (!AC) return;
+    try { audio = new AC(); audio.resume && audio.resume(); } catch (e) { audio = null; }
+  }
+  function ding() {
+    if (!audio) return;
+    try {
+      if (audio.state === 'suspended') audio.resume();
+      var t0 = audio.currentTime + 0.01;
+      [[880, 0], [1320, 0.11]].forEach(function (n) {
+        var o = audio.createOscillator(), g = audio.createGain();
+        o.type = 'sine';
+        o.frequency.value = n[0];
+        g.gain.setValueAtTime(0.0001, t0 + n[1]);
+        g.gain.exponentialRampToValueAtTime(0.35, t0 + n[1] + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + n[1] + 0.22);
+        o.connect(g); g.connect(audio.destination);
+        o.start(t0 + n[1]); o.stop(t0 + n[1] + 0.25);
+      });
+    } catch (e) { /* the ding is extra — the cue still shows */ }
+  }
+
+  /* ---------- Ender: stops a wake turn when the wearer goes quiet ----- */
+  /* A second, read-only tap on the mic measures loudness; nothing it
+     hears is kept or sent. wakeEndpoint (core) makes the call. */
+  var Ender = (function () {
+    var stream = null, timer = null, startedAt = 0, lastLoud = 0, heardAny = false;
+    function stop() {
+      clearInterval(timer); timer = null;
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    }
+    function start() {
+      stop();
+      startedAt = lastLoud = Date.now();
+      heardAny = false;
+      var buf = null, an = null;
+      if (audio && navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+          if (!wakeTurn) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+          stream = s;
+          an = audio.createAnalyser();
+          an.fftSize = 1024;
+          buf = new Float32Array(an.fftSize);
+          audio.createMediaStreamSource(s).connect(an);
+        }).catch(function () { /* no level: the time limits still end the turn */ });
+      }
+      timer = setInterval(function () {
+        var now = Date.now();
+        if (an) {
+          an.getFloatTimeDomainData(buf);
+          var sum = 0;
+          for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          if (Math.sqrt(sum / buf.length) >= WAKE_TURN.LEVEL) { heardAny = true; lastLoud = now; }
+        } else if (now - startedAt > 1500) {
+          heardAny = true; /* can't measure: assume they spoke, stop on the time limit */
+        }
+        var call = wakeEndpoint(heardAny, an ? now - lastLoud : 0, now - startedAt,
+          an ? WAKE_TURN : { QUIET_MS: Infinity, NO_SPEECH_MS: Infinity, MAX_MS: 6000 });
+        if (call === 'listen') return;
+        stop();
+        if (call === 'none') dropTurn = true;
+        talkKey('keyup');
+      }, 100);
+    }
+    return { start: start, stop: stop };
+  })();
+
+  /* ---------- Wake: listens for "Hey Meta" / "Hey Muse" -------------- */
+  /* The browser's speech recogniser (Chrome, Safari). It runs only
+     while the view is open and nothing else is using the mic. Off
+     with ?wake=off. Where the browser has none, the start screen
+     says so and hold-to-talk works as before. */
+  var Wake = (function () {
+    var SR = root.SpeechRecognition || root.webkitSpeechRecognition;
+    var allowed = !!SR && !/[?&]wake=off\b/.test(location.search);
+    var rec = null, on = false, paused = false, restartTimer = null;
+    function make() {
+      rec = new SR();
+      rec.lang = 'en-US';
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = function (e) {
+        if (paused || wakeTurn) return;
+        if (voice && voice.speaking) return; /* META talking, not the wearer */
+        for (var i = e.resultIndex; i < e.results.length; i++) {
+          if (wakeHeard(e.results[i][0].transcript)) { woke(); return; }
+        }
+      };
+      rec.onerror = function (e) {
+        if (e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) {
+          on = false;
+          showText();
+          say(['Voice wake is off — the microphone is blocked. Hold to talk still works.']);
+        }
+      };
+      rec.onend = function () {
+        if (!on || paused) return;
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(listen, 250); /* recognisers stop on silence — start again */
+      };
+    }
+    function listen() {
+      if (!on || paused) return;
+      try { rec.start(); } catch (e) { /* already running */ }
+    }
+    function halt() {
+      clearTimeout(restartTimer);
+      if (rec) try { rec.abort(); } catch (e) {}
+    }
+    function woke() {
+      wakeTurn = true;
+      dropTurn = false;
+      paused = true;
+      halt();         /* hand the mic over */
+      hush();
+      showText();
+      employee(null);
+      ding();
+      setTimeout(function () { talkKey('keydown'); }, 300); /* after the ding, so it isn't recorded */
+    }
+    return {
+      allowed: allowed,
+      start: function () { if (!allowed || on) return; make(); on = true; paused = false; listen(); },
+      pause: function () { paused = true; halt(); },
+      resume: function () { if (!on) return; paused = false; clearTimeout(restartTimer); restartTimer = setTimeout(listen, 250); }
+    };
+  })();
+  $('wakeLine').textContent = Wake.allowed
+    ? 'Or say "Hey Meta" or "Hey Muse", wait for the ding, then talk.'
+    : (/[?&]wake=off\b/.test(location.search) ? 'Voice wake is off for this page.' : 'Voice wake needs Chrome or Safari — hold to talk works here.');
 
   /* ---------- touch on the view: hold = talk, double-tap = capture ---- */
 
@@ -731,13 +919,13 @@
     downAt = Date.now();
     holding = false;
     clearTimeout(holdTimer);
-    holdTimer = setTimeout(function () { holding = true; talkKey('keydown'); }, HOLD_MS);
+    holdTimer = setTimeout(function () { holding = true; pttDown(); }, HOLD_MS);
   });
   function touchEnd() {
     if (downAt == null) return;
     clearTimeout(holdTimer);
     var now = Date.now();
-    if (holding) { holding = false; talkKey('keyup'); downAt = null; return; }
+    if (holding) { holding = false; pttUp(); downAt = null; return; }
     var kind = touchKind(downAt, now, lastTapAt);
     if (kind === 'double') { lastTapAt = null; capture(); }
     else lastTapAt = now;
@@ -776,14 +964,14 @@
       var cur = readPad(gp);
       if (opened) {
         padEvents(prevPad, cur).forEach(function (ev) {
-          if (ev === 'talk-down') talkKey('keydown');
-          else if (ev === 'talk-up') talkKey('keyup');
+          if (ev === 'talk-down') pttDown();
+          else if (ev === 'talk-up') pttUp();
           else if (ev.indexOf('move-') === 0) { focus = moveFocus(focus, ev.slice(5)); showFocus(); }
           else if (ev === 'activate-down') {
             showFocus();
-            if (ACTIONS[focus] === 'talk') { activeOnTalk = true; talkKey('keydown'); }
+            if (ACTIONS[focus] === 'talk') { activeOnTalk = true; pttDown(); }
             else capture();
-          } else if (ev === 'activate-up' && activeOnTalk) { activeOnTalk = false; talkKey('keyup'); }
+          } else if (ev === 'activate-up' && activeOnTalk) { activeOnTalk = false; pttUp(); }
         });
       } else if (padEvents(prevPad, cur).indexOf('activate-down') !== -1) {
         openView(); /* X on the start screen opens the view */
