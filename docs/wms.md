@@ -75,8 +75,10 @@ centre with every zone and bin from state. No tables; read-only.
   x / y with trucks at a door, orders shipped, fill rate, inventory
   accuracy, dock to stock, replenishment, done per zone) and then
   deleted. All figures come from `W.dashboard` / `W.shiftSummary`.
-- The `?look=` switcher stays. Only the default look ("Today") shows
-  the map; the other looks keep their own home until Task 6.
+- The design-review looks are removed (console Task 6, 2026-11-03).
+  The `?look=` switcher, the three alternate looks (Witness Stand,
+  Floor, Record) and their stylesheets are gone; the console has the
+  one design — the default look ("Today") plus the design pass.
 
 ## Flags on the map (console Task 4, 2026-11-02)
 
@@ -190,8 +192,7 @@ stack Bay Locations → Staging → Outbound Docks. Each page's own panels
 sit under the stage they concern; every action is unchanged. Only bins
 with a reason show: a putaway destination or pick source, or a hold.
 Code: `slice()` / `sliceHtml()` in js/wms-map.js, `flow()` in
-js/wms-ui.js, styles in css/wms-flow.css. In the Floor look these pages
-no longer add that look's small whole-building map.
+js/wms-ui.js, styles in css/wms-flow.css.
 
 ## Tests
 
