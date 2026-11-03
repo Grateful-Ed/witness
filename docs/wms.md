@@ -223,9 +223,9 @@ is attached, the manager. Notes are composed and held, never
 delivered; a note leaves the queue when its condition clears (the
 hold is released, the finding closes, the task finishes).
 
-Read it in the console under Overview → **Witness Digest**: Needs
-eyes and the Prep queue first, then Places, Open tasks and People,
-counts ahead of detail.
+Read it in the console on the **Ontology** page (Control, after
+Audit Trail): Needs eyes and the Prep queue first, then Places,
+Open tasks and People, counts ahead of detail.
 
 ## Tests
 

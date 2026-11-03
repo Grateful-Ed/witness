@@ -274,10 +274,60 @@
     return head('Overview', 'Warehouse', 'The building, live from the desk record. Open any dock, pallet, order or bin for its Witness page.') + window.WitnessWmsMap.html(state, W);
   };
 
-  /* Ontology: an empty page for now, listed after Audit Trail (design
-     2026-11-03). The ontology brief fills it. */
+  /* Ontology (Brief A, 2026-11-03): the building's dynamic digest
+     (js/ontology.js), listed after Audit Trail. The desk record's
+     state object is replaced on every load/mutate, and its wmsRev
+     bumps on every save; either change re-derives the digest through
+     the incremental path, so prep notes keep first-seen order across
+     renders. Landmarks first, counts in the panel subs, dense
+     sections collapsed behind <details>. Prep lives here only — the
+     map home shows nothing new. */
+  var digestCache = { state: null, rev: null, digest: null };
+  function digestNow() {
+    if (digestCache.state !== state || digestCache.rev !== (state.wmsRev || 0)) {
+      digestCache.digest = window.WitnessOntology.applyChange(state, digestCache.digest);
+      digestCache.state = state;
+      digestCache.rev = state.wmsRev || 0;
+    }
+    return digestCache.digest;
+  }
+
   VIEWS.ontology = function () {
-    return '<div class="crumbs">DC-01 › Control › Ontology</div><div class="page-head"><div><h1>Ontology</h1></div></div>';
+    var d = digestNow();
+    function contentsText(p) {
+      return (p.contents || []).map(function (c) { return c.desc ? (c.desc + ' ×' + c.qty) : c.id; }).join('; ');
+    }
+    var eyes = panel('Needs eyes', table(['Item', 'Reason'],
+      d.needsEyes.map(function (n) {
+        return '<tr><td>' + esc(n.place + ' ' + n.id) + '</td><td>' + esc(n.reason) + '</td></tr>';
+      }), 'Nothing needs a human right now.'), d.needsEyes.length + ' item' + (d.needsEyes.length === 1 ? '' : 's'));
+    var prep = panel('Prep queue', table(['For', 'About', 'Note', 'Changed'],
+      d.prep.map(function (n) {
+        return '<tr><td>' + esc(n['for']) + '</td><td>' + esc(n.about) + '</td><td>' + esc(n.note) + '</td><td>' + esc(n.fromChange) + '</td></tr>';
+      }), 'No prep notes. When a change touches someone\'s work, the note they will need is composed and held here — never sent.'), d.prep.length + ' held');
+    var placesCount = { door: 0, zone: 0, bin: 0, pallet: 0 };
+    d.places.forEach(function (p) { placesCount[p.kind] = (placesCount[p.kind] || 0) + 1; });
+    var places = panel('Places', '<details><summary>' + d.places.length + ' places — ' +
+      placesCount.door + ' doors, ' + placesCount.zone + ' zones, ' + placesCount.bin + ' bins, ' + placesCount.pallet + ' pallets</summary>' +
+      table(['Place', 'Kind', 'Status', 'Contents', 'Holds'],
+        d.places.map(function (p) {
+          return '<tr><td>' + esc(p.id) + '</td><td>' + esc(p.kind) + '</td><td>' + esc(p.status || '') + '</td><td>' +
+            esc(contentsText(p)) + '</td><td>' + esc((p.holds || []).join('; ')) + '</td></tr>';
+        }), 'No places.') + '</details>');
+    var tasks = panel('Open tasks', '<details><summary>' + d.tasks.length + ' open tasks</summary>' +
+      table(['Task', 'Kind', 'Item', 'Destination', 'Hands', 'Status'],
+        d.tasks.map(function (t) {
+          var hands = t.assignee || (t.queuedFor ? 'Queued · ' + t.queuedFor : 'Unassigned');
+          return '<tr><td>' + esc(t.id) + '</td><td>' + esc(t.kind || '') + '</td><td>' + esc(t.item) + '</td><td>' +
+            esc(t.destination || '') + '</td><td>' + esc(hands) + '</td><td>' + esc(t.status || '') + '</td></tr>';
+        }), 'No open tasks.') + '</details>', d.tasks.length + ' open');
+    var people = panel('People', table(['Person', 'Role', 'Zone', 'Current task'],
+      d.people.map(function (p) {
+        return '<tr><td>' + esc(p.name) + '</td><td>' + esc(p.role || '') + '</td><td>' + esc(p.zone || '') + '</td><td>' + esc(p.currentTask || '—') + '</td></tr>';
+      }), 'No labor units.'), d.people.length + ' on the floor');
+    return '<div class="crumbs">DC-01 › Control › Ontology</div><div class="page-head"><div><h1>Ontology</h1>' +
+      '<p>The building\'s standing summary for the AI — re-derived from the desk record on every change, at no API cost. Prep notes are composed here and held; nothing is sent anywhere.</p></div></div>' +
+      eyes + prep + places + tasks + people;
   };
 
   /* The Witness page: one item's record (js/wms-witness.js). Routed
