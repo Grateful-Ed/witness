@@ -11,6 +11,7 @@ var E = require('../js/engine.js');
 var C = require('../js/converse.js');
 var B = require('../js/bol.js');
 var K = require('../js/kitchen.js');
+var G = require('../js/glasses.js');
 var W = require('../js/world-select.js');
 var KSEED = require('../data/kitchen-world.js');
 
@@ -180,6 +181,43 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
     var big = stubFetch([{ ok: false, status: 413, json: function () { return Promise.resolve({}); } }]);
     return K.readReceipt(B, big, 'https://w/chat', 'x').then(function () { check('413: rejects', false); },
       function (e) { check('413: honest too-large error, nothing parsed', e.code === 'too-large'); });
+  });
+}).then(function () {
+  /* --- the run by voice: terse advances, run-relative chips ----------
+     William's live-test rulings (2026-11-04): the run is one master
+     task, the voice says only "Next: <product>.", the product rides
+     in the glance, and the count runs inside the run. */
+  var s3 = kitchen();
+  var f3 = stubFetch([reply('```json\n' + JSON.stringify(SAMPLE) + '\n```')]);
+  return K.readReceipt(B, f3, 'https://w/chat', 'x').then(function (r3) {
+    var res3 = K.createRun(E, s3, r3, 'u-william');
+    var will3 = E.unitById(s3, 'u-william');
+    C.workerTurn(E, s3, will3, C.matchIntent("what's next"));
+    var ch1 = G.chipsFor(E, s3, will3);
+    check('run chips: the count runs inside the run', ch1.task === 'Task 1 of 6');
+    check('run chips: the product is in the glance', ch1.item === res3.created[0].item && ch1.bin === 'Bin ' + res3.created[0].spot);
+    var spoke = [], lastLines = null;
+    for (var k = 0; k < 6; k++) {
+      var tk = C.workerTurn(E, s3, will3, C.matchIntent('done'));
+      spoke.push(tk.spoken);
+      lastLines = tk.lines;
+      if (k === 1) {
+        var ch3 = G.chipsFor(E, s3, will3);
+        check('run chips: mid-run count and product', ch3.task === 'Task 3 of 6' && ch3.item === res3.created[2].item);
+      }
+    }
+    check('voice: each advance speaks exactly "Next: <product>."',
+      [0, 1, 2, 3, 4].every(function (k2) {
+        return JSON.stringify(spoke[k2]) === JSON.stringify(['Next: ' + res3.created[k2 + 1].item + '.']);
+      }));
+    check('voice: no advance ever speaks a Closed line or a full title',
+      spoke.every(function (sp) {
+        return sp.every(function (l) { return l.indexOf('Closed:') !== 0 && l.indexOf('Put away') === -1; });
+      }));
+    check('voice: the last item closes the master, tersely', JSON.stringify(spoke[5]) === JSON.stringify(['Grocery run complete.']));
+    check('voice: the screen lines keep the full wording the record needs',
+      lastLines[0].indexOf('Closed: Put away') === 0 && /caught up/.test(lastLines[1]));
+    check('run: the engine agrees the shipment is closed', E.inboundStage(s3, s3.inbound[0]).key === 'closed');
   });
 }).then(function () {
   console.log('---');

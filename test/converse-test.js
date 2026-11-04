@@ -50,6 +50,8 @@ check('done pulls the next task to the same unit',
 check('done says what closed and what is next',
   turn.lines.some(function (l) { return l.indexOf('Closed: ') === 0; }) &&
   turn.lines.some(function (l) { return l.indexOf('Next: ') === 0; }));
+check('done speaks tersely: exactly "Next: <product>.", no Closed line',
+  JSON.stringify(turn.spoken) === JSON.stringify(['Next: ' + turn.next.desc + '.']));
 
 /* --- worker turn: next with a task in hand changes nothing -------- */
 var held = marcus.currentTaskId;
@@ -91,6 +93,9 @@ check('reportProblem refuses an empty note', E.reportProblem(s, 'u-priya', '   '
 var tommy = E.unitById(s, 'u-tommy');
 var t7 = C.workerTurn(E, s, tommy, C.matchIntent('done'));
 check('done with empty hands closes nothing, pulls next', !t7.closed && !!t7.next && tommy.currentTaskId === t7.next.id);
+check('done with empty hands speaks the same terse next',
+  t7.spoken.length === 1 && /^Next: .+\.$/.test(t7.spoken[0]) &&
+  t7.spoken[0].indexOf('Closed:') === -1 && t7.spoken[0].indexOf('Put away') === -1 && t7.spoken[0].indexOf('Pick ') === -1);
 
 /* --- worker turn: caught-up building ------------------------------ */
 var empty = fresh();

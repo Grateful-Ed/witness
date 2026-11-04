@@ -81,6 +81,52 @@
     return task.title + (task.detail ? ' — ' + task.detail : '');
   }
 
+  /* The product a task is about, in the words the record uses: the
+     task's own item name when the kitchen set one, else its desc
+     (picks, consolidates carry one), else the staged pallet's desc,
+     else its title with the leading verb and quantity stripped
+     ("Put away 2 × Coca-Cola 12oz can" → the can). */
+  function taskProduct(state, task) {
+    if (!task) return null;
+    if (task.item) return task.item;
+    if (task.desc) return task.desc;
+    if (task.stagingId) {
+      for (var i = 0; i < state.staging.length; i++) {
+        if (state.staging[i].id === task.stagingId) return state.staging[i].desc || null;
+      }
+    }
+    var t = String(task.title || '');
+    var m = /^.*? \d+ × (.+)$/.exec(t);
+    if (m) return m[1];
+    m = /^(Put away|Pick|Receive|Consolidate|Break down|Load|Move) (.+)$/.exec(t);
+    if (m) return m[2];
+    return t || null;
+  }
+
+  /* The kitchen's receipt run — the one shipment a receipt scan
+     created; its item putaways are one job under it. A task belongs
+     to it through its staged pallet (the pallet carries the
+     shipment's id) — so membership must be read before a close
+     takes the pallet out of staging. */
+  function receiptRun(state) {
+    var ships = state.inbound || [];
+    for (var i = 0; i < ships.length; i++) if (ships[i].intake === 'receipt-scan') return ships[i];
+    return null;
+  }
+  function runOfTask(state, task) {
+    var run = receiptRun(state);
+    if (!run || !task || !task.stagingId) return null;
+    for (var i = 0; i < state.staging.length; i++) {
+      if (state.staging[i].id === task.stagingId) return state.staging[i].shipmentId === run.id ? run : null;
+    }
+    return null;
+  }
+  /* The run is finished when nothing of it is still staged — the
+     same test the engine's own shipment stage calls closed. */
+  function runComplete(state, run) {
+    return !state.staging.some(function (p) { return p.shipmentId === run.id; });
+  }
+
   function inHand(E, state, unit) {
     if (!unit || !unit.currentTaskId) return null;
     var t = E.taskById(state, unit.currentTaskId);
@@ -89,9 +135,14 @@
 
   /* Runs one intent against the engine. Mutates state only through
      engine calls. Returns { intent, acted, lines[], closed, next,
-     problem } — lines are what the screen says back, short. */
+     problem, spoken } — lines are what the screen says back, short,
+     and the record keeps them in full. spoken, when set, is what
+     the voice says instead: the terse form of an advance (William
+     2026-11-04 — the voice carries the minimum, "Next: <product>.";
+     the bin is in the glance, not the ear). */
   function workerTurn(E, state, unit, match) {
-    var out = { intent: match.intent, acted: false, lines: [], closed: null, next: null, problem: null };
+    var out = { intent: match.intent, acted: false, lines: [], closed: null, next: null, problem: null, spoken: null };
+    var closedRun = null;
     if (!unit) { out.lines.push('Pick your name first. Nothing was done.'); return out; }
     var current = inHand(E, state, unit);
 
@@ -131,6 +182,7 @@
           out.lines.push('Leave it be. Tell your manager.');
           return out;
         }
+        closedRun = runOfTask(state, current); /* before the close takes its pallet out of staging */
         if (!E.completeTask(state, current.id)) {
           out.lines.push('Could not close "' + current.title + '" — the counts would not balance.');
           out.lines.push('It stays with you. Tell your manager.');
@@ -146,13 +198,21 @@
 
     E.generateTasks(state); /* what this turn made possible (putaway after receiving, a load after the last pick) */
     var next = E.nextTaskFor(state, unit);
+    /* The voice's version of this advance: no "Closed:" line at all,
+       the next task named by its product only, and the run's own
+       completion when the close finished the Grocery run. */
+    var spoken = [];
+    if (closedRun && runComplete(state, closedRun)) spoken.push('Grocery run complete.');
     if (next) {
       out.acted = true;
       out.next = next;
       out.lines.push('Next: ' + taskLine(next));
+      spoken.push('Next: ' + (taskProduct(state, next) || next.title) + '.');
     } else {
       out.lines.push('No work waiting. The building is caught up.');
+      if (!spoken.length) spoken.push('No work waiting.');
     }
+    out.spoken = spoken;
     return out;
   }
 

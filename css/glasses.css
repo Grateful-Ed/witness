@@ -8,7 +8,7 @@
      elements, right side = META's. No outlines, frames or panes.
    - No boxes anywhere: no panel backgrounds, no borders, no buttons.
      Words float over the scene, compact and translucent.
-   - Idle = the camera and two chips.
+   - Idle = the camera and the chips.
    ===================================================================== */
 
 :root {
@@ -19,6 +19,8 @@
   --chip-task-text: rgba(170, 210, 255, 0.85);
   --chip-bin: rgba(255, 196, 77, 0.16);      /* amber, mostly see-through */
   --chip-bin-text: rgba(255, 222, 160, 0.85);
+  --chip-item: rgba(105, 219, 124, 0.16);    /* green, mostly see-through */
+  --chip-item-text: rgba(185, 242, 196, 0.85);
   --meta: rgba(140, 220, 160, 0.85);
   --start-bg: #101216;
   --start-panel: #181b21;
@@ -101,7 +103,7 @@ body {
 .side-left .side-top { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; }
 .side-right .side-top { display: flex; justify-content: flex-end; }
 
-/* ---------- chips: Task # and its location — the only persistent things ---------- */
+/* ---------- chips: Task #, its product and its location — the only persistent things ---------- */
 .chip {
   display: inline-block;
   padding: 2px 8px;
@@ -111,6 +113,7 @@ body {
 }
 .chip-task { background: var(--chip-task); color: var(--chip-task-text); }
 .chip-bin { background: var(--chip-bin); color: var(--chip-bin-text); }
+.chip-item { background: var(--chip-item); color: var(--chip-item-text); }
 
 /* ---------- floating words (first 2 lines, never expandable) ---------- */
 .you, .meta, .employee {
