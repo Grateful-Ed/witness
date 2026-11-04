@@ -193,6 +193,57 @@
     return s;
   };
 
+  /* ---------- practice dressing (practice copies only) -------------- */
+  /* The seed above is the live building's truth and never changes.
+     A PRACTICE copy, though, is a demo building, and the seed's
+     building reads bare — most bins hold a single line and six hold
+     nothing. dressPractice stocks a practice state fuller, the way
+     a worked-in building looks: extra lines in bins the seed already
+     stocks, plus two of the seed's empty bins filled. Deterministic
+     (the same table every load), and applied ONLY by the store when
+     it seeds a practice copy (js/wms-store.js) — never to the seed,
+     never to the desk record.
+     Deliberately untouched: staging (no pallet moves, nothing new
+     staged), holds and flags (none added), the bins the demo's
+     fixtures lean on (A-01, A-05, B-01, C-01 keep exactly their seed
+     contents), and four empty bins — A-07, B-06, C-03, C-06, at
+     least one per zone — so directed work (the game's putaways)
+     always has somewhere to go. The bottled water in A-02 and the
+     rice in B-08 are reserve stock for the pick faces in A-08 and
+     B-04: the live seed holds no reserve anywhere, so its
+     replenishment generator can never fire there; a practice
+     building can show that loop honestly.
+     Idempotent: a line already in a bin is not added twice. */
+  var PRACTICE_STOCK = {
+    'A-03': [{ desc: 'Canned tomatoes — cases', qty: 24 }],
+    'B-03': [{ desc: 'Canned beans — cases', qty: 28 }],
+    'A-02': [{ desc: 'Bottled water — cases', qty: 18 }],
+    'A-04': [{ desc: 'Paper towels — cases', qty: 12 }],
+    'A-06': [{ desc: 'Cereal — cases', qty: 10 }],
+    'A-08': [{ desc: 'Canned tomatoes — cases', qty: 14 }],
+    'B-02': [{ desc: 'Pasta — cases', qty: 16 }],
+    'B-04': [{ desc: 'Canned beans — cases', qty: 20 }],
+    'B-05': [{ desc: 'Cooking oil — cases', qty: 9 }],
+    'B-07': [{ desc: 'Coffee — cases', qty: 12 }],
+    'B-08': [{ desc: 'Rice — bags', qty: 12 }],
+    'C-02': [{ desc: 'Canned tomatoes — cases', qty: 18 }],
+    'C-04': [{ desc: 'Laundry detergent — cases', qty: 8 }],
+    'C-05': [{ desc: 'Cereal — cases', qty: 14 }]
+  };
+  api.dressPractice = function (state) {
+    if (!state || !state.bins) return state;
+    state.bins.forEach(function (b) {
+      var lines = PRACTICE_STOCK[b.id];
+      if (!lines || b.status === 'hold') return;
+      lines.forEach(function (l) {
+        var there = false;
+        b.contents.forEach(function (c) { if (c.desc === l.desc) there = true; });
+        if (!there) b.contents.push({ desc: l.desc, qty: l.qty });
+      });
+    });
+    return state;
+  };
+
   /* ---------- derived work -------------------------------------------- */
 
   function openTaskWhere(state, pred) {

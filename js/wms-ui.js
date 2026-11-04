@@ -39,6 +39,11 @@
   var store = S.create({
     fetch: window.fetch.bind(window),
     seed: W.seed,
+    /* Practice copies are dressed — stocked fuller than the live
+       seed, so the demo building looks worked-in. Practice only:
+       the store applies this solely when it seeds a practice state;
+       the seed and the desk record never see it. */
+    dressPractice: function (s) { W.dressPractice(s); },
     prepare: function (s) { W.install(s); W.refresh(s); return s; },
     check: function (s) {
       if (s.world && s.world !== 'warehouse') {
@@ -912,8 +917,11 @@
     if (agLog) agLog.scrollTop = agLog.scrollHeight; /* the newest turn in view */
     wireMics(cur);
     /* Walk the shift: hand the game its capabilities and let it
-       (re)place the worker circle on the warehouse map. */
-    if (G) G.afterRender({ act: act, state: state, practice: store.practice(), base: base, render: render });
+       (re)place the worker circle on the warehouse map. talk is the
+       game's line to META: the shift context + the worker's words,
+       through the same /chat plumbing as every other console read. */
+    if (G) G.afterRender({ act: act, state: state, practice: store.practice(), base: base, render: render,
+      talk: function (context, text) { return AI.gameTurn(window.fetch.bind(window), context, text); } });
   }
 
   /* ---------- folding panels (design 2026-11-03) --------------------
@@ -971,7 +979,8 @@
     if (/^witness\//.test(view) && $('agTalk')) Mic.attach($('agTalk'), micHandlers($('agTalk'), 'agStatus', function (text) { agentSay(text, 'voice'); }));
     if (view === 'labor' && $('askTalk')) Mic.attach($('askTalk'), micHandlers($('askTalk'), 'askQ', function (text) { askBuilding(text); }));
     /* Walk the shift: the game panel's hold-to-talk, same plumbing —
-       transcripts go to the game's own command matcher. */
+       transcripts go to the game, which asks META (its keyword
+       matcher is the offline fallback). */
     if (view === 'dashboard' && $('gameTalk')) Mic.attach($('gameTalk'), micHandlers($('gameTalk'), 'gameStatus', function (text) { if (G) G.hear(text); }));
   }
 
@@ -1142,6 +1151,7 @@
     'game-doit': function () { if (G) G.ui('doit'); },
     'game-auto': function () { if (G) G.ui('auto'); },
     'game-confirm': function () { if (G) G.ui('confirm'); },
+    'game-role': function (el) { if (G) G.ui('role', el.dataset.role); },
     schedule: function () {
       act(function (s) { return W.schedule(s, { shipmentId: val('apShip'), door: val('apDoor'), day: val('apDay'), start: val('apStart'), end: val('apEnd'), trailer: val('apTrailer') }, me); }, 'Appointment saved.');
     },

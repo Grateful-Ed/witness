@@ -19,6 +19,15 @@
    (practice-only enforcement lives in the UI layer — the panel and
    the controller both check the practice flag before any mutation
    can be offered).
+   Added with the conversation build: the widened fallback
+   vocabulary; the practice dressing (the seed untouched, fourteen
+   bins stocked, four left empty); the four shift types, each dealt
+   from a dressed practice state and worked end to end through the
+   real tasks (replenishment included — and its honest refusal on
+   the raw seed); and hear() driven with a stubbed talk path —
+   META's intents work steps, her answers change nothing, a failed
+   call falls back to the matcher, a refused act discards her words,
+   and switching shift type mid-shift re-deals.
    Run: node test/wms-game-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -167,5 +176,228 @@ var src = fs.readFileSync(__dirname + '/../js/wms-game.js', 'utf8');
 check('the game module contains no fetch, XHR or Worker URL (mutations ride the console\u2019s own act path)',
   !/fetch\s*\(|XMLHttpRequest|workers\.dev/.test(src));
 
-console.log('\n' + passes + ' passed, ' + failures + ' failed');
-process.exit(failures ? 1 : 0);
+/* ---------- the widened fallback vocabulary -------------------------- */
+/* META is the primary hearer now; the matcher is the offline
+   fallback. It gained the natural phrasings a worker actually says
+   — "Complete task." is the one William said to the live game —
+   and kept its strictness: the utterance must BE the command. */
+
+check('voice: "Complete task." — the words said to the live game — is the completion command',
+  G.voiceCommand('Complete task.') === 'complete');
+check('voice: the natural completion family — complete this task, complete it, mark it complete, task done, finish it',
+  G.voiceCommand('complete this task') === 'complete' && G.voiceCommand('complete it') === 'complete' &&
+  G.voiceCommand('mark it complete') === 'complete' && G.voiceCommand('mark complete') === 'complete' &&
+  G.voiceCommand('task done') === 'complete' && G.voiceCommand('done task') === 'complete' &&
+  G.voiceCommand('that\u2019s done') === 'complete' && G.voiceCommand('finish it') === 'complete' &&
+  G.voiceCommand('finished it') === 'complete');
+check('voice: questions are still no command (META answers those — the matcher must not fire on them)',
+  G.voiceCommand('can you tell me what tasks I need to do') === null &&
+  G.voiceCommand('what are the scores of the game') === null);
+
+/* ---------- the practice dressing (js/wms.js dressPractice) ---------- */
+/* Practice copies are stocked fuller; the seed — the live
+   building's truth — is never dressed. */
+
+function qtyIn(state, id, desc) {
+  var q = 0;
+  bin(state, id).contents.forEach(function (c) { if (c.desc === desc) q += c.qty; });
+  return q;
+}
+var rawSeed = W.seed();
+var dressed = W.dressPractice(W.seed());
+check('dressing: the raw seed is untouched — bins the dressing fills are empty in W.seed()',
+  bin(rawSeed, 'A-03').contents.length === 0 && bin(rawSeed, 'B-03').contents.length === 0 &&
+  bin(rawSeed, 'A-02').contents.length === 1);
+check('dressing: fourteen bins gain goods on the practice copy',
+  dressed.bins.filter(function (b) { return b.contents.length > bin(rawSeed, b.id).contents.length; }).length === 14);
+check('dressing: exactly four bins stay empty — A-07, B-06, C-03, C-06 (one or more per zone)',
+  dressed.bins.filter(function (b) { return !b.contents.length; }).map(function (b) { return b.id; }).join(',') === 'A-07,B-06,C-03,C-06');
+check('dressing: staging is untouched, and no hold or flag is added',
+  JSON.stringify(dressed.staging) === JSON.stringify(rawSeed.staging) &&
+  dressed.bins.every(function (b) { return b.status === bin(rawSeed, b.id).status; }) &&
+  dressed.wms.flags.length === rawSeed.wms.flags.length);
+check('dressing: the fixture bins keep exactly their seed contents (A-01, A-05, B-01, C-01)',
+  ['A-01', 'A-05', 'B-01', 'C-01'].every(function (id) {
+    return JSON.stringify(bin(dressed, id).contents) === JSON.stringify(bin(rawSeed, id).contents);
+  }));
+check('dressing: every line is well-formed for the engine (a description and a positive count)',
+  dressed.bins.every(function (b) {
+    return b.contents.every(function (c) { return typeof c.desc === 'string' && c.desc.length > 0 && typeof c.qty === 'number' && c.qty > 0; });
+  }));
+check('dressing: idempotent — dressing a dressed copy stocks nothing twice',
+  W.dressPractice(dressed) === dressed && bin(dressed, 'A-02').contents.length === 2);
+
+/* ---------- shift types: every role deals and works ------------------ */
+
+function workAll(st, chain) {
+  var okAll = true;
+  for (var i = 0; i < chain.steps.length; i++) {
+    var stp = chain.steps[i];
+    if (stp.kind === 'count') {
+      if (!G.armCount(st, chain, i).ok) okAll = false;
+      if (!G.confirmCount(st, chain, i).ok) okAll = false;
+    } else if (!G.performStep(st, chain, i).ok) okAll = false;
+  }
+  return okAll;
+}
+
+check('the shift types are the four roles', G.ROLES.map(function (r) { return r.id; }).join(',') === 'inbound,outbound,replenishment,counter');
+
+var dIn = G.buildShift(W.dressPractice(W.seed()), 'inbound');
+check('dressed building: the inbound chain deals into two of the bins the dressing left empty',
+  !!dIn && ['A-07', 'B-06', 'C-03', 'C-06'].indexOf(dIn.binA) !== -1 &&
+  ['A-07', 'B-06', 'C-03', 'C-06'].indexOf(dIn.binB) !== -1 && dIn.binA !== dIn.binB);
+
+var oState = W.dressPractice(W.seed());
+var oBegin = G.begin(oState, 'outbound');
+check('outbound: deals pick, pick, pack, load, count for the first allocated order (ORD-501)',
+  oBegin.ok === true && oBegin.chain.role === 'outbound' && oBegin.chain.orderId === 'ORD-501' &&
+  oBegin.chain.steps.map(function (x) { return x.kind; }).join(',') === 'pick,pick,pack,load,count');
+var oBoard = M.html(W.dressPractice(W.seed()), W);
+check('outbound: every step target is a cell the warehouse map itself renders',
+  oBegin.chain.steps.every(function (x) {
+    var re = new RegExp('data-place="' + x.target.place + '"[^>]*data-id="' + x.target.id.replace(/\//g, '\\/') + '"');
+    return re.test(oBoard);
+  }));
+check('outbound: every step performs through the real tasks, and the order ships',
+  workAll(oState, oBegin.chain) &&
+  oState.outbound.filter(function (o) { return o.id === 'ORD-501'; })[0].status === 'shipped');
+
+var rState = W.dressPractice(W.seed());
+var rBegin = G.begin(rState, 'replenishment');
+check('replenishment: deals pick, replenish, count, count (face A-08, reserve A-02, on dressed stock)',
+  rBegin.ok === true && rBegin.chain.faceBin === 'A-08' && rBegin.chain.reserveBin === 'A-02' &&
+  rBegin.chain.steps.map(function (x) { return x.kind; }).join(',') === 'pick,replen,count,count');
+check('replenishment: every step performs — the system deals the replenishment after the pick, and the face is refilled from reserve',
+  workAll(rState, rBegin.chain) && qtyIn(rState, 'A-08', 'Bottled water — cases') === 41 &&
+  qtyIn(rState, 'A-02', 'Bottled water — cases') === 0 &&
+  rState.tasks.some(function (t) { return t.type === 'replen' && t.status === 'done'; }));
+check('replenishment: the raw seed cannot deal it (it holds no reserve anywhere) — the role refuses honestly',
+  G.buildShift(W.seed(), 'replenishment') === null);
+
+var cState = W.dressPractice(W.seed());
+var cBegin = G.begin(cState, 'counter');
+check('cycle counter: deals four spot counts, fullest bins first',
+  cBegin.ok === true && cBegin.chain.steps.length === 4 &&
+  cBegin.chain.steps.every(function (x) { return x.kind === 'count'; }) &&
+  cBegin.chain.steps.map(function (x) { return x.bin; }).join(',') === 'B-04,A-08,B-02,C-02');
+check('cycle counter: every count posts through the arm-and-confirm flow, no variance',
+  workAll(cState, cBegin.chain) && cState.wms.counts.length === 4 &&
+  cState.wms.counts.every(function (c) { return c.lines.every(function (l) { return l.variance === 0; }); }));
+
+/* ---------- talking to META: hear() with a stubbed talk path --------- */
+/* The controller is driven the way wms-ui.js drives it: afterRender
+   hands in act (the console's mutation path — here, applied
+   directly to a state, resolving with the function's own result,
+   exactly what wms-ui's act returns) and talk (the /chat read —
+   here, stubbed META replies). The panel is read back through
+   panelHtml with a pass-through panel builder. */
+
+function panelStub(title, body) { return body; }
+function gameCtx(state, talk, actFn) {
+  return {
+    practice: true, base: 'dashboard', state: state, render: function () {},
+    act: actFn || function (fn) { return Promise.resolve(fn(state)); },
+    talk: talk || null
+  };
+}
+function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
+
+(async function () {
+  /* the context META is given */
+  var xState = W.seed();
+  G.afterRender(gameCtx(xState, null));
+  await G.ui('start');
+  var vc = G.voiceContext();
+  check('context: META is told the offer verbatim, the step, what remains, and where the worker stands',
+    vc.offer === 'Check in at Inbound Dock 1.' && vc.step === 1 && vc.total === 5 &&
+    vc.remaining.length === 4 && vc.pending === 'step' && vc.at === 'Inbound Dock 1' && vc.role === 'inbound');
+
+  /* a complete intent works the step; her words are the response */
+  var hState = W.seed();
+  G.afterRender(gameCtx(hState, function () {
+    return Promise.resolve({ intent: 'complete', say: 'Done — that pallet is away.' });
+  }));
+  await G.ui('start');
+  G.hear('Complete task.');
+  await flush(); await flush();
+  var hHtml = G.panelHtml(panelStub, hState, true);
+  check('hear: META\u2019s complete intent works the step (the check-in lands on the record)',
+    hState.records.some(function (r) { return /Checked in/.test(r.text); }));
+  check('hear: the panel quotes the words, what they did, and META\u2019s line beneath',
+    hHtml.indexOf('Complete task.') !== -1 && hHtml.indexOf('task 1 of 5 worked') !== -1 &&
+    hHtml.indexOf('META: &ldquo;Done — that pallet is away.&rdquo;') !== -1);
+
+  /* an answer changes nothing */
+  var aState = W.seed();
+  G.afterRender(gameCtx(aState, function () {
+    return Promise.resolve({ intent: 'answer', say: 'Right now: check in at Inbound Dock 1. Then the pallet move, both putaways, and the spot count.' });
+  }));
+  await G.ui('start');
+  var aSnap = JSON.stringify(aState.tasks.map(function (t) { return t.status; })) + '|' + aState.staging.length + '|' + aState.records.length;
+  G.hear('Can you tell me what tasks I need to do?');
+  await flush(); await flush();
+  var aHtml = G.panelHtml(panelStub, aState, true);
+  check('hear: a question is answered from the context and nothing is worked',
+    JSON.stringify(aState.tasks.map(function (t) { return t.status; })) + '|' + aState.staging.length + '|' + aState.records.length === aSnap &&
+    aHtml.indexOf('Right now: check in at Inbound Dock 1.') !== -1 && aHtml.indexOf('Task 1 of 5') !== -1);
+
+  /* a problem report changes nothing */
+  var pState = W.seed();
+  G.afterRender(gameCtx(pState, function () {
+    return Promise.resolve({ intent: 'answer', say: 'Set that one aside and flag it for the lead — I am not marking it done.' });
+  }));
+  await G.ui('start');
+  var pSnap = JSON.stringify(pState.tasks.map(function (t) { return t.status; })) + '|' + pState.records.length;
+  G.hear('This pallet is damaged, the wrap is torn.');
+  await flush(); await flush();
+  var pHtml = G.panelHtml(panelStub, pState, true);
+  check('hear: a problem report is acknowledged, never completed — the shift is unchanged',
+    JSON.stringify(pState.tasks.map(function (t) { return t.status; })) + '|' + pState.records.length === pSnap &&
+    pHtml.indexOf('flag it for the lead') !== -1 && pHtml.indexOf('Task 1 of 5') !== -1);
+
+  /* the /chat call fails → the matcher fallback hears "Complete task." */
+  var fState = W.seed();
+  G.afterRender(gameCtx(fState, function () { return Promise.reject(new Error('network')); }));
+  await G.ui('start');
+  G.hear('Complete task.');
+  await flush(); await flush();
+  var fHtml = G.panelHtml(panelStub, fState, true);
+  check('hear: when META cannot be reached, the fallback matcher completes the step — and no META line is shown',
+    fState.records.some(function (r) { return /Checked in/.test(r.text); }) &&
+    fHtml.indexOf('task 1 of 5 worked') !== -1 && fHtml.indexOf('META:') === -1);
+
+  /* the act refuses → her words are discarded for the honest note */
+  var dState = W.seed();
+  var dCalls = 0;
+  G.afterRender(gameCtx(dState, function () {
+    return Promise.resolve({ intent: 'complete', say: 'All wrapped up here.' });
+  }, function (fn) {
+    dCalls++;
+    if (dCalls === 1) return Promise.resolve(fn(dState));   /* the begin goes through */
+    return Promise.resolve({ ok: false, reason: 'refused' });
+  }));
+  await G.ui('start');
+  G.hear('Complete task.');
+  await flush(); await flush();
+  var dHtml = G.panelHtml(panelStub, dState, true);
+  check('hear: a refused act discards META\u2019s words — the panel shows the honest failure note instead',
+    dHtml.indexOf('that step did not go through — nothing was done.') !== -1 &&
+    dHtml.indexOf('All wrapped up here.') === -1 && dHtml.indexOf('Task 1 of 5') !== -1);
+
+  /* switching shift type mid-shift re-deals and says so */
+  var sState = W.dressPractice(W.seed());
+  G.afterRender(gameCtx(sState, null));
+  await G.ui('start');
+  await G.ui('doit');   /* work the inbound check-in for real */
+  await G.ui('role', 'outbound');
+  var sHtml = G.panelHtml(panelStub, sState, true);
+  check('switching: a fresh outbound chain is dealt, the finished inbound work stays on the record, and the panel says plainly what happened',
+    G.voiceContext().role === 'outbound' && G.voiceContext().step === 1 &&
+    sState.records.some(function (r) { return /Checked in/.test(r.text); }) &&
+    sHtml.indexOf('Shift type changed to Outbound loader') !== -1 &&
+    sHtml.indexOf('the tasks it finished stay on the record') !== -1);
+
+  console.log('\n' + passes + ' passed, ' + failures + ' failed');
+  process.exit(failures ? 1 : 0);
+})();
