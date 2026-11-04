@@ -8,8 +8,11 @@
    questions all read the same digest revision; a sub-agent cannot
    mutate what it is given; tells come back as record entries and
    change nothing; a state change is picked up through the ontology
-   module's refresh; and the module ships dormant (flag off, no
-   network, no timers, imported by nothing).
+   module's refresh; the module is LIVE (flag on, its one importer
+   the agent surface — William's call, 2026-11-04); and the
+   building's slang flows: vocabulary rides in ask context, the
+   ask-don't-guess rule rides in ask prompts, and the recorder
+   classifies quoted teaching tells.
    Run: node test/central-agent-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -215,11 +218,11 @@ check('the refreshed digest equals the ontology module\'s own rebuild', deepEq(J
 var eyes = CA.SUB_AGENTS.status.respond(a5.receive({ from: PRIYA, text: 'What needs eyes?' }));
 check('needs-eyes now lists both held bins', eyes.facts.length === 2 && eyes.rev === 1);
 
-/* ---------- 6. dormant by design: the source and the repo -------- */
+/* ---------- 6. live by William's call: the flag and the repo ---- */
 var src = fs.readFileSync(path.join(__dirname, '..', 'js', 'central-agent.js'), 'utf8');
-check('the source carries CENTRAL_AGENT_LIVE = false', /var CENTRAL_AGENT_LIVE = false;/.test(src) && CA.CENTRAL_AGENT_LIVE === false);
-check('the reason is written beside the flag', /THE FLAG\.[\s\S]{0,700}var CENTRAL_AGENT_LIVE = false;/.test(src) &&
-  /multi-user/.test(src) && /API credits/.test(src));
+check('the source carries CENTRAL_AGENT_LIVE = true', /var CENTRAL_AGENT_LIVE = true;/.test(src) && CA.CENTRAL_AGENT_LIVE === true);
+check('the reason is written beside the flag', /THE FLAG\.[\s\S]{0,1600}var CENTRAL_AGENT_LIVE = true;/.test(src) &&
+  /William's call, 2026-11-04/.test(src) && /wms-agent\.js/.test(src) && /never worse/.test(src));
 check('the module source has no fetch call', !/fetch\s*\(/.test(src));
 check('the module source has no XMLHttpRequest, WebSocket or beacon', !/XMLHttpRequest|WebSocket|sendBeacon/.test(src));
 check('the module source names no URL', !/https?:\/\//.test(src) && src.indexOf('workers.dev') === -1);
@@ -230,14 +233,47 @@ fs.readdirSync(path.join(root, 'js')).forEach(function (f) {
   if (f === 'central-agent.js' || !/\.js$/.test(f)) return;
   if (fs.readFileSync(path.join(root, 'js', f), 'utf8').indexOf('central-agent') !== -1) importers.push('js/' + f);
 });
+var htmlLoaders = [];
 fs.readdirSync(root).forEach(function (f) {
-  if (/\.html$/.test(f) && fs.readFileSync(path.join(root, f), 'utf8').indexOf('central-agent') !== -1) importers.push(f);
+  if (/\.html$/.test(f) && fs.readFileSync(path.join(root, f), 'utf8').indexOf('central-agent') !== -1) htmlLoaders.push(f);
 });
+var wmsHtmlTags = (fs.readFileSync(path.join(root, 'wms.html'), 'utf8').match(/src="js\/central-agent\.js"/g) || []).length;
 fs.readdirSync(path.join(root, 'worker')).forEach(function (f) {
   var p = path.join(root, 'worker', f);
   if (fs.statSync(p).isFile() && fs.readFileSync(p, 'utf8').indexOf('central-agent') !== -1) importers.push('worker/' + f);
 });
-check('no page, JS file or Worker file loads the module', importers.length === 0);
+check('exactly one JS file consumes the module: the live agent surface', deepEq(importers, ['js/wms-agent.js']));
+check('exactly one page loads the module, exactly once: the console that hosts the agent', deepEq(htmlLoaders, ['wms.html']) && wmsHtmlTags === 1);
+
+/* ---------- 7. the building's slang: vocabulary + teaching ------ */
+var s7 = W.seed();
+check('the seed state carries no vocabulary key (it is learned, never seeded)', !('vocabulary' in s7));
+var s7b = O.learnTerm(s7, { term: 'sweating', means: 'condensation wet on the bottom bags', from: 'Rosa Flores', at: '2026-11-04T21:05:00Z' });
+var a7 = CA.createCentralAgent({ state: s7b, now: function () { return 'T'; } });
+var d7 = a7.receive({ from: MARCUS, text: "What's in bin A-05?" });
+check('the digest carries the vocabulary the building has learned', deepEq(a7.digest().vocabulary,
+  [{ term: 'sweating', means: 'condensation wet on the bottom bags', taughtBy: 'Rosa Flores' }]));
+check('an ask dispatch carries the vocabulary in its context', deepEq(d7.context.vocabulary, a7.digest().vocabulary));
+check('the ask prompt carries the ask-don\'t-guess rule', /ask them what it means — never guess a meaning/.test(d7.prompt) &&
+  /If they teach you a word, use it/.test(d7.prompt));
+check('the ask prompt carries the topicality standard (the answerer\'s own judgment)', /isn\'t related to warehouse process/.test(d7.prompt));
+check('the rule text lives in the prompt builder\'s source', /never guess a meaning/.test(src) && /related to warehouse process/.test(src));
+var dTeach = a7.receive({ from: 'Rosa Flores', text: "'grip' means the forklift clamp attachment", kind: 'tell' });
+var rTeach = CA.SUB_AGENTS.recorder.respond(dTeach);
+check('a quoted teaching tell is classified as a teach, the lesson on the record',
+  dTeach.agent === 'recorder' && rTeach.record.kind === 'teach' && rTeach.record.term === 'grip' &&
+  rTeach.record.means === 'the forklift clamp attachment' && rTeach.record.from === 'Rosa Flores' &&
+  rTeach.record.text === "'grip' means the forklift clamp attachment" && rTeach.record.at === 'T' &&
+  deepEq(Object.keys(rTeach.record).sort(), ['at', 'from', 'kind', 'means', 'term', 'text']));
+var dCalled = a7.receive({ from: 'Rosa Flores', text: "When condensation wets the bottom bags, that's called 'sweating'.", kind: 'tell' });
+var rCalled = CA.SUB_AGENTS.recorder.respond(dCalled);
+check('"that\'s called" teaches too — the description just given is the meaning',
+  rCalled.record.kind === 'teach' && rCalled.record.term === 'sweating' &&
+  rCalled.record.means === 'When condensation wets the bottom bags');
+var dPlain = a7.receive({ from: 'Rosa Flores', text: 'This means the truck waits at the door', kind: 'tell' });
+var rPlain = CA.SUB_AGENTS.recorder.respond(dPlain);
+check('an ordinary tell containing "means" unquoted is NOT a teaching', !('kind' in rPlain.record) &&
+  deepEq(Object.keys(rPlain.record).sort(), ['at', 'from', 'text']));
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');
 process.exit(failures ? 1 : 0);

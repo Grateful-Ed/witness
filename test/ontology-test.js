@@ -8,7 +8,9 @@
    for the right person, never twice, and releasing the hold
    clears it; an OS&D finding preps the worker on that shipment;
    the module makes no network calls (its source is scanned);
-   and deriving a digest changes nothing in state.
+   deriving a digest changes nothing in state; and the building's
+   slang: learnTerm is pure and lazy, the digest lists the
+   vocabulary, and applyChange announces a new word exactly once.
    Run: node test/ontology-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -164,6 +166,34 @@ check('the module source has no fetch call', !/fetch\s*\(/.test(src));
 check('the module source has no XMLHttpRequest', src.indexOf('XMLHttpRequest') === -1);
 check('the module source names no Worker URL', src.indexOf('workers.dev') === -1 && !/https?:\/\//.test(src));
 check('the module source starts no timer (no polling, ever)', !/setInterval|setTimeout/.test(src));
+
+/* ---------- 6. the building's slang: learnTerm + the digest ----- */
+var s6 = W.seed();
+check('the seed state has no vocabulary key, and its digest vocabulary is empty', !('vocabulary' in s6) &&
+  deepEq(O.buildDigest(s6).vocabulary, []));
+var s6Before = JSON.stringify(s6);
+var s6b = O.learnTerm(s6, { term: 'sweating', means: 'condensation wet on the bottom bags', from: 'Rosa Flores', at: '2026-11-04T21:05:00Z' });
+check('learnTerm is pure: input untouched, a new state back, vocabulary created lazily',
+  JSON.stringify(s6) === s6Before && s6b !== s6 && !('vocabulary' in s6) && !!s6b.vocabulary);
+check('learnTerm writes the definition, attributed to its teacher, with its time', deepEq(s6b.vocabulary.sweating,
+  { means: 'condensation wet on the bottom bags', taughtBy: 'Rosa Flores', at: '2026-11-04T21:05:00Z' }));
+var s6c = O.learnTerm(s6, { term: 'the grip', means: 'the forklift clamp attachment', about: 'Inbound Door 2', from: 'Tommy Nguyen', at: '2026-11-04T21:06:00Z' });
+check('learnTerm records what the word names, when it names something', s6c.vocabulary['the grip'].about === 'Inbound Door 2');
+check('a term or a meaning missing teaches nothing (the state comes back as it was)',
+  O.learnTerm(s6, { term: '', means: 'x' }) === s6 && O.learnTerm(s6, { term: 'x', means: '  ' }) === s6);
+check('the digest lists the vocabulary as { term, means, taughtBy }', deepEq(O.buildDigest(s6b).vocabulary,
+  [{ term: 'sweating', means: 'condensation wet on the bottom bags', taughtBy: 'Rosa Flores' }]));
+var d6 = O.buildDigest(s6);
+var d6b = O.applyChange(s6b, d6);
+var vocabNotes = d6b.prep.filter(function (n) { return n.about === 'sweating'; });
+check('applyChange announces a newly learned word exactly once, to the manager', vocabNotes.length === 1 &&
+  vocabNotes[0].note === "New word in the building's vocabulary: 'sweating' — taught by Rosa Flores" &&
+  vocabNotes[0]['for'] === 'Sam Whitaker' &&
+  deepEq(Object.keys(vocabNotes[0]).sort(), ['about', 'for', 'fromChange', 'note']));
+var d6c = O.applyChange(s6b, d6b);
+check('the announcement is not repeated once the word is known',
+  d6c.prep.filter(function (n) { return n.about === 'sweating'; }).length === 0);
+check('a fresh rebuild carries no announcement (an emission, not a standing note)', O.buildDigest(s6b).prep.length === 0);
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');
 process.exit(failures ? 1 : 0);
