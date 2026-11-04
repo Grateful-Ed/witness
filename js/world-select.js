@@ -9,6 +9,13 @@
 
    One state, one key: switching worlds reseeds the state, and the
    page says so in plain words (announce) — never a silent wipe.
+
+   The kitchen is stricter (William, 2026-11-04): it starts fresh
+   EVERY time it opens, even over a saved kitchen state. Testers kept
+   finishing a grocery run, coming back later, and finding the receipt
+   scan unwilling to create a new one (one run per kitchen) — a fresh
+   kitchen on open makes the scan always willing, and the page says
+   so in plain words. The warehouse keeps its state as before.
    ===================================================================== */
 (function (root) {
   'use strict';
@@ -37,6 +44,14 @@
   function checkWorld(state, want) {
     if (!state) return { state: null, switched: false, notice: null };
     var have = stateWorld(state);
+    if (want === 'kitchen' && have === 'kitchen') {
+      return {
+        state: null,
+        switched: true,
+        notice: 'Fresh kitchen — the kitchen world starts clean every time it opens. ' +
+          'The saved kitchen state was replaced with a fresh kitchen.'
+      };
+    }
     if (have === want) return { state: state, switched: false, notice: null };
     return {
       state: null,
