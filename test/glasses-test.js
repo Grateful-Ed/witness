@@ -106,9 +106,13 @@ var t = E.nextTaskFor(s, marcus); /* the receive at Inbound Door 1 */
 var ch = G.chipsFor(E, s, marcus);
 check('chips: Task # is the task\'s place in the list', ch.task === 'Task ' + (s.tasks.indexOf(t) + 1));
 check('chips: a receive shows its door', ch.bin === 'Inbound Door 1');
+check('chips: a receive has no product to show', ch.item === null);
 E.completeTask(s, t.id); E.generateTasks(s);
 var t2 = E.nextTaskFor(s, marcus);
 check('chips: a pick shows its bin', t2.type === 'pick' && G.chipsFor(E, s, marcus).bin === 'Bin ' + t2.binId);
+check('chips: a pick shows its product', G.chipsFor(E, s, marcus).item === t2.desc);
+check('product: a task with no description shows no chip', G.taskProduct(s, { type: 'receive', title: 'Receive IN-1001 at Inbound Door 1' }) === null);
+check('product: a desc on the task wins over its title', G.taskProduct(s, { type: 'pick', desc: 'Bottled water — cases', title: 'Pick 12 × Bottled water — cases for ORD-501' }) === 'Bottled water — cases');
 check('place: putaway → target bin; consolidate → source bin',
   G.taskPlace({ type: 'putaway', toBinId: 'A-03' }) === 'Bin A-03' &&
   G.taskPlace({ type: 'consolidate', fromBinId: 'C-01', toBinId: 'B-01' }) === 'Bin C-01');

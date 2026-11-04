@@ -211,13 +211,67 @@
     return m ? m[1] : null;
   }
 
-  /* The two persistent chips: Task # (its place in the building's
-     task list, 1-based — stable for the shift) and Bin #. */
+  /* The product a task is about, for the middle chip: the task's
+     own item name when the kitchen set one, else its desc (picks,
+     consolidates carry one), else the staged pallet's desc. Null
+     when the task carries no product description at all — the
+     chip is omitted, never filled with a guess. (The voice's
+     title-stripped fallback lives in converse.js; the glance
+     does not borrow it.) */
+  function taskProduct(state, task) {
+    if (!task) return null;
+    if (task.item) return task.item;
+    if (task.desc) return task.desc;
+    if (task.stagingId) {
+      for (var i = 0; i < state.staging.length; i++) {
+        if (state.staging[i].id === task.stagingId) return state.staging[i].desc || null;
+      }
+    }
+    return null;
+  }
+
+  /* The kitchen's receipt run — the one shipment a receipt scan
+     created (at most one ever exists in a kitchen state). */
+  function receiptRun(state) {
+    var ships = state.inbound || [];
+    for (var i = 0; i < ships.length; i++) if (ships[i].intake === 'receipt-scan') return ships[i];
+    return null;
+  }
+
+  /* The run's own putaway tasks, in list order. A task belongs by
+     its staged pallet while the pallet is still staged, and by the
+     item name the kitchen set on it once its pallet is gone — a
+     closed task's pallet leaves staging, its item stays. */
+  function runTasks(state, run) {
+    return state.tasks.filter(function (t) {
+      if (t.type !== 'putaway') return false;
+      if (t.item) return true;
+      if (!t.stagingId) return false;
+      for (var i = 0; i < state.staging.length; i++) {
+        if (state.staging[i].id === t.stagingId) return state.staging[i].shipmentId === run.id;
+      }
+      return false;
+    });
+  }
+
+  /* The persistent chips: Task #, the product it is about, and
+     Bin #. Task # is its place in the building's task list,
+     1-based — stable for the shift. In the kitchen the count runs
+     inside the Grocery run instead — "Task 3 of 8" — because the
+     run is the one job and its tasks are its items (William
+     2026-11-04). */
   function chipsFor(E, state, unit) {
-    if (!unit || !unit.currentTaskId) return { task: null, bin: null };
+    if (!unit || !unit.currentTaskId) return { task: null, item: null, bin: null };
     var t = E.taskById(state, unit.currentTaskId);
-    if (!t || t.status !== 'assigned') return { task: null, bin: null };
-    return { task: 'Task ' + (state.tasks.indexOf(t) + 1), bin: taskPlace(t) };
+    if (!t || t.status !== 'assigned') return { task: null, item: null, bin: null };
+    var label = 'Task ' + (state.tasks.indexOf(t) + 1);
+    var run = receiptRun(state);
+    if (run) {
+      var own = runTasks(state, run);
+      var at = own.indexOf(t);
+      if (at !== -1) label = 'Task ' + (at + 1) + ' of ' + own.length;
+    }
+    return { task: label, item: taskProduct(state, t), bin: taskPlace(t) };
   }
 
   /* Who's free, for a labor answer: name / location / status only.
@@ -412,7 +466,7 @@
     PAD_MAP: PAD_MAP, SCAN_STEPS: SCAN_STEPS, SHOW_MAX: SHOW_MAX, CHAT_BODY_CAP: CHAT_BODY_CAP,
     fitWithin: fitWithin, chooseScanStep: chooseScanStep, moveFocus: moveFocus, stickDir: stickDir,
     readPad: readPad, padEvents: padEvents, padName: padName,
-    isHide: isHide, isWhoFree: isWhoFree, wakeHeard: wakeHeard, wakeEndpoint: wakeEndpoint, WAKE_TURN: WAKE_TURN, taskPlace: taskPlace, chipsFor: chipsFor, employeeFor: employeeFor,
+    isHide: isHide, isWhoFree: isWhoFree, wakeHeard: wakeHeard, wakeEndpoint: wakeEndpoint, WAKE_TURN: WAKE_TURN, taskPlace: taskPlace, taskProduct: taskProduct, chipsFor: chipsFor, employeeFor: employeeFor,
     scanMessages: scanMessages, scanBody: scanBody, askMessages: askMessages, speakable: speakable, askBody: askBody, sendAsk: sendAsk, normaliseFlags: normaliseFlags, sendScan: sendScan, flagLines: flagLines
   };
 
@@ -532,6 +586,7 @@
   function renderChips() {
     var c = chipsFor(E, state, wearer());
     setText('chipTask', c.task);
+    setText('chipItem', c.item);
     setText('chipBin', c.bin);
   }
 
@@ -540,12 +595,14 @@
   function showText() { document.body.classList.remove('text-hidden'); }
   function hideText() { document.body.classList.add('text-hidden'); }
 
-  function say(lines) {
+  function say(lines, spokenLines) {
     /* "META:" + the reply's first 2 lines (CSS clamps to two lines),
-       and spoken aloud. */
+       and spoken aloud. When the turn carries its own spoken form
+       (the terse advance), the lens keeps the full lines and the
+       voice says the short ones. */
     setText('metaText', (lines || []).join(' '));
     $('metaLine').hidden = !(lines && lines.length);
-    speak(lines);
+    speak(spokenLines || lines);
   }
   function heard(text) { setText('youText', text); }
   function employee(e) {
@@ -586,7 +643,7 @@
     state = Store.load(); /* fresh before acting */
     var turn = C.workerTurn(E, state, wearer(), match);
     if (turn.acted) Store.save(state);
-    say(turn.lines);
+    say(turn.lines, turn.spoken);
     renderChips();
   }
 
