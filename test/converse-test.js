@@ -34,6 +34,13 @@ check('"no problem, done" → done', intentOf('No problem, done') === 'done');
 check('"not done yet" is not done', intentOf('not done yet') !== 'done');
 check('"almost done" is not done', intentOf('almost done') !== 'done');
 check('"I haven\'t finished, what\'s next" → next', intentOf("I haven't finished, what's next") === 'next');
+check('"start" → start', intentOf('start') === 'start');
+check('"start groceries putaway" → start', intentOf('start groceries putaway') === 'start');
+check('"start the job" → start', intentOf('start the job') === 'start');
+check('"begin" → start', intentOf('begin') === 'start');
+check('"hey muse, start with the peanut butter" → start, words after kept',
+  (function () { var m = C.matchIntent('hey muse, start with the peanut butter'); return m.intent === 'start' && m.startText === 'with the peanut butter'; })());
+check('start does not swallow a problem', intentOf('start, the pallet is damaged') === 'problem');
 check('small talk → unknown', intentOf('how about that game last night') === 'unknown');
 check('empty → unknown', intentOf('') === 'unknown' && intentOf('   ') === 'unknown');
 check('wake word alone → unknown', intentOf('Hey Muse') === 'unknown');
@@ -96,6 +103,11 @@ check('done with empty hands closes nothing, pulls next', !t7.closed && !!t7.nex
 check('done with empty hands speaks the same terse next',
   t7.spoken.length === 1 && /^Next: .+\.$/.test(t7.spoken[0]) &&
   t7.spoken[0].indexOf('Closed:') === -1 && t7.spoken[0].indexOf('Put away') === -1 && t7.spoken[0].indexOf('Pick ') === -1);
+
+/* --- worker turn: start in the warehouse pulls like "next" ------ */
+var rosa = E.unitById(s, 'u-rosa');
+var t9 = C.workerTurn(E, s, rosa, C.matchIntent('start'));
+check('"start" with empty hands in the warehouse pulls the next task', !!t9.next && rosa.currentTaskId === t9.next.id);
 
 /* --- worker turn: caught-up building ------------------------------ */
 var empty = fresh();

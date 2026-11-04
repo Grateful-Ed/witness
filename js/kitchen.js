@@ -22,7 +22,16 @@
   'use strict';
 
   var COUNTER = 'Counter';
-  var RUN_DESC = 'Grocery run';
+
+  /* The job's name, made when its tasks are created: a one- or
+     two-word general description of the load + "putaway" — the job
+     IS putting the load away. William's creation protocol
+     (2026-11-04): whenever the app creates tasks, they group under
+     a job named at creation, and this template names it. Only the
+     description changes with what was scanned; this intake scans
+     groceries. */
+  var JOB_DESC = 'Groceries';
+  var JOB_NAME = JOB_DESC + ' putaway';
 
   /* Receipt photos need more pixels than a pallet frame: small print.
      Sent at up to 1600px, stepping down until the body fits the cap.
@@ -177,7 +186,7 @@
     return r;
   }
 
-  /* One flow: assign spots, create the Grocery run at the Counter,
+  /* One flow: assign spots, create the job at the Counter,
      receive it (each item becomes a staged item with its home spot),
      and let the engine's task generation make one putaway task per
      item. E is the engine. Returns { ok, reason, shipmentId, created,
@@ -200,14 +209,14 @@
       staged.push({ id: 'STG-' + id + '-' + (k + 1), door: COUNTER, desc: it.name, qty: it.qty, shipmentId: id, home: spot, spotSource: spot ? s.source : null });
     });
     state.inbound.push({
-      id: id, door: COUNTER, desc: RUN_DESC + ' — receipt scan', pallets: lines.length,
+      id: id, door: COUNTER, desc: JOB_NAME + ' — receipt scan', jobName: JOB_NAME, pallets: lines.length,
       status: 'received', intake: 'receipt-scan', lines: lines, notRead: receipt.notRead.slice()
     });
     staged.forEach(function (p) { state.staging.push(p); });
     var door = null;
     state.doors.forEach(function (d) { if (d.id === COUNTER) door = d; });
     if (door) door.state = 'staged';
-    record(state, 'Receipt scanned by ' + unitName(state, byUnit) + ' — ' + RUN_DESC + ' (' + id + ') created at the ' + COUNTER +
+    record(state, 'Receipt scanned by ' + unitName(state, byUnit) + ' — ' + JOB_NAME + ' (' + id + ') created at the ' + COUNTER +
       ': ' + lines.length + ' item' + (lines.length === 1 ? '' : 's') + ' received' +
       (receipt.notRead.length ? '; not read: ' + receipt.notRead.join('; ') : '') + '.',
       { kind: 'arrive', shipmentId: id, by: byUnit || null, intake: 'receipt-scan' });
@@ -217,18 +226,19 @@
       if (t) t.item = p.desc;
       return { item: p.desc, qty: p.qty, spot: t ? t.toBinId : null, source: p.spotSource, taskId: t ? t.id : null };
     });
-    return { ok: true, reason: null, shipmentId: id, created: created, notRead: receipt.notRead.slice() };
+    return { ok: true, reason: null, shipmentId: id, jobName: JOB_NAME, created: created, notRead: receipt.notRead.slice() };
   }
 
-  /* What META says after the intake: item → spot, task by task. */
+  /* What META says after the intake — exactly one line (William's
+     creation protocol, 2026-11-04): the tasks exist, grouped under
+     the job named at their creation, and here is the word that
+     starts them. The item → spot list is not spoken or shown here;
+     it lives in the desk record, where the record keeps everything
+     (the scan's record entry carries the items and what was not
+     read). Nothing starts until the wearer says start. */
   function intakeLines(res) {
     if (!res.ok) return [res.reason];
-    var parts = res.created.map(function (c) {
-      return (c.qty > 1 ? c.qty + ' × ' : '') + c.item + ' → ' + (c.spot || 'no spot') + (c.source === 'META' ? ' (META)' : c.source ? '' : ' (emptiest spot — no rule)');
-    });
-    var out = ['Grocery run created — ' + res.created.length + ' putaway task' + (res.created.length === 1 ? '' : 's') + ': ' + parts.join('; ') + '.'];
-    if (res.notRead.length) out.push('Not read: ' + res.notRead.join('; ') + '.');
-    return out;
+    return ["Tasks have been created. Say 'Start " + JOB_NAME + "' to start tasks."];
   }
 
   /* ---------- voice correction: "coffee goes in Cabinet B" ------------ */
@@ -302,7 +312,7 @@
   }
 
   var api = {
-    COUNTER: COUNTER, RUN_DESC: RUN_DESC, RECEIPT_STEPS: RECEIPT_STEPS, RECEIPT_CAP: RECEIPT_CAP,
+    COUNTER: COUNTER, JOB_DESC: JOB_DESC, JOB_NAME: JOB_NAME, RECEIPT_STEPS: RECEIPT_STEPS, RECEIPT_CAP: RECEIPT_CAP,
     META_TYPES: META_TYPES, RECEIPT_PROMPT: RECEIPT_PROMPT,
     spotFor: spotFor, receiptBody: receiptBody, parseReceipt: parseReceipt, acceptReceipt: acceptReceipt, readReceipt: readReceipt,
     isKitchen: isKitchen, isIntakeMode: isIntakeMode, createRun: createRun, intakeLines: intakeLines,

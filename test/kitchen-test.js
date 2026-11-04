@@ -107,7 +107,8 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
   check('intake mode: before any shipment, a capture is a receipt read', K.isIntakeMode(s));
   check('intake mode: never in the warehouse world', !K.isIntakeMode(E.seedWorld()));
   var res = K.createRun(E, s, r, 'u-william');
-  check('scan: creates the Grocery run at the Counter', res.ok && s.inbound.length === 1 && s.inbound[0].door === 'Counter' && /Grocery run/.test(s.inbound[0].desc));
+  check('scan: creates the job at the Counter, under its creation name', res.ok && s.inbound.length === 1 && s.inbound[0].door === 'Counter' && /Groceries putaway/.test(s.inbound[0].desc));
+  check('scan: the run carries the job name made at creation', s.inbound[0].jobName === 'Groceries putaway' && K.JOB_NAME === 'Groceries putaway');
   check('scan: the run is received from exactly the read items', s.inbound[0].status === 'received' && s.inbound[0].lines.length === 6);
   var puts = s.tasks.filter(function (t) { return t.type === 'putaway'; });
   check('scan: one putaway task per item, automatically', puts.length === 6 && res.created.length === 6);
@@ -125,8 +126,10 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
   check('scan: the record says the receipt created it, with what was not read',
     s.records.some(function (rec) { return rec.intake === 'receipt-scan' && /not read: line 7/.test(rec.text); }));
   var lines = K.intakeLines(res);
-  check('scan: META shows item → spot, task by task', /2% milk → Fridge/.test(lines[0]) && /mochi → Freezer \(META\)/.test(lines[0]));
-  check('scan: META lists the not-read line', /Not read: line 7/.test(lines[1]));
+  check('scan: META answers the intake with exactly the creation line',
+    JSON.stringify(lines) === JSON.stringify(["Tasks have been created. Say 'Start Groceries putaway' to start tasks."]));
+  check('scan: the creation line is one line — no item list, no not-read list rides along',
+    lines.length === 1 && lines[0].indexOf('→') === -1 && lines[0].indexOf('Not read') === -1);
   check('scan: after the run exists, a capture is the ordinary photo scan', !K.isIntakeMode(s));
   check('scan: a second receipt cannot silently add a run', K.createRun(E, s, r, 'u-william').ok === false && s.inbound.length === 1);
 
@@ -214,10 +217,50 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
       spoke.every(function (sp) {
         return sp.every(function (l) { return l.indexOf('Closed:') !== 0 && l.indexOf('Put away') === -1; });
       }));
-    check('voice: the last item closes the master, tersely', JSON.stringify(spoke[5]) === JSON.stringify(['Grocery run complete.']));
+    check('voice: the last item closes the job, in its name', JSON.stringify(spoke[5]) === JSON.stringify(['Groceries putaway complete.']));
     check('voice: the screen lines keep the full wording the record needs',
       lastLines[0].indexOf('Closed: Put away') === 0 && /caught up/.test(lastLines[1]));
     check('run: the engine agrees the shipment is closed', E.inboundStage(s3, s3.inbound[0]).key === 'closed');
+  });
+}).then(function () {
+  /* --- the creation protocol: named, announced, started ---------
+     William (2026-11-04): when the app creates tasks they group
+     under a job named at creation; META announces the start word;
+     saying it picks a task — unless the wearer names a product. */
+  var s4 = kitchen();
+  var f4 = stubFetch([reply('```json\n' + JSON.stringify(SAMPLE) + '\n```')]);
+  return K.readReceipt(B, f4, 'https://w/chat', 'x').then(function (r4) {
+    var res4 = K.createRun(E, s4, r4, 'u-william');
+    var will4 = E.unitById(s4, 'u-william');
+    check('start: nothing is in hand before the word is said', !will4.currentTaskId);
+    var t0 = C.workerTurn(E, s4, will4, C.matchIntent('start'));
+    check('start: "start" pulls the job\'s first task', t0.acted && will4.currentTaskId === res4.created[0].taskId);
+    check('start: spoken is exactly "Next: <first item>."',
+      JSON.stringify(t0.spoken) === JSON.stringify(['Next: ' + res4.created[0].item + '.']));
+    check('start: the screen line keeps the full task wording',
+      t0.lines.some(function (l) { return l.indexOf('Next: Put away') === 0; }));
+    var heldId = will4.currentTaskId;
+    var t0b = C.workerTurn(E, s4, will4, C.matchIntent('start groceries putaway'));
+    check('start: saying the job\'s name mid-job keeps the task in hand',
+      will4.currentTaskId === heldId && !t0b.closed && /Still yours/.test(t0b.lines[0]));
+  }).then(function () {
+    var s5 = kitchen();
+    var f5 = stubFetch([reply('```json\n' + JSON.stringify(SAMPLE) + '\n```')]);
+    return K.readReceipt(B, f5, 'https://w/chat', 'x').then(function (r5) {
+      var res5 = K.createRun(E, s5, r5, 'u-william');
+      var will5 = E.unitById(s5, 'u-william');
+      var pasta = res5.created[2];
+      var t1 = C.workerTurn(E, s5, will5, C.matchIntent('start with penne pasta'));
+      check('start: "start with <a later product>" starts at that product',
+        will5.currentTaskId === pasta.taskId && pasta.taskId !== res5.created[0].taskId &&
+        JSON.stringify(t1.spoken) === JSON.stringify(['Next: penne pasta.']));
+    });
+  }).then(function () {
+    var s6 = kitchen();
+    var will6 = E.unitById(s6, 'u-william');
+    var t2 = C.workerTurn(E, s6, will6, C.matchIntent('start groceries putaway'));
+    check('start: with no job created, spoken is "No work waiting."',
+      JSON.stringify(t2.spoken) === JSON.stringify(['No work waiting.']) && !t2.next);
   });
 }).then(function () {
   console.log('---');

@@ -44,6 +44,11 @@
   var PROBLEM = /\b(problem|problems|issue|issues|broken|broke|damage|damaged|spill|spilled|spilt|leak|leaking|leaks|can'?t|cannot|missing|short|wrong|stuck|blocked|hurt|injured|crushed|torn|collapsed|report)\b/;
   var DONE = /\b(done|finished|finish|complete|completed|all set|wrapped up|got it put away)\b/;
   var NEXT = /\b(what'?s (up )?next|what is (up )?next|next task|next one|next|what do i do|what should i do|what have i got|what'?s my task|my task)\b/;
+  /* "Start" opens a job the app created (William's creation
+     protocol, 2026-11-04): anchored at the front of the phrase,
+     and whatever follows rides along as startText — the job's name
+     to confirm, or a product to start with. */
+  var START = /^(start|begin)\b\s*(.*)$/;
 
   function normalise(text) {
     return String(text || '')
@@ -54,9 +59,12 @@
       .trim();
   }
 
-  /* Returns { intent, heard }. intent is one of:
+  /* Returns { intent, heard } — a 'start' match also carries
+     startText, the words after "start"/"begin". intent is one of:
        'problem' — something is wrong; note it, complete nothing
        'done'    — close the task in hand, pull the next
+       'start'   — begin the created job: its first task, or the
+                   named product's task ("start with the milk")
        'next'    — say what's in hand, or pull one if hands are empty
        'unknown' — take no action
      Order matters: a problem beats a completion ("done, but the
@@ -71,6 +79,8 @@
     if (PROBLEM.test(p)) return { intent: 'problem', heard: heard };
     var d = p.replace(NOT_DONE, ' ');
     if (DONE.test(d)) return { intent: 'done', heard: heard };
+    var sm = START.exec(d);
+    if (sm) return { intent: 'start', heard: heard, startText: sm[2] || '' };
     if (NEXT.test(d)) return { intent: 'next', heard: heard };
     return { intent: 'unknown', heard: heard };
   }
@@ -127,14 +137,83 @@
     return !state.staging.some(function (p) { return p.shipmentId === run.id; });
   }
 
+  /* The created job's name, as stamped on its run at creation
+     ("Groceries putaway" — kitchen.js's JOB_NAME). A state saved
+     before the name was stamped carries it at the front of the
+     run's description; the last fallback is what the job was
+     called before jobs had names. */
+  function jobNameOf(run) {
+    if (!run) return null;
+    if (run.jobName) return run.jobName;
+    if (run.desc) {
+      var d = String(run.desc).split(' — ')[0].trim();
+      if (d) return d;
+    }
+    return 'Grocery run';
+  }
+
+  /* The job's tasks, in the order they were created. Membership by
+     staged pallet while the pallet is staged, and by the item the
+     kitchen stamped on the task after — the same rule the glasses'
+     chips use to count inside the run. */
+  function jobTasks(state, run) {
+    return state.tasks.filter(function (t) {
+      if (t.type !== 'putaway') return false;
+      if (t.item) return true;
+      if (!t.stagingId) return false;
+      for (var i = 0; i < state.staging.length; i++) {
+        if (state.staging[i].id === t.stagingId) return state.staging[i].shipmentId === run.id;
+      }
+      return false;
+    });
+  }
+
+  /* What a start phrase asks for beyond the job itself: "start with
+     the peanut butter" → "peanut butter"; "start groceries
+     putaway", "start the job" → null (no product named — the
+     system chooses). The job's own name, whole or in part, and
+     plain filler are stripped, never read as a product. */
+  var START_FILLER = { the: 1, a: 1, an: 1, job: 1, task: 1, tasks: 1, run: 1, it: 1, please: 1 };
+  function startProduct(state, text) {
+    var t = normalise(text).replace(/^with\s+/, '');
+    var run = receiptRun(state);
+    var name = run ? jobNameOf(run) : null;
+    var nameWords = name ? normalise(name).split(' ') : [];
+    if (name) t = t.split(normalise(name)).join(' ');
+    var keep = t.split(' ').filter(function (w) {
+      return !!w && !START_FILLER[w] && nameWords.indexOf(w) === -1;
+    });
+    return keep.length ? keep.join(' ') : null;
+  }
+
+  /* A named product matches a task when either contains the other,
+     case-insensitively: "start peanut butter" names the "creamy
+     peanut butter" task; "start the 2% milk" names "2% milk". */
+  function productMatches(state, task, hint) {
+    var p = normalise(taskProduct(state, task) || '');
+    return !!p && (p.indexOf(hint) !== -1 || hint.indexOf(p) !== -1);
+  }
+
+  /* Put one named task in the unit's hand — the same three writes
+     the engine's nextTaskFor makes when it assigns. The engine has
+     no "assign this one" call, and the start intent must honor the
+     product the wearer named, so the assignment is made here, in
+     exactly the engine's shape. */
+  function takeInHand(state, unit, task) {
+    task.status = 'assigned';
+    task.assignee = unit.id;
+    unit.currentTaskId = task.id;
+  }
+
   function inHand(E, state, unit) {
     if (!unit || !unit.currentTaskId) return null;
     var t = E.taskById(state, unit.currentTaskId);
     return t && t.status === 'assigned' ? t : null;
   }
 
-  /* Runs one intent against the engine. Mutates state only through
-     engine calls. Returns { intent, acted, lines[], closed, next,
+  /* Runs one intent against the engine. Mutates state through
+     engine calls — the one exception is the start intent's
+     assignment (see takeInHand). Returns { intent, acted, lines[], closed, next,
      problem, spoken } — lines are what the screen says back, short,
      and the record keeps them in full. spoken, when set, is what
      the voice says instead: the terse form of an advance (William
@@ -174,6 +253,48 @@
       return out;
     }
 
+    if (match.intent === 'start') {
+      /* Begin the job the app created (the creation protocol: the
+         intake announced "Say 'Start <job name>'" — this is that
+         word landing). A soft gate, deliberately: it is the
+         announced way in, not a lock — every other path into the
+         work stays exactly as it was. */
+      if (current) {
+        /* Already working: starting again changes nothing — the
+           same answer "what's next" gives with a task in hand. */
+        out.lines.push('Still yours: ' + taskLine(current));
+        out.lines.push('Say "done" when it\'s finished.');
+        out.next = current;
+        return out;
+      }
+      E.generateTasks(state);
+      var run = receiptRun(state);
+      var chosen = null;
+      if (run) {
+        var hint = startProduct(state, match.startText || '');
+        var open = jobTasks(state, run).filter(function (t) {
+          return t.status === 'open' && !(E.blockedBy && E.blockedBy(state, t));
+        });
+        if (hint) {
+          for (var i = 0; i < open.length; i++) {
+            if (productMatches(state, open[i], hint)) { chosen = open[i]; break; }
+          }
+        }
+        if (!chosen && open.length) chosen = open[0];
+      }
+      if (chosen) {
+        takeInHand(state, unit, chosen);
+        out.acted = true;
+        out.next = chosen;
+        out.lines.push('Next: ' + taskLine(chosen));
+        out.spoken = ['Next: ' + (taskProduct(state, chosen) || chosen.title) + '.'];
+        return out;
+      }
+      /* No created job to start (or nothing of it left open): fall
+         through to the ordinary pull below — the warehouse's work,
+         or "No work waiting." when there is none. */
+    }
+
     if (match.intent === 'done') {
       if (current) {
         var held = E.blockedBy ? E.blockedBy(state, current) : null;
@@ -199,10 +320,10 @@
     E.generateTasks(state); /* what this turn made possible (putaway after receiving, a load after the last pick) */
     var next = E.nextTaskFor(state, unit);
     /* The voice's version of this advance: no "Closed:" line at all,
-       the next task named by its product only, and the run's own
-       completion when the close finished the Grocery run. */
+       the next task named by its product only, and the job's own
+       completion, in its name, when the close finished it. */
     var spoken = [];
-    if (closedRun && runComplete(state, closedRun)) spoken.push('Grocery run complete.');
+    if (closedRun && runComplete(state, closedRun)) spoken.push(jobNameOf(closedRun) + ' complete.');
     if (next) {
       out.acted = true;
       out.next = next;
