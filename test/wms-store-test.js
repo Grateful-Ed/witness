@@ -117,6 +117,22 @@ function make(f, extra) {
   r = await pr.load();
   check('practice mode: works in memory, zero network calls', calls === 0 && r.state.inbound[1].status === 'staged at door' && pr.practice());
 
+  /* Dressing: a practice copy is stocked fuller; the seed that
+     reaches the desk record is always the raw seed. The hook hangs
+     off the store's own practice flag. */
+  var df = kvFetch();
+  var dLive = make(df, { dressPractice: function (s) { W.dressPractice(s); } });
+  r = await dLive.load();
+  check('dressing: the live path is never dressed (the desk record is seeded with the raw seed)',
+    JSON.parse(df.doc()).bins.filter(function (b) { return b.id === 'A-03'; })[0].contents.length === 0);
+  var dPr = S.create({ fetch: function () { return Promise.reject(new Error('no')); }, seed: W.seed, practice: true,
+    dressPractice: function (s) { W.dressPractice(s); },
+    prepare: function (s) { W.install(s); W.refresh(s); return s; } });
+  r = await dPr.load();
+  check('dressing: a practice copy is dressed (bare seed bins stocked, four left empty)',
+    r.state.bins.filter(function (b) { return b.id === 'A-03'; })[0].contents.length === 1 &&
+    r.state.bins.filter(function (b) { return !b.contents.length; }).length === 4);
+
   console.log('\n' + passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);
 })();

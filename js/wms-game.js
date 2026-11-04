@@ -16,22 +16,46 @@
    first ("Complete"), the way the real flow is confirmed. The next
    task is offered automatically; the worker never hunts for what to
    do next. Clicking the offered place, or the panel's button, does
-   the same step for hands that can't talk right now. Five set-up
-   receiving tasks form one shift: check in at a dock, bring a
-   pallet into the Receiving Bay, put it away, put a second pallet
-   away, then spot-count the first bin. Every step performs the real
-   operation on the state underneath (the putaway tasks are the
-   console's own, completed through js/wms.js; the spot count is a
-   real cycle count), so the map, the tables and the audit trail all
-   update as the shift is worked. It is a shift, not an arcade: no
-   score, no points — the finish is a shift summary.
+   the same step for hands that can't talk right now.
+
+   The panel offers a SHIFT TYPE (William, 2026-11-04): Inbound dock
+   worker (the original shift — check in at a dock, bring a pallet
+   into the Receiving Bay, put it away, put a second pallet away,
+   then spot-count the first bin), Outbound loader (pick an allocated
+   order's lines, pack it, load it at its outbound dock, verify-count
+   the picked bins), Replenishment (pick the line that takes a pick
+   face below its minimum, work the replenishment the system itself
+   then deals from reserve, count the face and the reserve), and
+   Cycle counter (spot-count the building's fullest bins). Each role
+   deals its own chain from the state as it stands, out of the
+   engine's real tasks only — nothing is invented to fill a chain,
+   and a role this state cannot deal deals nothing. Every step
+   performs the real operation on the state underneath (the tasks are
+   the console's own, completed through js/wms.js; the spot counts
+   are real cycle counts), so the map, the tables and the audit
+   trail all update as the shift is worked. It is a shift, not an
+   arcade: no score, no points — the finish is a shift summary.
 
    Voice rides the console's own mic plumbing (js/warehouse-mic.js →
    the Worker's /asr), wired by wms-ui.js to the panel's hold-to-talk
-   button; voiceCommand() below is the whole vocabulary, a pure
-   function: a transcript becomes one command or nothing. A voice
-   command can only ever work the CURRENT offered task — the same
-   honesty as the click path.
+   button — and then the worker is TALKING TO META. The transcript
+   goes, with the live shift context (the offered task, what is
+   still to come, where the worker stands), through the console's
+   /chat to Muse Spark (js/wms-ai.js's gameTurn, handed in here as
+   a capability — this module still makes no network calls of its
+   own). META answers in her own voice and, when the words work the
+   shift, names the action as an intent; the game runs intents
+   through the very same paths the buttons use, and her words are
+   shown as the response only after the act has really resolved —
+   a refused act discards them for the honest note. Questions and
+   problem reports change nothing and are answered from the context;
+   whether a request belongs to warehouse work at all is META's own
+   judgment, in her prompt — no code here filters topics.
+   voiceCommand() below remains as the offline fallback: a pure
+   matcher, used when the /chat call fails, that takes a transcript
+   to one command or nothing. Either way, a voice action can only
+   ever work the CURRENT offered task — the same honesty as the
+   click path.
 
    Hard rule: the game runs ONLY on a practice copy (?practice=1,
    the in-memory state that is never saved). On the live desk record
@@ -39,11 +63,13 @@
    tasks can never touch the real record.
 
    Shape of the module:
-     - Pure logic (node-tested): buildChain reads a state and deals
-       the five steps; direct() aims the two putaway tasks at the
-       chosen bins; performStep / armCount / confirmCount mutate a
-       state exactly the way the controller asks them to;
-       voiceCommand() matches a transcript to a shift command.
+     - Pure logic (node-tested): buildChain deals the inbound five;
+       buildShift deals any role's chain from a state; direct() aims
+       the inbound putaway tasks at the chosen bins; performStep /
+       armCount / confirmCount mutate a state exactly the way the
+       controller asks them to; voiceCommand() matches a transcript
+       to a shift command; voiceContext() composes what META is told
+       about the live shift.
      - The DOM controller (browser only) owns the circle, the pulse
        on the target cell, the panel's live state, the voice line
        and auto-run. wms-ui.js hands it capabilities (its act()
@@ -155,8 +181,157 @@
       { kind: 'count', bin: binA, target: { place: 'bin', id: binA },
         offer: 'Spot count Bin ' + binA + '.' }
     ];
-    return { door: door, palletA: palletA.id, palletB: palletB.id, binA: binA, binB: binB,
-      taskA: taskA.id, taskB: taskB.id, aptId: apt ? apt.id : null, steps: steps };
+    return { role: 'inbound', door: door, palletA: palletA.id, palletB: palletB.id, binA: binA, binB: binB,
+      taskA: taskA.id, taskB: taskB.id, aptId: apt ? apt.id : null,
+      startAt: { place: 'dock', id: door }, steps: steps };
+  }
+
+  /* ---------- shift types ------------------------------------------ */
+  /* Each role deals from the state as it stands, out of tasks the
+     system itself has already dealt — a role whose work is not in
+     the building deals null, and the panel says so plainly. */
+
+  var ROLES = [
+    { id: 'inbound', label: 'Inbound dock worker' },
+    { id: 'outbound', label: 'Outbound loader' },
+    { id: 'replenishment', label: 'Replenishment' },
+    { id: 'counter', label: 'Cycle counter' }
+  ];
+  function roleLabel(id) {
+    var r = find(ROLES, function (x) { return x.id === id; });
+    return r ? r.label : ROLES[0].label;
+  }
+  function openPicksFor(state, orderId) {
+    return (state.tasks || []).filter(function (t) {
+      return t.type === 'pick' && t.orderId === orderId && t.status !== 'done';
+    }).slice().sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+  }
+  function qtyOf(binObj, desc) {
+    var q = 0;
+    (binObj ? binObj.contents : []).forEach(function (c) { if (c.desc === desc) q += c.qty; });
+    return q;
+  }
+
+  /* Outbound loader: work one allocated order end to end — pick its
+     lines (up to two), pack it at its door, load it, then verify the
+     picked bins with spot counts. The pack and load tasks do not
+     exist at deal time; the system deals them itself once the order
+     is fully picked, and performStep resolves them by id then. */
+  function buildOutbound(state) {
+    if (!state || !state.outbound || !state.tasks) return null;
+    var orders = state.outbound.filter(function (o) { return o.status === 'allocated'; })
+      .slice().sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+    var order = null, picks = [];
+    for (var i = 0; i < orders.length; i++) {
+      var ps = openPicksFor(state, orders[i].id);
+      if (ps.length) { order = orders[i]; picks = ps.slice(0, 2); break; }
+    }
+    if (!order) return null;
+    var door = order.door || 'Outbound Door 4';
+    var steps = picks.map(function (t) {
+      return { kind: 'pick', task: t.id, orderId: order.id, bin: t.binId, desc: t.desc, qty: t.qty,
+        target: { place: 'bin', id: t.binId },
+        offer: 'Pick ' + t.qty + ' × ' + t.desc + ' from Bin ' + t.binId + ' for ' + order.id + '.' };
+    });
+    steps.push({ kind: 'pack', orderId: order.id, target: { place: 'staging', id: door },
+      offer: 'Pack ' + order.id + ' and stage it at ' + dockName(door) + '.' });
+    steps.push({ kind: 'load', orderId: order.id, target: { place: 'dock', id: door },
+      offer: 'Load ' + order.id + ' at ' + dockName(door) + '.' });
+    var counted = {};
+    picks.forEach(function (t) {
+      if (steps.length >= 5 || counted[t.binId]) return;
+      counted[t.binId] = true;
+      steps.push({ kind: 'count', bin: t.binId, target: { place: 'bin', id: t.binId },
+        offer: 'Spot count Bin ' + t.binId + '.' });
+    });
+    if (steps.length < 5) {
+      var rest = emptyStockedBins(state).filter(function (b) { return !counted[b.id]; });
+      for (var j = 0; j < rest.length && steps.length < 5; j++) {
+        counted[rest[j].id] = true;
+        steps.push({ kind: 'count', bin: rest[j].id, target: { place: 'bin', id: rest[j].id },
+          offer: 'Spot count Bin ' + rest[j].id + '.' });
+      }
+    }
+    if (steps.length < 4) return null;
+    return { role: 'outbound', orderId: order.id, door: door,
+      startAt: { place: 'bin', id: picks[0].binId }, steps: steps };
+  }
+  function emptyStockedBins(state) {
+    return (state.bins || []).filter(function (b) { return b.contents.length && b.status !== 'hold'; })
+      .slice().sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+  }
+
+  /* Replenishment: the honest trigger. A pick face sits at or above
+     its minimum; an open pick against that face would take it below;
+     and another bin holds reserve the system's own generator can
+     pull. The chain works the pick — the console's refresh then
+     deals the real replenishment task itself — works that task, and
+     counts the face and the reserve. If any leg of that is missing
+     (no face near its min, no triggering pick, no reserve), the
+     role cannot be dealt from this state and deals null. */
+  function buildReplenishment(state) {
+    if (!state || !state.wms || !state.wms.slots || !W) return null;
+    var slots = state.wms.slots;
+    for (var i = 0; i < slots.length; i++) {
+      var slot = slots[i];
+      var face = binById(state, slot.binId);
+      if (!face || face.status === 'hold') continue;
+      var cur = qtyOf(face, slot.desc);
+      if (cur < slot.min) continue;   /* already short: the generator has dealt (or exceptioned) it — not this chain's trigger */
+      var picks = (state.tasks || []).filter(function (t) {
+        return t.type === 'pick' && t.status !== 'done' && t.binId === slot.binId &&
+          t.desc === slot.desc && cur - t.qty < slot.min;
+      }).slice().sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+      if (!picks.length) continue;
+      var reserve = null;
+      state.bins.forEach(function (b) {
+        if (reserve || b.id === slot.binId || b.status === 'hold') return;
+        if (W.freeIn(state, b, slot.desc) > 0) reserve = b;
+      });
+      if (!reserve) continue;
+      var p = picks[0];
+      var steps = [
+        { kind: 'pick', task: p.id, orderId: p.orderId, bin: p.binId, desc: p.desc, qty: p.qty,
+          target: { place: 'bin', id: p.binId },
+          offer: 'Pick ' + p.qty + ' × ' + p.desc + ' from Bin ' + p.binId + ' for ' + p.orderId + '.' },
+        { kind: 'replen', faceBin: slot.binId, desc: slot.desc, reserveBin: reserve.id,
+          from: { place: 'bin', id: reserve.id }, target: { place: 'bin', id: slot.binId },
+          offer: 'Replenish Bin ' + slot.binId + ' — bring ' + slot.desc + ' from reserve Bin ' + reserve.id + '.' },
+        { kind: 'count', bin: slot.binId, target: { place: 'bin', id: slot.binId },
+          offer: 'Spot count Bin ' + slot.binId + '.' },
+        { kind: 'count', bin: reserve.id, target: { place: 'bin', id: reserve.id },
+          offer: 'Spot count Bin ' + reserve.id + '.' }
+      ];
+      return { role: 'replenishment', faceBin: slot.binId, reserveBin: reserve.id, desc: slot.desc,
+        startAt: { place: 'bin', id: p.binId }, steps: steps };
+    }
+    return null;
+  }
+
+  /* Cycle counter: spot-count the building's fullest bins — the
+     counts a counter is actually sent to verify. Four bins, each
+     resolved through the same arm-and-confirm flow as the inbound
+     shift's last step. */
+  function buildCounter(state) {
+    if (!state || !state.bins) return null;
+    var stocked = (state.bins || []).filter(function (b) { return b.contents.length && b.status !== 'hold'; })
+      .map(function (b) {
+        return { bin: b, total: b.contents.reduce(function (n, c) { return n + c.qty; }, 0) };
+      })
+      .sort(function (a, b) { return (b.total - a.total) || (a.bin.id < b.bin.id ? -1 : 1); })
+      .slice(0, 4);
+    if (stocked.length < 4) return null;
+    var steps = stocked.map(function (x) {
+      return { kind: 'count', bin: x.bin.id, target: { place: 'bin', id: x.bin.id },
+        offer: 'Spot count Bin ' + x.bin.id + '.' };
+    });
+    return { role: 'counter', startAt: { place: 'bin', id: stocked[0].bin.id }, steps: steps };
+  }
+
+  var BUILDERS = { inbound: buildChain, outbound: buildOutbound, replenishment: buildReplenishment, counter: buildCounter };
+  function buildShift(state, role) {
+    var b = BUILDERS[role] || buildChain;
+    return b(state);
   }
 
   /* Aim the chain's two putaway tasks at the chosen bins, so the
@@ -171,13 +346,18 @@
     return chain;
   }
 
-  /* Deal a shift onto a state: build, direct, and write the start
-     onto the record. Returns { ok, chain } or { ok:false, reason }. */
-  function begin(state) {
-    var chain = buildChain(state);
-    if (!chain) return no('Not enough staged freight or empty bins on this copy to deal a shift — reload the practice copy for a fresh building.');
-    direct(state, chain);
-    record(state, 'Walk the shift started — five receiving tasks on a practice copy.');
+  /* Deal a shift onto a state: build for the role (inbound unless
+     one is named), direct (the inbound chain's aim), and write the
+     start onto the record. Returns { ok, chain } or
+     { ok:false, reason }. */
+  function begin(state, role) {
+    role = role || 'inbound';
+    var chain = buildShift(state, role);
+    if (!chain) return no('This building cannot deal a ' + roleLabel(role) + ' shift right now — try another shift type, or reload the practice copy for a fresh building.');
+    if (chain.role === 'inbound') direct(state, chain);
+    record(state, chain.role === 'inbound'
+      ? 'Walk the shift started — five receiving tasks on a practice copy.'
+      : 'Walk the shift started — ' + roleLabel(chain.role) + ', ' + chain.steps.length + ' tasks on a practice copy.');
     return { ok: true, chain: chain };
   }
 
@@ -210,17 +390,50 @@
       if (!W) return no('The WMS layer is not loaded.');
       return W.complete(state, step.task, { binId: step.bin, by: null });
     }
+    if (step.kind === 'pick') {
+      if (!W) return no('The WMS layer is not loaded.');
+      return W.complete(state, step.task, { qty: step.qty, by: null });
+    }
+    if (step.kind === 'pack') {
+      if (!W) return no('The WMS layer is not loaded.');
+      var pk = find(state.tasks, function (t) { return t.id === 't-pack-' + step.orderId && t.status !== 'done'; });
+      if (!pk) return no('No pack task is waiting for ' + step.orderId + ' — the order is not fully picked yet.');
+      return W.complete(state, pk.id, { by: null });
+    }
+    if (step.kind === 'load') {
+      if (!W) return no('The WMS layer is not loaded.');
+      var ld = find(state.tasks, function (t) { return t.id === 't-load-' + step.orderId && t.status !== 'done'; });
+      if (!ld) return no('No load task is waiting for ' + step.orderId + ' — the order is not staged at its door yet.');
+      return W.complete(state, ld.id, { by: null });
+    }
+    if (step.kind === 'replen') {
+      if (!W) return no('The WMS layer is not loaded.');
+      var rp = find(state.tasks, function (t) { return t.type === 'replen' && t.toBinId === step.faceBin && t.status !== 'done'; });
+      if (!rp) return no('No replenishment task has been dealt for Bin ' + step.faceBin + ' — the pick that triggers it has not landed yet.');
+      return W.complete(state, rp.id, { by: null });
+    }
     return no('Step ' + (i + 1) + ' is worked from the panel, not performed directly.');
   }
 
-  /* Step 5, first half: queue the real cycle count for the bin. */
-  function armCount(state, chain) {
+  /* The count step an arm / confirm acts on: the step at idx, or —
+     for the original callers — the chain's last step (the inbound
+     shift's spot count). */
+  function countStep(chain, idx) {
+    var steps = (chain && chain.steps) || [];
+    var i = idx == null ? steps.length - 1 : idx;
+    return steps[i] && steps[i].kind === 'count' ? steps[i] : null;
+  }
+
+  /* Count step, first half: queue the real cycle count for the bin. */
+  function armCount(state, chain, idx) {
     if (!W) return no('The WMS layer is not loaded.');
-    var step = chain.steps[TOTAL - 1];
-    var r = W.cycleCount(state, [chain.binA], { reason: 'Walk the shift — spot count', by: null });
+    var step = countStep(chain, idx);
+    if (!step) return no('This step is not a count.');
+    var r = W.cycleCount(state, [step.bin], { reason: 'Walk the shift — spot count', by: null });
     if (!r.ok) return r;
     step.countTaskId = r.tasks[0];
-    record(state, 'Spot count queued for bin ' + chain.binA + ' (Walk the shift, task 5 of 5).');
+    var n = (idx == null ? chain.steps.length - 1 : idx) + 1;
+    record(state, 'Spot count queued for bin ' + step.bin + ' (Walk the shift, task ' + n + ' of ' + chain.steps.length + ').');
     return { ok: true, taskId: step.countTaskId };
   }
 
@@ -232,14 +445,14 @@
     return { counts: counts, lines: lines };
   }
 
-  /* Step 5, second half: post the count the panel showed. Counted
-     honestly — the player counted the pallet they put away — so a
-     clean count lands as "matches", a real CC record either way. */
-  function confirmCount(state, chain) {
+  /* Count step, second half: post the count the panel showed.
+     Counted honestly — the player counted what is in the bin — so
+     a clean count lands as "matches", a real CC record either way. */
+  function confirmCount(state, chain, idx) {
     if (!W) return no('The WMS layer is not loaded.');
-    var step = chain.steps[TOTAL - 1];
-    if (!step.countTaskId) return no('The count has not been queued yet.');
-    return W.complete(state, step.countTaskId, { counts: countContents(state, chain.binA).counts, by: null });
+    var step = countStep(chain, idx);
+    if (!step || !step.countTaskId) return no('The count has not been queued yet.');
+    return W.complete(state, step.countTaskId, { counts: countContents(state, step.bin).counts, by: null });
   }
 
   function elapsedText(ms) {
@@ -247,11 +460,13 @@
     return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
   }
 
-  /* ---------- voice commands (pure) -------------------------------- */
-  /* The whole voice vocabulary of the shift, matched exactly on the
+  /* ---------- voice commands (pure) — the offline fallback ---------- */
+  /* The fallback vocabulary of the shift, matched exactly on the
      normalised transcript — the utterance must BE the command, not
      merely contain it, so ordinary speech about the work ("completely
-     wrong pallet, this one") can never fire a step. Returns one of
+     wrong pallet, this one") can never fire a step. This matcher is
+     what runs when META cannot be reached; when she can, she is the
+     one who hears the worker (see hear() below). Returns one of
      'start' | 'complete' | 'confirm' | 'auto', or null when the words
      are not a shift command (nothing is done with them). */
   function voiceCommand(text) {
@@ -261,7 +476,7 @@
     if (/^(start|begin)( the)?( shift| job| work)?$/.test(t)) return 'start';
     if (/^auto ?run( on| off)?$/.test(t)) return 'auto';
     if (/^(confirm|confirmed|confirm count|confirm the count|count confirmed)$/.test(t)) return 'confirm';
-    if (/^(complete|completed|done|finished|all done|done with this one|complete this one|task complete|that is done|thats done|i am done|im done)$/.test(t)) return 'complete';
+    if (/^(complete|completed|done|finished|all done|done with this one|complete this one|complete task|complete this task|complete it|task complete|task done|done task|mark it complete|mark complete|finish it|finished it|that is done|thats done|i am done|im done)$/.test(t)) return 'complete';
     return null;
   }
 
@@ -272,14 +487,16 @@
      it (the pure half above is the whole node surface).
      ================================================================== */
 
-  var CTX = null;        /* { act, state, practice, base, render } — refreshed every render */
+  var CTX = null;        /* { act, state, practice, base, render, talk } — refreshed every render */
   var session = null;    /* the shift being played, or null */
-  var voiceNote = null;  /* { text, did } — the last words heard, quoted, and what they did */
+  var voiceNote = null;  /* { text, did, meta } — the last words heard, quoted, what they did, and META's line */
   var autoWanted = false;
+  var roleWanted = 'inbound';  /* the Shift type the panel has selected */
   var cssDone = false;
   var autoTimer = null;
 
   function cur() { return session && !session.done ? session.chain.steps[session.i] : null; }
+  function total() { return session ? session.chain.steps.length : TOTAL; }
   function samePlace(a, b) { return !!a && !!b && a.place === b.place && a.id === b.id; }
   function wait(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
 
@@ -301,7 +518,7 @@
   /* The stage is the Warehouse Map board itself (js/wms-map.js):
      its cells already carry the data-place / data-id hooks the game
      aims at — the inbound dock, its Receiving Bay lane, the bin. */
-  function stageEl() { return document.querySelector('#main .wm-board'); }
+  function stageEl() { return typeof document === 'undefined' ? null : document.querySelector('#main .wm-board'); }
 
   function cellEl(place, id) {
     var c = stageEl();
@@ -414,7 +631,7 @@
       if (step.kind === 'count' && !session.countArmed) {
         session.glideTo = step.target;
         session.glidePx = cellPx(step.target.place, step.target.id);
-        return CTX.act(function (s) { return armCount(s, chain); }, null).then(function (r) {
+        return CTX.act(function (s) { return armCount(s, chain, idx); }, null).then(function (r) {
           session.busy = false;
           if (r && r.ok) {
             session.countArmed = true;
@@ -432,7 +649,7 @@
         if (r && r.ok) {
           session.i++;
           session.at = step.target;
-          if (session.i >= TOTAL) { finish(); return; }
+          if (session.i >= chain.steps.length) { finish(); return; }
           /* act() rendered while the session still pointed at the
              finished step; render again so the panel names the NEXT
              task (afterRender re-places the circle and the pulse). */
@@ -445,12 +662,17 @@
 
   function confirm() {
     if (!session || !session.countArmed || !CTX) return Promise.resolve();
-    var chain = session.chain;
-    return CTX.act(function (s) { return confirmCount(s, chain); }, null).then(function (r) {
+    var chain = session.chain, idx = session.i, step = chain.steps[idx];
+    return CTX.act(function (s) { return confirmCount(s, chain, idx); }, null).then(function (r) {
       if (r && r.ok) {
-        session.i = TOTAL;
-        session.at = { place: 'bin', id: chain.binA };
-        finish();
+        session.countArmed = false;
+        session.i = idx + 1;
+        session.at = step.target;
+        if (session.i >= chain.steps.length) { finish(); return; }
+        /* a mid-chain count (the Cycle counter's whole shift): the
+           panel now offers the next count */
+        if (CTX.render) CTX.render(); else mount();
+        if (session.auto) scheduleAuto();
       }
     });
   }
@@ -479,6 +701,13 @@
       if (!lane) return false;
       place = 'receiving'; id = lane.getAttribute('data-id');
     }
+    if (place === 'order') {
+      /* an outbound order chip sits inside its staging lane — the
+         lane is the place the pack step aims at */
+      var slane = cell.closest('[data-place="staging"]');
+      if (!slane) return false;
+      place = 'staging'; id = slane.getAttribute('data-id');
+    }
     var step = cur();
     if (!step || step.target.place !== place || step.target.id !== id) return false;
     if (step.kind === 'count' && session.countArmed) return false; /* armed: the panel's Confirm is the action */
@@ -487,8 +716,33 @@
   }
 
   /* The panel's buttons, by name. */
-  function ui(name) {
+  function ui(name, value) {
     if (!CTX) return;
+    if (name === 'role') {
+      var next = find(ROLES, function (x) { return x.id === value; }) ? value : 'inbound';
+      if (session && !session.done && session.chain.role === next) { if (CTX.render) CTX.render(); return Promise.resolve(); }
+      roleWanted = next;
+      if (!session || session.done) { if (CTX.render) CTX.render(); return Promise.resolve(); }
+      /* Mid-shift switch: the dealt chain is set aside — the tasks
+         it already finished stay on the record, because they were
+         real work — and a fresh chain for the new role is dealt.
+         The circle starts again from the new chain's first place. */
+      var prevLabel = roleLabel(session.chain.role);
+      clearTimeout(autoTimer);
+      session = null;
+      return CTX.act(function (s) { return begin(s, next); }, null).then(function (r) {
+        if (r && r.ok && r.chain) {
+          session = { chain: r.chain, i: 0, at: r.chain.startAt || { place: 'dock', id: r.chain.door }, px: null,
+            auto: false, busy: false, countArmed: false, done: false, startedAt: Date.now(), finishedAt: 0, glideTo: null };
+          voiceNote = { text: '', did: 'Shift type changed to ' + roleLabel(next) + ' — the ' + prevLabel +
+            ' shift was set aside; the tasks it finished stay on the record.', meta: null };
+        } else {
+          voiceNote = { text: '', did: 'Shift type changed to ' + roleLabel(next) + ', but this building cannot deal that shift right now — the ' +
+            prevLabel + ' shift was set aside; the tasks it finished stay on the record.', meta: null };
+        }
+        if (CTX.render) CTX.render();
+      });
+    }
     if (name === 'auto') {
       if (session) session.auto = !session.auto; else autoWanted = !autoWanted;
       if (CTX.render) CTX.render();
@@ -498,9 +752,9 @@
     if (name === 'start') {
       if (session && session.busy) return Promise.resolve();
       var wasAuto = session ? session.auto : autoWanted;
-      return CTX.act(function (s) { return begin(s); }, null).then(function (r) {
+      return CTX.act(function (s) { return begin(s, roleWanted); }, null).then(function (r) {
         if (r && r.ok && r.chain) {
-          session = { chain: r.chain, i: 0, at: { place: 'dock', id: r.chain.door }, px: null,
+          session = { chain: r.chain, i: 0, at: r.chain.startAt || { place: 'dock', id: r.chain.door }, px: null,
             auto: wasAuto, busy: false, countArmed: false, done: false, startedAt: Date.now(), finishedAt: 0, glideTo: null };
           if (CTX.render) CTX.render();
           if (session.auto) scheduleAuto();
@@ -517,30 +771,107 @@
   /* ---------- voice in ---------------------------------------------- */
   /* wms-ui.js wires the panel's hold-to-talk button through the
      console's own mic (js/warehouse-mic.js) and hands each transcript
-     here. The words are quoted in the panel with what they did —
-     the app's record-keeping style — and a command can only ever
-     work the CURRENT offered task: 'complete' on the count step,
-     once the count is armed, confirms the count (that IS the pending
-     action); 'confirm' anywhere else confirms nothing. Anything that
-     is not a command is reported as such and changes nothing. */
-  function note(text, did) {
-    voiceNote = { text: text, did: did };
+     here. The worker is talking to META: the transcript and the live
+     shift context go through CTX.talk (the console's /chat path to
+     Muse Spark, js/wms-ai.js's gameTurn), and META answers. Her
+     action intents run through the same paths the buttons use
+     (actOn, below); her words are shown as the response ONLY after
+     the act has resolved — a refused or failed act discards them
+     for the honest note, so she never gets to claim work that did
+     not happen. Answers and clarifying questions change nothing and
+     are shown as her line in the panel. If the call fails, the pure
+     keyword matcher (voiceCommand) hears the words instead — the
+     shift stays workable offline, with the same honesty: a voice
+     action can only ever work the CURRENT offered task. 'Complete'
+     on the count step, once the count is armed, confirms the count
+     (that IS the pending action); 'confirm' anywhere else confirms
+     nothing. */
+
+  /* Where the worker stands, in words META (and the panel) can use. */
+  function placeLabel(place) {
+    if (!place) return null;
+    if (place.place === 'dock') return dockName(place.id);
+    if (place.place === 'receiving') return laneName(place.id);
+    if (place.place === 'bin') return 'Bin ' + place.id;
+    if (place.place === 'staging') return 'Outbound staging at ' + dockName(place.id);
+    if (place.place === 'zone') return 'Zone ' + place.id;
+    return String(place.id);
+  }
+
+  /* What META is told about the live shift: the active role's chain,
+     the current offer verbatim, what is pending, every task still to
+     come, and where the worker stands — enough to answer "what
+     tasks do I need to do" truthfully, and nothing she could invent
+     state from beyond it. Pure read of the session. */
+  function voiceContext() {
+    var role = session ? session.chain.role : roleWanted;
+    var ctx = { role: role, roleLabel: roleLabel(role), offer: null, step: 0, total: 0,
+      pending: 'none', remaining: [], at: null, done: false };
+    if (!session) return ctx;
+    ctx.total = session.chain.steps.length;
+    ctx.at = placeLabel(session.at);
+    if (session.done) { ctx.done = true; return ctx; }
+    var step = cur();
+    if (!step) return ctx;
+    ctx.offer = step.offer;
+    ctx.step = session.i + 1;
+    ctx.pending = step.kind === 'count' ? (session.countArmed ? 'count' : 'countStep') : 'step';
+    ctx.remaining = session.chain.steps.slice(session.i + 1).map(function (s2) { return s2.offer; });
+    return ctx;
+  }
+
+  function note(text, did, meta) {
+    voiceNote = { text: text, did: did, meta: meta || null };
     if (CTX && CTX.render) CTX.render();
   }
 
   function hear(text) {
-    var cmd = voiceCommand(text);
     if (!CTX || !CTX.practice || CTX.base !== 'dashboard') return;
+    if (CTX.talk) {
+      note(text, 'asking META…');
+      var p = null;
+      try { p = CTX.talk(voiceContext(), text); } catch (e) { p = null; }
+      if (p && typeof p.then === 'function') {
+        p.then(function (reply) {
+          if (reply && reply.intent) applyReply(text, reply);
+          else hearFallback(text);
+        }, function () { hearFallback(text); });
+        return;
+      }
+    }
+    hearFallback(text);
+  }
+
+  /* META's reply, applied. 'answer' / 'none' touch nothing — her
+     words are the response. An action intent goes to actOn with her
+     words attached, to be shown only if the act lands. */
+  function applyReply(text, reply) {
+    if (reply.intent === 'answer') { note(text, 'META answered — the shift is unchanged.', reply.say); return; }
+    if (reply.intent === 'none') { note(text, 'META could not tell what you meant — nothing was done.', reply.say); return; }
+    actOn(reply.intent, text, reply.say);
+  }
+
+  /* The offline fallback: the keyword matcher hears the words. */
+  function hearFallback(text) {
+    actOn(voiceCommand(text), text, null);
+  }
+
+  /* One command, from META's intent or the matcher, worked through
+     the panel's own paths. say is META's line (null from the
+     fallback): it is attached to the note only on the branches where
+     the act really happened. */
+  function actOn(cmd, text, say) {
     if (cmd === 'start') {
       if (session && !session.done) { note(text, 'the shift is already under way — nothing changed.'); return; }
       ui('start').then(function () {
-        note(text, session ? 'shift started — the first task is offered below.' : 'this building could not deal a shift — nothing was done.');
+        if (session) note(text, 'shift started — the first task is offered below.', say);
+        else note(text, 'this building could not deal a shift — nothing was done.');
       });
       return;
     }
     if (cmd === 'auto') {
       var on = session ? !session.auto : !autoWanted;
-      voiceNote = { text: text, did: 'auto-run ' + (on ? 'on — the shift works itself.' : 'off.') };
+      voiceNote = { text: text, did: 'auto-run ' + (on ? 'on — the shift works itself.' : 'off.'), meta: say || null };
       ui('auto'); /* renders */
       return;
     }
@@ -548,7 +879,8 @@
       var st = cur();
       if (session && !session.done && st && st.kind === 'count' && session.countArmed) {
         ui('confirm').then(function () {
-          note(text, session && session.done ? 'count confirmed and posted.' : 'the count did not post — nothing was done.');
+          if (session && (session.done || !session.countArmed)) note(text, 'count confirmed and posted.', say);
+          else note(text, 'the count did not post — nothing was done.');
         });
         return;
       }
@@ -562,15 +894,16 @@
       if (session.busy) { note(text, 'the current task is still being worked. Nothing was done.'); return; }
       if (step && step.kind === 'count' && session.countArmed) {
         ui('confirm').then(function () {
-          note(text, session && session.done ? 'count confirmed and posted.' : 'the count did not post — nothing was done.');
+          if (session && (session.done || !session.countArmed)) note(text, 'count confirmed and posted.', say);
+          else note(text, 'the count did not post — nothing was done.');
         });
         return;
       }
       var n = session.i + 1, wasArmed = session.countArmed;
       doStep().then(function () {
-        if (session && session.done) note(text, 'task ' + n + ' of ' + TOTAL + ' worked — that finishes the shift.');
-        else if (session && session.countArmed && !wasArmed) note(text, 'count queued for ' + session.chain.binA + ' — count what is there, then say "confirm".');
-        else if (session && session.i >= n) note(text, 'task ' + n + ' of ' + TOTAL + ' worked.');
+        if (session && session.done) note(text, 'task ' + n + ' of ' + total() + ' worked — that finishes the shift.', say);
+        else if (session && session.countArmed && !wasArmed) note(text, 'count queued for ' + ((cur() && cur().bin) || '') + ' — count what is there, then say "confirm".', say);
+        else if (session && session.i >= n) note(text, 'task ' + n + ' of ' + total() + ' worked.', say);
         else note(text, 'that step did not go through — nothing was done.');
       });
       return;
@@ -605,7 +938,22 @@
       '<span class="hint" id="gameStatus"></span><span class="hint">' + sayHint + '</span></div>';
   }
   function heardLine() {
-    return voiceNote ? '<p class="hint">Heard: &ldquo;' + esc(voiceNote.text) + '&rdquo; — ' + esc(voiceNote.did) + '</p>' : '';
+    if (!voiceNote) return '';
+    var out = '';
+    if (voiceNote.text) out += '<p class="hint">Heard: &ldquo;' + esc(voiceNote.text) + '&rdquo; — ' + esc(voiceNote.did) + '</p>';
+    else if (voiceNote.did) out += '<p class="hint">' + esc(voiceNote.did) + '</p>';
+    if (voiceNote.meta) out += '<p class="hint">META: &ldquo;' + esc(voiceNote.meta) + '&rdquo;</p>';
+    return out;
+  }
+
+  /* The Shift type selector: the role the next shift is dealt as,
+     or — mid-shift — the role switched to. The active role is the
+     dealt chain's own while a shift runs. */
+  function roleRow() {
+    var active = session ? session.chain.role : roleWanted;
+    return '<p class="hint">Shift type</p><div class="form-actions">' + ROLES.map(function (r) {
+      return '<button class="btn' + (r.id === active ? ' primary' : '') + '" data-act="game-role" data-role="' + r.id + '">' + esc(r.label) + '</button>';
+    }).join('') + '</div>';
   }
 
   function panelHtml(panel, state, practice) {
@@ -618,16 +966,21 @@
     var autoOn = session ? session.auto : autoWanted;
     var autoBtn = '<button class="btn" data-act="game-auto">Auto-run: ' + (autoOn ? 'On' : 'Off') + '</button>';
     if (!session) {
+      var intro = roleWanted === 'inbound'
+        ? '<p>Five receiving tasks on the map below. You are the circle. Work it the way the job works: ' +
+          'a task is offered, you walk to it, and you confirm it done — by voice, like the glasses.</p>'
+        : '<p>A ' + esc(roleLabel(roleWanted)) + ' shift on the map below. You are the circle. Work it the way the job works: ' +
+          'a task is offered, you walk to it, and you confirm it done — by voice, like the glasses.</p>';
       return panel('Walk the shift',
-        '<p>Five receiving tasks on the map below. You are the circle. Work it the way the job works: ' +
-        'a task is offered, you walk to it, and you confirm it done — by voice, like the glasses.</p>' +
+        roleRow() + intro +
         talkRow('Hold the button and say &ldquo;Start the shift&rdquo;, or press the button.') + heardLine() +
         '<div class="form-actions"><button class="btn primary" data-act="game-start">Start the shift</button>' + autoBtn + '</div>',
         'a game on the warehouse map');
     }
     if (session.done) {
       return panel('Walk the shift',
-        '<p><b>Shift complete — 5 tasks, ' + esc(elapsedText(session.finishedAt - session.startedAt)) + '.</b> ' +
+        roleRow() +
+        '<p><b>Shift complete — ' + session.chain.steps.length + ' tasks, ' + esc(elapsedText(session.finishedAt - session.startedAt)) + '.</b> ' +
         'Every move updated the record as it happened: no clipboard, no end-of-shift typing.</p>' +
         talkRow('Hold the button and say &ldquo;Start the shift&rdquo; to work another.') + heardLine() +
         '<div class="form-actions"><button class="btn primary" data-act="game-start">Play again</button></div>',
@@ -635,11 +988,11 @@
     }
     var step = cur();
     var armed = step && step.kind === 'count' && session.countArmed;
-    var body = '<p class="hint">Task ' + (session.i + 1) + ' of ' + TOTAL + '</p>' +
+    var body = roleRow() + '<p class="hint">Task ' + (session.i + 1) + ' of ' + total() + '</p>' +
       '<p>Next task: <b>' + esc(step ? step.offer : '') + '</b></p>';
     if (armed) {
-      var cc = countContents(state, session.chain.binA);
-      body += '<p>You count in ' + esc(session.chain.binA) + ': ' +
+      var cc = countContents(state, step.bin);
+      body += '<p>You count in ' + esc(step.bin) + ': ' +
         (cc.lines.length ? cc.lines.map(function (l) { return '<b>' + esc(l.qty) + ' × ' + esc(l.desc) + '</b>'; }).join(', ') : '<b>nothing — the bin is empty</b>') + '.</p>';
     }
     body += talkRow(armed ? 'Hold the button and say &ldquo;Confirm&rdquo; to post the count.'
@@ -649,17 +1002,20 @@
         '<span class="hint">The buttons do the same step, for hands that can\'t talk.</span></div>';
     } else {
       var label = !step ? 'Do it' : step.kind === 'checkin' ? 'Check in' : step.kind === 'toBay' ? 'Move the pallet' :
-        step.kind === 'putaway' ? 'Put it away' : 'Count the bin';
+        step.kind === 'putaway' ? 'Put it away' : step.kind === 'pick' ? 'Pick it' :
+        step.kind === 'pack' ? 'Pack it' : step.kind === 'load' ? 'Load it' :
+        step.kind === 'replen' ? 'Replenish' : 'Count the bin';
       body += '<div class="form-actions"><button class="btn primary" data-act="game-doit">' + label + '</button>' + autoBtn +
         '<span class="hint">…or click the glowing place on the map. The buttons do the same step, for hands that can\'t talk.</span></div>';
     }
-    return panel('Walk the shift', body, 'task ' + (session.i + 1) + ' of ' + TOTAL);
+    return panel('Walk the shift', body, 'task ' + (session.i + 1) + ' of ' + total());
   }
 
   var api = {
-    buildChain: buildChain, direct: direct, begin: begin, performStep: performStep,
+    buildChain: buildChain, buildShift: buildShift, ROLES: ROLES, roleLabel: roleLabel,
+    direct: direct, begin: begin, performStep: performStep,
     armCount: armCount, confirmCount: confirmCount, countContents: countContents,
-    elapsedText: elapsedText, voiceCommand: voiceCommand, TOTAL: TOTAL,
+    elapsedText: elapsedText, voiceCommand: voiceCommand, voiceContext: voiceContext, TOTAL: TOTAL,
     afterRender: afterRender, cellClick: cellClick, ui: ui, hear: hear, panelHtml: panelHtml
   };
   root.WmsGame = api;

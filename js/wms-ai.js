@@ -3,7 +3,7 @@
    witness Worker's /chat (Muse Spark). Speech reaches the WMS as a
    transcript from /asr (js/warehouse-mic.js, unchanged).
 
-   Four reads, each one honest about what it could not read:
+   Five reads, each one honest about what it could not read:
      1. readReceiving — a receiver's spoken count, turned into counts
         per BOL line, each with the receiver's EXACT words as the
         quote. The human reviews and posts; nothing auto-posts.
@@ -14,6 +14,13 @@
         what is on the pallet, and anything report-worthy.
      4. readDock      — a photo of freight at the dock: flags in the
         receiving-report sense (label + plain detail).
+     5. gameTurn      — the shift game's conversation: a worker
+        speaks to META mid-shift; she answers as herself and, when
+        the words are a command for the current task, names the
+        action as an intent. The game performs the action itself
+        and shows her words only when the work really happened
+        (js/wms-game.js owns that honesty); 'answer' replies pass
+        through untouched.
 
    The request/retry/error plumbing is bol.js's readBody + sendRead —
    reused, never forked. Pure: the caller hands in fetch. Loads in the
@@ -180,6 +187,84 @@
       .then(function (r) { return { flags: r.value, attempts: r.attempts }; });
   }
 
+  /* ---------- 5. the shift game's conversation ------------------------- */
+  /* The worker talks; META answers. The intent is only the ACTION
+     envelope — whether this turn should work the current task,
+     confirm the count, start, toggle auto-run, or simply be an
+     answer. What she says inside 'answer' is open-ended: questions
+     about the work are answered from the context the game sends,
+     and whether a request belongs here at all is HER judgment, made
+     per request in this prompt — no code anywhere filters topics. */
+
+  var GAME_INTENTS = ['complete', 'confirm', 'start', 'auto', 'answer', 'none'];
+
+  var GAME_PROMPT = [
+    'You are META, the voice of Witness — the same META a worker talks to through the warehouse glasses. You are guiding one worker through a practice shift on the warehouse console: the shift context below says what job they are working, the task currently offered to them, what is still to come, and where they are standing.',
+    '',
+    'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
+    '{"intent":"answer","say":"..."}',
+    '',
+    '"intent" is one of:',
+    '- "complete": the worker says the currently offered task is done, or asks you to complete it. Only for the current task, only when their words mean it is finished.',
+    '- "confirm": the worker confirms the pending spot count (the context says a count is waiting for confirmation).',
+    '- "start": the worker asks to start the shift.',
+    '- "auto": the worker asks to turn auto-run on or off.',
+    '- "answer": anything you respond to without changing the work — a question about the work, a problem report, a decline. Most turns are this.',
+    '- "none": you cannot tell what the worker wants. "say" asks a short clarifying question.',
+    '',
+    '"say" is what you say back to the worker: one or two short sentences, in your own voice, the way you talk to a worker on the floor.',
+    '',
+    'Rules:',
+    '- Never invent state. The context is all you know: the current task, the remaining tasks, the place the worker stands. If the worker asks about something the context does not cover, say you do not have it in front of you (intent "answer").',
+    '- Answer questions about the work from the context. If the worker asks what tasks they need to do, name the current task and then the remaining ones, in order (intent "answer").',
+    '- A problem report — damage, a wrong pallet, a shortage, a spill, anything broken or unsafe — is intent "answer", NEVER "complete": acknowledge it plainly and say what to do next (set it aside, flag it for the lead). A task with a problem is not a finished task.',
+    '- You are a warehouse-work assistant. If a request is not related to warehouse work or this warehouse\'s processes, decline it in your own voice, along the lines of: "Sorry, this request isn\'t related to warehouse process." (intent "answer"). Whether a request is off-topic is your call, made on the request itself.',
+    '- When the intent works a task, keep "say" short and about that task — the game shows your words only after the work has really happened.'
+  ].join('\n');
+
+  /* The context block is composed by the caller (js/wms-game.js)
+     from the live shift; this builder only frames it. */
+  function gameBody(context, words) {
+    var c = context || {};
+    var lines = ['SHIFT CONTEXT'];
+    lines.push('Job: ' + (c.roleLabel || 'warehouse shift'));
+    if (c.offer) {
+      lines.push('Current task (step ' + c.step + ' of ' + c.total + '): ' + c.offer);
+      lines.push('Pending: ' + (c.pending === 'count' ? 'a spot count is counted and waiting for the worker to confirm it'
+        : c.pending === 'countStep' ? 'the current task is a spot count — confirming it means counting what is in the bin and posting that count'
+        : 'a normal task, worked when the worker says it is done'));
+    } else {
+      lines.push('No task is currently offered' + (c.done ? ' — the shift is complete.' : ' — no shift is running.'));
+    }
+    if (c.remaining && c.remaining.length) {
+      lines.push('Still to come after the current task:');
+      c.remaining.forEach(function (o, i) { lines.push((i + 1) + '. ' + o); });
+    }
+    if (c.at) lines.push('The worker is standing at: ' + c.at);
+    lines.push('');
+    lines.push('THE WORKER SAID (verbatim):');
+    lines.push(words);
+    return textBody(GAME_PROMPT, lines.join('\n'));
+  }
+
+  /* Accept only the envelope: a known intent and something to say.
+     The words themselves pass through untouched — an answer is the
+     model's own, never edited here (a sanity length bound aside). */
+  function acceptGame(parsed) {
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (GAME_INTENTS.indexOf(parsed.intent) === -1) return null;
+    var say = str(parsed.say);
+    if (!say) return null;
+    if (say.length > 500) say = say.slice(0, 500);
+    return { intent: parsed.intent, say: say };
+  }
+
+  function gameTurn(doFetch, context, words, url) {
+    if (!String(words || '').trim()) return Promise.reject(Object.assign(new Error('empty'), { userMessage: 'Nothing was heard. Hold the button and say it again.' }));
+    return B.sendRead(doFetch, url, gameBody(context, words), acceptGame)
+      .then(function (r) { return { intent: r.value.intent, say: r.value.say, attempts: r.attempts }; });
+  }
+
   var api = {
     RECEIVE_PROMPT: RECEIVE_PROMPT,
     LABEL_PROMPT: LABEL_PROMPT,
@@ -194,7 +279,11 @@
     acceptPutaway: acceptPutaway,
     readPutaway: readPutaway,
     acceptDock: acceptDock,
-    readDock: readDock
+    readDock: readDock,
+    GAME_PROMPT: GAME_PROMPT,
+    gameBody: gameBody,
+    acceptGame: acceptGame,
+    gameTurn: gameTurn
   };
 
   root.WitnessWmsAi = api;

@@ -4,6 +4,10 @@
    what is accepted, what is refused, and the honesty rules — a
    quote the receiver never said is dropped, a number the receiver
    never gave stays empty, a bin label that cannot be read is null.
+   The fifth read is the shift game's conversation: the context the
+   game sends, the intent envelope, answers passing through
+   untouched (a tasks list, a decline — topicality is the model's
+   own call, so no code here decides it).
    Run: node test/wms-ai-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -76,6 +80,45 @@ var SAID = 'Detergent, four pallets, a hundred sixteen cases, four of them crush
   check('dock photo: a reply without a flags list is refused', AI.acceptDock({ nope: 1 }) === null);
   try { await AI.readDock(stub([{ status: 413 }]), IMG); check('dock photo: 413', false); }
   catch (e) { check('dock photo: 413 explains the photo was too large', e.code === 'too-large'); }
+
+  /* 5. the shift game's conversation */
+  var GCTX = { role: 'inbound', roleLabel: 'Inbound dock worker',
+    offer: 'Put Pallet STG-3 away — Stage: Bin A-03.', step: 3, total: 5, pending: 'step',
+    remaining: ['Spot count Bin A-03.'], at: 'Receiving Bay 1' };
+  f = stub([{ intent: 'complete', say: 'Done — that pallet is away.' }]);
+  r = await AI.gameTurn(f, GCTX, 'Complete task.');
+  check('game: goes to the Worker /chat with the game prompt', /\/chat$/.test(f.calls[0].url) &&
+    f.calls[0].body.messages[0].content === AI.GAME_PROMPT);
+  check('game: the context carries the offer verbatim, the step, what remains, where the worker stands, and the words',
+    f.calls[0].body.messages[1].content.indexOf('Put Pallet STG-3 away — Stage: Bin A-03.') !== -1 &&
+    f.calls[0].body.messages[1].content.indexOf('step 3 of 5') !== -1 &&
+    f.calls[0].body.messages[1].content.indexOf('Spot count Bin A-03.') !== -1 &&
+    f.calls[0].body.messages[1].content.indexOf('Receiving Bay 1') !== -1 &&
+    f.calls[0].body.messages[1].content.indexOf('Complete task.') !== -1);
+  check('game: a complete intent and her exact words come back', r.intent === 'complete' && r.say === 'Done — that pallet is away.');
+  f = stub([{ intent: 'answer', say: 'You are on task 3 of 5: put Pallet STG-3 away in Bin A-03. After that, one thing left: spot count Bin A-03.' }]);
+  r = await AI.gameTurn(f, GCTX, 'Can you tell me what tasks I need to do?');
+  check('game: an answer passes through untouched (here, the tasks list in her words)',
+    r.intent === 'answer' && r.say === 'You are on task 3 of 5: put Pallet STG-3 away in Bin A-03. After that, one thing left: spot count Bin A-03.');
+  f = stub([{ intent: 'answer', say: 'Sorry, this request isn\u2019t related to warehouse process.' }]);
+  r = await AI.gameTurn(f, GCTX, 'What are the scores of the game?');
+  check('game: a decline answer passes through untouched — topicality is the model\u2019s call, not code\u2019s',
+    r.intent === 'answer' && r.say === 'Sorry, this request isn\u2019t related to warehouse process.');
+  f = stub([{ intent: 'answer', say: 'Set that pallet aside where it will not be worked, and flag it for the lead.' }]);
+  r = await AI.gameTurn(f, GCTX, 'This pallet is damaged — the wrap is torn.');
+  check('game: a problem report arrives as an answer (the game mutates nothing for it)',
+    r.intent === 'answer' && /flag it for the lead/.test(r.say));
+  check('game: an unknown intent is refused', AI.acceptGame({ intent: 'teleport', say: 'ok' }) === null);
+  check('game: a reply with nothing to say is refused', AI.acceptGame({ intent: 'answer', say: '   ' }) === null &&
+    AI.acceptGame(null) === null && AI.acceptGame('done') === null);
+  check('game prompt: META never invents state, and problem reports are answers, never completions',
+    /Never invent state/.test(AI.GAME_PROMPT) && /NEVER "complete"/.test(AI.GAME_PROMPT));
+  check('game prompt: the topicality rule and the decline wording are hers to apply',
+    /warehouse-work assistant/.test(AI.GAME_PROMPT) && /isn['\u2019]t related to warehouse process/.test(AI.GAME_PROMPT));
+  try { await AI.gameTurn(stub([]), GCTX, '   '); check('game: empty words', false); }
+  catch (e) { check('game: empty words refused before any call', /Nothing was heard/.test(e.userMessage)); }
+  try { await AI.gameTurn(stub([{ status: 429 }]), GCTX, 'Complete'); check('game: 429 surfaces', false); }
+  catch (e) { check('game: the daily cap (429) is an honest error', e.code === 'cap'); }
 
   console.log('\n' + passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);

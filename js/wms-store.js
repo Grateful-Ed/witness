@@ -49,7 +49,10 @@
     return text;
   }
 
-  /* opts: { fetch, url, seed(): state, prepare(state): state, check(state): string|null, practice: bool } */
+  /* opts: { fetch, url, seed(): state, prepare(state): state, check(state): string|null, practice: bool,
+       dressPractice(state): void — optional; applied to a freshly seeded state in practice mode ONLY,
+       so a practice copy can be dressed (stocked fuller) without the seed — or the desk record —
+       ever changing. Never applied on the live path, reset included. } */
   function create(opts) {
     var doFetch = opts.fetch;
     var url = opts.url || STATE_URL;
@@ -58,6 +61,16 @@
     var lastSaved = null;    /* the copy this page last POSTed */
 
     function prepare(s) { return opts.prepare ? opts.prepare(s) : s; }
+
+    /* The one place fresh states come from. Dressing hangs off the
+       store's own practice flag — not the URL — so entering practice
+       from the page's fallback button dresses too, and a live seed
+       (first open, reset) is always the raw seed. */
+    function seedState() {
+      var s = opts.seed();
+      if (practice && opts.dressPractice) opts.dressPractice(s);
+      return s;
+    }
 
     function get() {
       if (practice) return Promise.resolve(mem ? copy(mem) : null);
@@ -97,7 +110,7 @@
     }
 
     function seedAndSave() {
-      var s = opts.seed();
+      var s = seedState();
       return post(s).then(function () { return { state: s, seeded: true }; });
     }
 
@@ -119,7 +132,7 @@
          with ok === false saves nothing. Resolves { state, result }. */
       mutate: function (fn) {
         return get().then(function (s) {
-          if (!s) s = opts.seed();
+          if (!s) s = seedState();
           var why = opts.check ? opts.check(s) : null;
           if (why) throw fail('other-world', why);
           s = prepare(s);
