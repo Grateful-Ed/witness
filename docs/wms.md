@@ -227,6 +227,73 @@ Read it in the console on the **Ontology** page (Control, after
 Audit Trail): Needs eyes and the Prep queue first, then Places,
 Open tasks and People, counts ahead of detail.
 
+## The central agent — one agent for the whole warehouse (js/central-agent.js)
+
+**The idea.** Witness runs one agent for the whole building, not
+one per person. The glasses (and the desk, and the phone) are
+*endpoints*: they take a worker's words in and show an answer out.
+Behind them sits one central agent, the **delegator**. Every input
+from every worker goes to it. It reads the input, decides what kind
+of job it is, writes the instruction (the prompt), and cuts the
+exact slice of the dynamic ontology digest that job needs. Then it
+hands the job to a **sub-agent** — and steps out of the way.
+
+**Dispatch, not relay.** The sub-agent answers the worker
+directly. Its answer never goes back through the delegator, and the
+delegator never re-words it. `receive()` returns a *dispatch*
+(`{ agent, prompt, context, ... }`), never an answer. William's
+reason (2026-11-04): a relay puts the delegator in every response
+path — a bottleneck, and a single point of failure. With dispatch,
+once the handoff is made the master is not in the way.
+
+**Single writer.** Only the delegator holds the digest, and only
+the delegator refreshes it (through the ontology module's own
+`applyChange`, when the state's revision has moved). Sub-agents get
+a deep-frozen copy of their slice: they read, and a write throws.
+One keeper means one page everyone reads from — no fleet of
+per-user agents holding diverging partial views and spending their
+effort reconciling them.
+
+**The sub-agents** (small pure functions over the digest, no model
+calls — the same input always gives the same answer):
+
+- `locator` — where is X; what is in place Y.
+- `status` — what state X is in; what is open; what needs eyes.
+- `planner` — what this worker should do next, from their open
+  tasks and their prep notes. It suggests; it assigns nothing.
+- `recorder` — takes a *tell* (a statement, not a question) and
+  returns a record entry `{ from, text, at }` in the speaker's own
+  words. The **caller** persists it through the existing store
+  paths. The central agent itself saves nothing and changes no
+  state, anywhere.
+
+**What is implemented and test-proven** (`test/central-agent-test.js`).
+Three seed workers — Marcus Reed, Tommy Nguyen, Priya Shah — send
+a scripted mix of questions and a tell through one central agent
+over the seeded building. The tests prove: each input goes to the
+expected sub-agent with the right facts (A-05's contents, where
+the peaches are, the needs-eyes list, a task's destination, each
+worker's next task); each answer is byte-identical to the
+sub-agent's own output and never appears in the delegator's record
+of dispatches; the delegator has no method that takes an answer
+back; three different interleavings of the inputs give identical
+answers, all at the same digest revision; a sub-agent that tries
+to write to its context is refused and the digest is unchanged;
+tells come back as record entries and change nothing; after a real
+state change the delegator refreshes and the next answer reflects
+it.
+
+**What "dormant" means here, exactly.** The module starts with
+`CENTRAL_AGENT_LIVE = false`, with the reason written beside it.
+It is **not wired into any live surface**: no page, no existing JS
+file and no Worker file loads it (a test scans the repo to prove
+it). It makes no network calls and starts no timers (a test scans
+its source). Why off: there is no multi-user glasses traffic to
+route yet, and an always-on proactive loop would spend API credits
+for no demo benefit. The architecture is real and runs in the
+tests; turning it on is a deployment decision, made when there is
+a real multi-user floor to serve.
+
 ## Walk the shift — the game (js/wms-game.js)
 
 The Receiving view carries a small game, so a person opening the
@@ -261,6 +328,7 @@ node test/wms-agent-test.js  # 48  — the Witness page's agent: ask from the re
 node test/wms-flow-test.js   # 36  — flow-sliced task views (inbound / outbound)
 node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
 node test/ontology-test.js   # 39  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, no network
+node test/central-agent-test.js # 52 — the central agent: dispatch not relay, three simulated workers, single writer, dormant
 node test/wms-game-test.js   # 28  — Walk the shift: the dealt chain, real putaways, the posted count, undealable buildings
 node test/wms-ui-smoke.js    # 37  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
