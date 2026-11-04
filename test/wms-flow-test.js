@@ -109,5 +109,16 @@ var sk = M.sliceHtml(s, W, 'in', {}, ['docks']);
 check('a skipped stage is not drawn, and its arrow goes with it', sk.indexOf('data-stage="docks"') === -1 && sk.indexOf('data-stage="rcv"') !== -1 && (sk.match(/wf-arrow/g) || []).length === 1);
 check('wms.html loads the flow styles', fs.readFileSync(path.join(__dirname, '..', 'wms.html'), 'utf8').indexOf('css/wms-flow.css') !== -1);
 
+/* 9. the practice banner carries its exit, everywhere it renders
+   (William, 2026-11-04: the banner had no way out). One helper is
+   the banner's only source, both page heads use it, and the exit is
+   a navigation to the same page without the practice flag. */
+check('the practice banner is one helper, carrying an "End practice copy" exit',
+  /data-act="end-practice"/.test(fnBody('practiceBanner')) && /End practice copy/.test(fnBody('practiceBanner')));
+check('both banner sites (the page head, the Witness page) render the helper',
+  /practiceBanner\(\)/.test(fnBody('head')) && /practiceBanner\(\)/.test(viewBody('witness')));
+check('ending practice navigates to the same page (hash and view preserved) without the practice flag',
+  /'end-practice': function \(\) \{[^}]*searchParams\.delete\('practice'\)[^}]*location\.href/.test(ui));
+
 console.log('\n' + passes + ' passed, ' + failures + ' failed');
 process.exit(failures ? 1 : 0);

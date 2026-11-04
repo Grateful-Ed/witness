@@ -1,6 +1,6 @@
 /* wms-game-test.js — node, no dependencies.
    "Walk the shift" (js/wms-game.js): the practice-only game on the
-   Receiving map. Proves the pure logic: the chain is dealt from a
+   warehouse map. Proves the pure logic: the chain is dealt from a
    seeded state as five tasks in the brief's order (check in, move
    to the bay, put away, second putaway, spot count); the working
    pallet is the one at the shipment's door; destination bins are
@@ -10,10 +10,15 @@
    lands in the bin's contents, its putaway task closes, the count
    posts as a real cycle-count record with no variance); the shift
    is not complete until the count posts; a building without two
-   workable pallets or two empty bins deals no chain; and the
-   module's source makes no network calls (practice-only enforcement
-   lives in the UI layer — the panel and the controller both check
-   the practice flag before any mutation can be offered).
+   workable pallets or two empty bins deals no chain; every step
+   carries an OFFER naming the work and its destination, and every
+   step's target resolves to a cell of the warehouse map itself;
+   the voice command matcher takes the completion family, the count
+   confirm, start and auto-run — and nothing else, however close the
+   words come; and the module's source makes no network calls
+   (practice-only enforcement lives in the UI layer — the panel and
+   the controller both check the practice flag before any mutation
+   can be offered).
    Run: node test/wms-game-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -46,6 +51,42 @@ check('the destination bins are not on hold, and are two different bins',
   !!chain && bin(s, chain.binA).status !== 'hold' && bin(s, chain.binB).status !== 'hold' && chain.binA !== chain.binB);
 check('every step names its target place on the map',
   !!chain && chain.steps.every(function (x) { return x.target && x.target.place && x.target.id; }));
+
+/* ---------- the offers, and the map they are played on ------------- */
+/* The loop is the job loop: each step is OFFERED (work + destination,
+   the way the program would say it) — never an instruction in how to
+   click — and the stage is the warehouse map itself: every target
+   the chain names must be a cell the real map renders. */
+check('every step carries an offer naming the work, with no click language in it',
+  !!chain && chain.steps.every(function (x) { return typeof x.offer === 'string' && x.offer.length > 0 && !/click/i.test(x.offer); }));
+check('the putaway offers name their pallet and their Stage bin; the count offer names its bin',
+  !!chain && chain.steps[2].offer.indexOf(chain.palletA) !== -1 && chain.steps[2].offer.indexOf('Stage: Bin ' + chain.binA) !== -1 &&
+  chain.steps[3].offer.indexOf(chain.palletB) !== -1 && chain.steps[3].offer.indexOf('Stage: Bin ' + chain.binB) !== -1 &&
+  chain.steps[4].offer.indexOf(chain.binA) !== -1);
+var board = M.html(W.seed(), W);
+check('every step target is a cell the warehouse map itself renders (place + id)',
+  !!chain && chain.steps.every(function (x) {
+    var re = new RegExp('data-place="' + x.target.place + '"[^>]*data-id="' + x.target.id.replace(/\//g, '\\/') + '"');
+    return re.test(board);
+  }));
+
+/* ---------- voice commands: the whole vocabulary, matched exactly --- */
+
+check('voice: "Complete" is the completion command', G.voiceCommand('Complete') === 'complete');
+check('voice: the completion family — done, finished, done with this one, I\'m done (punctuation ignored)',
+  G.voiceCommand('done.') === 'complete' && G.voiceCommand('Finished!') === 'complete' &&
+  G.voiceCommand('done with this one') === 'complete' && G.voiceCommand('I\'m done') === 'complete' &&
+  G.voiceCommand('all done') === 'complete');
+check('voice: "confirm" and "confirm the count" are the count confirm',
+  G.voiceCommand('confirm') === 'confirm' && G.voiceCommand('confirm the count') === 'confirm');
+check('voice: "start the shift" (or just "start") starts; "auto run" toggles auto-run',
+  G.voiceCommand('start the shift') === 'start' && G.voiceCommand('start') === 'start' && G.voiceCommand('auto run') === 'auto');
+check('voice: empty words are no command', G.voiceCommand('') === null && G.voiceCommand(null) === null && G.voiceCommand('   ') === null);
+check('voice: a question about the work is no command', G.voiceCommand('what\'s in bin A-03?') === null);
+check('voice: near-miss words do not fire — "completely" is not "complete"',
+  G.voiceCommand('completely wrong pallet, take it back') === null && G.voiceCommand('done deal on the peaches') === null);
+check('voice: a problem report is no command (the agent\'s problem path owns those words)',
+  G.voiceCommand('the pallet is damaged') === null);
 
 /* buildChain is a read: the state is untouched by dealing. */
 check('dealing the chain changes nothing in the state',

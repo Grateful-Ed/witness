@@ -220,11 +220,23 @@
     sel.innerHTML = html;
   }
 
+  /* The practice banner — one source, so every page that shows it
+     shows the same banner, including its way out (William,
+     2026-11-04: the banner had no exit). Ending the copy is a
+     navigation (the 'end-practice' action): same page, same view,
+     no practice flag, so the live record loads. */
+  function practiceBanner() {
+    if (!store.practice()) return '';
+    return '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record. ' +
+      '<button class="btn small" type="button" data-act="end-practice" title="Back to the live record">End practice copy</button> ' +
+      '<span class="hint">— back to the live record; the practice copy is discarded.</span></div>';
+  }
+
   function head(crumb, title, desc, tools) {
     return '<div class="crumbs">DC-01 › ' + esc(crumb) + '</div><div class="page-head"><div><h1>' + esc(title) + '</h1>' +
       (desc ? '<p>' + desc + '</p>' : '') + '</div><div class="toolbar">' + (tools || '') +
       '<button class="btn" data-act="refresh" title="Read the desk record again">⟳ Refresh</button></div></div>' +
-      (store.practice() ? '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record.</div>' : '') +
+      practiceBanner() +
       '<!--/head-->';
   }
 
@@ -270,9 +282,14 @@
     return window.WitnessWmsMap.sliceHtml(state, W, dir, a, skip);
   }
 
-  /* The home: the building itself (js/wms-map.js). No tables here. */
+  /* The home: the building itself (js/wms-map.js). No tables here.
+     Walk the shift (js/wms-game.js) is played on this map, so its
+     panel tops this view: practice copies play; the live record
+     gets the signpost. */
   VIEWS.dashboard = function () {
-    return head('Overview', 'Warehouse', 'The building, live from the desk record. Open any dock, pallet, order or bin for its Witness page.') + window.WitnessWmsMap.html(state, W);
+    var html = head('Overview', 'Warehouse', 'The building, live from the desk record. Open any dock, pallet, order or bin for its Witness page.');
+    if (G) html += G.panelHtml(panel, state, store.practice());
+    return html + window.WitnessWmsMap.html(state, W);
   };
 
   /* Ontology (Brief A, 2026-11-03): the building's dynamic digest
@@ -344,7 +361,7 @@
     if (!r) return VIEWS.dashboard();
     var ag = agentFor(r);
     return '<div class="crumbs">DC-01 › <a href="#/dashboard">Warehouse</a> › Witness page</div>' +
-      (store.practice() ? '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record.</div>' : '') +
+      practiceBanner() +
       WP.html(state, r.place, r.id, { agent: { turns: ag.turns, busy: ag.busy, draft: ag.draft, me: me } });
   };
 
@@ -401,9 +418,9 @@
   /* ---- Receiving ---- */
   VIEWS.receiving = function () {
     var html = head('Inbound › Receiving', 'Receiving', 'Door appointments and check-in, then receive against the BOL already in the system. Speak the count or type it; a human posts the receipt. Every shortage, overage and damage becomes an OS&D finding, quoted in the receiver\'s own words.');
-    /* Walk the shift (js/wms-game.js): the game panel tops this view
-       only. Practice copies play; the live record gets the signpost. */
-    if (G) html += G.panelHtml(panel, state, store.practice());
+    /* Walk the shift moved to the Warehouse Map (William, 2026-11-04)
+       — all that stays here is a one-line signpost to it. */
+    html += '<p class="hint">Walk the shift — the practice shift game — is played on the <a href="#/dashboard">Warehouse Map</a>.</p>';
     var rows = state.inbound.map(function (s) {
       var st = W.inboundStatus(state, s);
       var sel = ui.rcvShip === s.id;
@@ -895,7 +912,7 @@
     if (agLog) agLog.scrollTop = agLog.scrollHeight; /* the newest turn in view */
     wireMics(cur);
     /* Walk the shift: hand the game its capabilities and let it
-       (re)place the worker circle on the Receiving slice. */
+       (re)place the worker circle on the warehouse map. */
     if (G) G.afterRender({ act: act, state: state, practice: store.practice(), base: base, render: render });
   }
 
@@ -953,6 +970,9 @@
     if (view === 'rf' && $('rfTalk')) Mic.attach($('rfTalk'), micHandlers($('rfTalk'), 'rfStatus', rfVoice));
     if (/^witness\//.test(view) && $('agTalk')) Mic.attach($('agTalk'), micHandlers($('agTalk'), 'agStatus', function (text) { agentSay(text, 'voice'); }));
     if (view === 'labor' && $('askTalk')) Mic.attach($('askTalk'), micHandlers($('askTalk'), 'askQ', function (text) { askBuilding(text); }));
+    /* Walk the shift: the game panel's hold-to-talk, same plumbing —
+       transcripts go to the game's own command matcher. */
+    if (view === 'dashboard' && $('gameTalk')) Mic.attach($('gameTalk'), micHandlers($('gameTalk'), 'gameStatus', function (text) { if (G) G.hear(text); }));
   }
 
   function receivingVoice(text) {
@@ -1102,6 +1122,14 @@
   var ACTIONS = {
     retry: function () { $('main').innerHTML = '<div class="loading">Loading the desk record…</div>'; reload(); },
     practice: function () { store.enterPractice(); reload(); },
+    /* End the practice copy: same page and view (the hash rides
+       along), without the practice flag — a full load, so the store
+       is rebuilt against the live desk record. */
+    'end-practice': function () {
+      var u = new URL(location.href);
+      u.searchParams.delete('practice');
+      location.href = u.toString();
+    },
     'reset-world': function () {
       if (!window.confirm('Replace the desk record with a fresh WMS warehouse? The state stored there now is overwritten for everyone.')) return;
       store.reset().then(function (res) { state = res.state; lastSync = new Date(); syncIdle(); render(); toast('Desk record reset to the warehouse.'); })
@@ -1254,11 +1282,14 @@
   document.addEventListener('click', function (e) {
     /* A flag is its own link to its own item's Witness page (Task 4). */
     if (e.target.closest('.wmap [data-flag]')) return;
-    if (openItem(e.target.closest('.wmap [data-open]'))) { e.preventDefault(); return; }
-    /* Walk the shift: a click on the game's target cell in the
-       Receiving slice works the current task. Slice cells carry no
-       other click behavior (their open hooks are stripped). */
+    /* Walk the shift: on the warehouse map, a click on the game's
+       current target cell works the offered task — the game claims
+       it before the cell's own open-an-item behavior. cellClick
+       returns false unless a shift is running on a practice copy
+       and the click lands on the offered place, so every other map
+       click falls through untouched. */
     if (G && G.cellClick(e.target)) { e.preventDefault(); return; }
+    if (openItem(e.target.closest('.wmap [data-open]'))) { e.preventDefault(); return; }
     var el = e.target.closest('[data-act]');
     if (!el) return;
     var fn = ACTIONS[el.dataset.act];

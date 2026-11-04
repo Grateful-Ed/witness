@@ -296,25 +296,51 @@ a real multi-user floor to serve.
 
 ## Walk the shift — the game (js/wms-game.js)
 
-The Receiving view carries a small game, so a person opening the
+The Warehouse Map carries a small game, so a person opening the
 WMS has something to actually do in it. A circle marked YOU is the
-worker on the Receiving slice. Five tasks are dealt from the state
-as it stands — check in at the dock where a shipment sits, bring
-its pallet into the Receiving Bay, put that pallet away, put a
-second pallet away, then spot-count the first bin. Destination
-bins are scanned from the state's empty bins at deal time, and
-both putaways are the console's own tasks, directed to those bins
-and completed through the same WMS calls the Putaway screen uses;
-the spot count is a real cycle count, queued and posted the same
-way. Every step lands on the record as it happens — the map, the
-tables and the audit trail move with the circle. Clicking the
-glowing place works the task; every task also has its button, and
-Auto-run works the whole shift hands-free at about a second a leg.
+worker on the map itself — the whole building, not a slice — and
+it travels the real cells (inbound dock → Receiving Bay → bay
+location) as the shift is worked. Five tasks are dealt from the
+state as it stands — check in at the dock where a shipment sits,
+bring its pallet into the Receiving Bay, put that pallet away,
+put a second pallet away, then spot-count the first bin.
+Destination bins are scanned from the state's empty bins at deal
+time, and both putaways are the console's own tasks, directed to
+those bins and completed through the same WMS calls the Putaway
+screen uses; the spot count is a real cycle count, queued and
+posted the same way. Every step lands on the record as it happens
+— the map, the tables and the audit trail move with the circle.
+
+**The loop is the job loop** (William, 2026-11-04). The game
+mimics how a warehouse worker using this program actually works:
+the program offers one task at a time — the panel says "Next
+task: …" with the work and its destination — and the next task is
+offered automatically when the current one is confirmed; the
+worker never hunts for what to do next. Confirmation is by voice
+first, the way the real flow is confirmed: the panel's hold-to-talk
+button rides the console's own mic (js/warehouse-mic.js → the
+Worker's /asr), and the game's matcher (a pure function, tested
+without a microphone) takes exactly "complete" / "done" and their
+close family for the current task, "confirm" for the armed count,
+"start the shift" and "auto run" — an utterance must BE the
+command, so ordinary speech about the work never fires a step,
+and a voice command can only ever work the task currently
+offered. What was heard is quoted in the panel with what it did.
+Clicking the glowing place on the map, or the task's button, does
+the same step — the fallback for hands that can't talk — and
+Auto-run works the whole shift hands-free at about a second a
+leg. There is no score and there are no points; the finish is a
+shift summary. (The game's first build sat on the Receiving
+slice, with click-first instructions; William played it and moved
+it here.)
 
 **Practice copies only.** The game can run solely on a practice
 copy (?practice=1), whose state is never saved anywhere. On the
 live desk record the panel says so and links to a practice copy —
-the dealt tasks can never touch the real record.
+the dealt tasks can never touch the real record. The practice
+banner itself now carries the way out it was missing: an "End
+practice copy" button that returns to the same view of the live
+record (js/wms-ui.js).
 
 ## Tests
 
@@ -325,11 +351,11 @@ node test/wms-store-test.js  # 15  — desk-record seam, stubbed fetch
 node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
 node test/wms-witness-test.js # 43 — the Witness page: events, transcript, empty-honest
 node test/wms-agent-test.js  # 48  — the Witness page's agent: ask from the record, desk entries
-node test/wms-flow-test.js   # 36  — flow-sliced task views (inbound / outbound)
+node test/wms-flow-test.js   # 42  — flow-sliced task views (inbound / outbound), the practice banner's exit
 node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
 node test/ontology-test.js   # 39  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, no network
 node test/central-agent-test.js # 52 — the central agent: dispatch not relay, three simulated workers, single writer, dormant
-node test/wms-game-test.js   # 28  — Walk the shift: the dealt chain, real putaways, the posted count, undealable buildings
+node test/wms-game-test.js   # 39  — Walk the shift: the dealt chain, the offers, the map's own cells, the voice commands, real putaways, the posted count, undealable buildings
 node test/wms-ui-smoke.js    # 37  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 
