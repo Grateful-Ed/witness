@@ -23,6 +23,24 @@
    what the human meant. The page also has an explicit Ask button and
    an explicit "Add to the record" button.
 
+   LIVE ROUTING (2026-11-04): both paths go through the central
+   agent (js/central-agent.js) first — William took it live. An
+   ask is dispatched by the delegator (receive returns the
+   sub-agent, its composed prompt and its assembled context), the
+   call to Muse Spark carries that prompt and context together
+   with this item's record, and the model's answer is shown
+   VERBATIM — dispatch, not relay: nothing here re-words it. The
+   number/quote check below still runs and is appended as an
+   annotation; it annotates, it does not rewrite. A tell is
+   dispatched to the recorder, and the record the recorder returns
+   is what gets persisted through deskEntry, unchanged in shape;
+   a tell the recorder reads as a TEACHING ("'grip' means …") also
+   teaches the building's vocabulary through the ontology module's
+   learnTerm — the single writer of definitions. If the delegator
+   is unavailable, returns no dispatch, or the routed call fails,
+   the surface falls back to the direct behavior it had before —
+   it is never worse than it was.
+
    The /chat plumbing is converse.js's (CHAT_URL, replyText,
    checkNumbers), reused, not forked. Pure: the caller hands in fetch.
    Loads in the browser (window.WitnessWmsAgent) and in node.
@@ -41,6 +59,11 @@
   var E = lib('WitnessEngine', './engine.js');
   var C = lib('WitnessConverse', './converse.js');
   function WP() { return lib('WitnessWmsWitness', './wms-witness.js'); }
+  /* Resolved lazily, like WP(): in the browser these load after
+     this file, and if they are absent the surface simply runs its
+     direct behavior — the routing is an upgrade, never a gate. */
+  function CA() { return lib('WitnessCentralAgent', './central-agent.js'); }
+  function ON() { return lib('WitnessOntology', './ontology.js'); }
 
   var MAX_TOKENS = 6000;
 
@@ -186,17 +209,52 @@
 
   function fail(code, message) { var e = new Error(code); e.userMessage = message; return e; }
 
-  /* One question, one answer, from this item's record. Tries once; on
-     an empty reply tries once more; then gives up honestly. Resolves
+  /* ---------- ask, routed through the delegator ------------------ */
+
+  /* The delegator's reading of this ask, or null. Any failure here
+     — module absent, state it cannot read, no dispatch — means
+     "run direct", never an error on the page. */
+  function dispatchFor(state, question, from) {
+    try {
+      var ca = CA();
+      if (!ca) return null;
+      var central = ca.createCentralAgent({ state: state });
+      var d = central.receive({ from: from || null, text: question, kind: 'question' });
+      return d && d.agent && d.agent !== 'recorder' ? d : null;
+    } catch (e) { return null; }
+  }
+
+  /* The routed call's messages: the delegator's composed prompt
+     first (it names the sub-agent and carries the standing rules),
+     then this surface's own record law, unedited; the user message
+     carries the context the delegator assembled AND this item's
+     full record, then the question. */
+  function routedMessages(dispatch, question, contextText) {
+    return [
+      { role: 'system', content: dispatch.prompt + '\n' + SYSTEM_PROMPT },
+      { role: 'user', content: 'CONTEXT FROM THE DELEGATOR (dynamic ontology digest, rev ' + dispatch.rev + '):\n' +
+        JSON.stringify(dispatch.context) + '\n\n' + contextText + '\n\nDESK QUESTION: ' + String(question).trim() }
+    ];
+  }
+
+  /* One question, one answer, from this item's record. The first
+     attempt goes out under the delegator's dispatch when one is
+     available; any failure of that routed attempt spends the
+     second attempt on the direct body, exactly as before — two
+     attempts in total, the same honest errors, never worse than
+     the direct path alone. Resolves
      { answer, context, check: { numbers, quotes }, attempts }. */
   function askItem(opts) {
     var question = String(opts.question || '').trim();
     if (!question) return Promise.reject(fail('no-question', 'Type or say a question first.'));
     var ctx = itemContext(opts.state, opts.place, opts.id);
-    var body = JSON.stringify({ messages: itemMessages(question, ctx.text), temperature: 0.1, max_tokens: opts.maxTokens || MAX_TOKENS });
+    var maxTokens = opts.maxTokens || MAX_TOKENS;
+    var directBody = JSON.stringify({ messages: itemMessages(question, ctx.text), temperature: 0.1, max_tokens: maxTokens });
+    var dispatch = dispatchFor(opts.state, question, opts.from);
+    var routedBody = dispatch ? JSON.stringify({ messages: routedMessages(dispatch, question, ctx.text), temperature: 0.1, max_tokens: maxTokens }) : null;
     var doFetch = opts.fetch;
 
-    function attempt(n) {
+    function attempt(n, body) {
       return Promise.resolve().then(function () {
         return doFetch(opts.url || C.CHAT_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body });
       }).then(function (r) {
@@ -209,12 +267,19 @@
       }).then(function (j) {
         var text = C.replyText(j);
         if (text) return { answer: text, attempts: n };
-        if (n < 2) return attempt(n + 1);
+        if (n < 2) return attempt(n + 1, directBody);
         throw fail('empty', 'No answer — the agent came back empty twice. Nothing was guessed. Try a shorter question.');
+      }, function (e) {
+        /* The routed attempt failed (limit, proxy error, no
+           connection): the second attempt is the direct call, so
+           a broken dispatch can never leave the page unanswered
+           where the old path would have answered. */
+        if (n === 1 && routedBody && body === routedBody) return attempt(2, directBody);
+        throw e;
       });
     }
 
-    return attempt(1).then(function (res) {
+    return attempt(1, routedBody || directBody).then(function (res) {
       return { answer: res.answer, attempts: res.attempts, context: ctx.text,
         check: { numbers: C.checkNumbers(res.answer, ctx.text), quotes: checkQuotes(res.answer, ctx.text) } };
     });
@@ -251,6 +316,26 @@
     var decision = opts.decision === undefined ? intentOf(words) === 'decision' : !!opts.decision;
     var source = opts.source === 'voice' ? 'voice' : 'typed';
     var name = who(state, by) || 'the desk (not said who)';
+    /* The tell is dispatched to the central agent's recorder
+       first. What persists below is the record the recorder
+       returns — the speaker's own words, unchanged. When the
+       recorder reads the tell as a teaching, its record also
+       carries the lesson, and persisting applies it to the
+       building's vocabulary through the ontology module (the
+       single writer). Any failure in this routing leaves the
+       direct behavior exactly as it was. */
+    var taught = null;
+    try {
+      var ca = CA();
+      if (ca) {
+        var central = ca.createCentralAgent({ state: state });
+        var dsp = central.receive({ from: name, text: words, kind: 'tell' });
+        if (dsp && dsp.agent === 'recorder') {
+          var rsp = ca.SUB_AGENTS.recorder.respond(dsp);
+          if (rsp && rsp.record && rsp.record.kind === 'teach') taught = rsp.record;
+        }
+      }
+    } catch (e) { taught = null; }
     var r = {
       ts: opts.ts || new Date().toISOString(),
       kind: 'desk',
@@ -263,7 +348,14 @@
     };
     state.records = state.records || [];
     state.records.push(r);
-    return { ok: true, record: r, decision: decision, title: s.title };
+    if (taught) {
+      try {
+        var on = ON();
+        var learned = on ? on.learnTerm(state, { term: taught.term, means: taught.means, from: name, at: r.ts }) : null;
+        if (learned && learned.vocabulary) state.vocabulary = learned.vocabulary;
+      } catch (e) { /* the desk entry stands; the word is in the record either way */ }
+    }
+    return { ok: true, record: r, decision: decision, title: s.title, teach: taught };
   }
 
   /* ---------- the chair ------------------------------------------------ */
@@ -331,6 +423,7 @@
     intentOf: intentOf,
     itemContext: itemContext,
     itemMessages: itemMessages,
+    routedMessages: routedMessages,
     checkQuotes: checkQuotes,
     askItem: askItem,
     deskEntry: deskEntry,

@@ -30,20 +30,29 @@
    digest deterministically. A test scans this file's source.
 
    Loads in the browser (window.WitnessCentralAgent) and in node.
-   Imported by nothing: its only consumers are its tests and docs.
+   Imported by js/wms-agent.js — the Witness page's agent, its one
+   live surface (see THE FLAG below) — and by its tests.
    ===================================================================== */
 (function (root) {
   'use strict';
 
-  /* THE FLAG. Live routing stays OFF until there is a real
-     multi-user deployment. Today there is no multi-user glasses
-     traffic to route, and an always-on proactive loop would spend
-     API credits for no demo benefit. So this module is implemented
-     and proven by tests with simulated workers (test/central-agent-
-     test.js), and it is not wired into any live surface: no page and
-     no existing JS file loads it. Turning this on is a deployment
-     decision for William, not a code change hidden somewhere else. */
-  var CENTRAL_AGENT_LIVE = false;
+  /* THE FLAG. Live — William's call, 2026-11-04: the competition
+     is about showing the AI, so the delegator is wired into the
+     one live agent surface there is, the Witness page's agent
+     (js/wms-agent.js). That surface routes every ask and every
+     tell through receive() first: an ask goes out under the
+     delegator's composed prompt and assembled context, and the
+     model's answer reaches the user unedited — dispatch, not
+     relay, on the live wire too. A tell reaches the recorder here,
+     and the surface persists the record the recorder returns.
+     If no dispatch comes back, or the routed call fails, the
+     surface falls back to its own direct behavior, so the page is
+     never worse than it was before this was switched on. The
+     sub-agents in this module still answer deterministically from
+     the digest (that is what this module's tests exercise); the
+     flag says the DELEGATOR is in the live path, which is the
+     part that was waiting on a deployment decision. */
+  var CENTRAL_AGENT_LIVE = true;
 
   var O = (typeof module !== 'undefined' && module.exports && typeof require === 'function')
     ? require('./ontology.js')
@@ -173,6 +182,11 @@
     var base = { asOf: digest.asOf };
     var who = personOf(digest, from);
     if (job.agent === 'recorder') { base.person = who; return base; }
+    /* Every ask carries the building's vocabulary — the words the
+       workers taught, with their meanings — so the sub-agent (or
+       the model answering under its prompt) speaks the building's
+       language instead of guessing at it. */
+    base.vocabulary = digest.vocabulary || [];
 
     if (job.intent === 'contents' || job.intent === 'place') {
       var p = find(digest.places, function (x) { return x.kind === job.subject.kind && x.id === job.subject.id; });
@@ -223,6 +237,17 @@
     return (digest.tasks || []).map(function (t) { var c = clone(t); c.zone = zoneOf[t.id] || null; return c; });
   }
 
+  /* The standing rules every ASK prompt carries, in William's
+     words in substance (2026-11-04): the building's vocabulary is
+     in the context; a word the answerer doesn't know is ASKED
+     about, never guessed at; and topicality is the answerer's own
+     judgment — there is deliberately no code-side topic screen
+     anywhere in this module or its callers. */
+  var ASK_RULES =
+    '\nThe building\'s vocabulary is in your context (context.vocabulary): words the workers here use, with the meanings they taught. ' +
+    'If the user uses a word you don\'t know and it isn\'t in the vocabulary or the record, ask them what it means — never guess a meaning. If they teach you a word, use it.' +
+    '\nYou are a warehouse-work assistant. If a request isn\'t related to the warehouse or its work, decline in your own voice — "Sorry, this request isn\'t related to warehouse process." — and leave it there. That judgment is yours, made from the request itself.';
+
   function composePrompt(job, from, rev) {
     var ask;
     switch (job.intent) {
@@ -236,7 +261,8 @@
       default: ask = 'take this statement for the record, in the speaker\'s own words';
     }
     return 'You are the ' + job.agent + ' sub-agent. Answer ' + (from || 'the worker') + ' directly: ' + ask +
-      '. Use only the context given (digest rev ' + rev + '). You read; you never write.';
+      '. Use only the context given (digest rev ' + rev + '). You read; you never write.' +
+      (job.agent === 'recorder' ? '' : ASK_RULES);
   }
 
   /* ---------- the sub-agents: pure functions over a frozen slice -- */
@@ -367,10 +393,49 @@
     }
   };
 
+  /* ---------- teaching: when a tell is a definition -------------- */
+  /* William's slang law (2026-11-04): the ontology learns the
+     building's words from the workers who use them. A tell is a
+     TEACHING only in tight, quoted forms — the term is always in
+     quotes, so an ordinary tell that merely contains the word
+     "means" is never misread as a definition:
+       '<term>' means <definition>
+       <the thing described> — that's called '<term>'
+     In the second form the description the speaker just gave IS
+     the meaning. teachOf returns { term, means } or null. */
+  var QC = '"\'‘’“”'; /* the quote characters a taught term may be wrapped in */
+  var TEACH_MEANS = new RegExp('[' + QC + ']([^' + QC + ']{1,60})[' + QC + ']\\s+means\\s+(.+)', 'i');
+  var TEACH_CALLED = new RegExp('\\b(?:that\'s|it\'s|this is) called\\s+[' + QC + ']([^' + QC + ']{1,60})[' + QC + ']', 'i');
+  function cleanMeans(s) {
+    return String(s || '').replace(/^[\s:;—–-]+/, '').replace(/[\s.,]+$/, '').trim();
+  }
+  function teachOf(text) {
+    var t = String(text || '').trim();
+    var m = TEACH_MEANS.exec(t);
+    if (m) {
+      var means1 = cleanMeans(m[2]);
+      if (means1) return { term: m[1].trim(), means: means1 };
+    }
+    m = TEACH_CALLED.exec(t);
+    if (m) {
+      var rest = cleanMeans(t.slice(0, m.index)) || cleanMeans(t.slice(m.index + m[0].length));
+      if (rest) return { term: m[1].trim(), means: rest };
+    }
+    return null;
+  }
+
   var recorder = {
     name: 'recorder',
     respond: function (dispatch) {
       var entry = { from: dispatch.from, text: dispatch.text, at: dispatch.at };
+      /* A teaching tell's record carries the lesson with it. The
+         caller, when it persists this record, also hands it to the
+         ontology module's learnTerm — the single writer of
+         definitions. This module still writes nothing itself. */
+      var taught = teachOf(dispatch.text);
+      if (taught) {
+        entry = { kind: 'teach', term: taught.term, means: taught.means, from: dispatch.from, text: dispatch.text, at: dispatch.at };
+      }
       return {
         answer: 'Noted for the record, in your words: "' + dispatch.text + '"',
         facts: [],

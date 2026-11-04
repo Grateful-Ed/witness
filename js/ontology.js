@@ -21,10 +21,27 @@
        including the prep queue. applyChange only preserves the
        order notes were first seen in; it never invents a note,
        and never keeps one the state itself no longer produces.
+       One disclosed exception, by William's slang law (below):
+       the applyChange that first sees the vocabulary grow also
+       emits one transient prep note announcing the new word. A
+       fresh rebuild does not carry it — it is an announcement,
+       not a standing condition.
+
+   The building's slang (Brief C, William 2026-11-04): warehouse
+   workers talk in their own words, and the ontology learns them.
+   Learned definitions live in state.vocabulary as
+   { term: { means, about?, taughtBy, at } }, created lazily by
+   learnTerm — the seed carries no vocabulary key, and no other
+   code writes one: this module is the single writer of
+   definitions. learnTerm is pure like everything here: it
+   returns a NEW state and leaves its input untouched; the caller
+   applies the returned vocabulary to its working state. The
+   digest carries the vocabulary as a plain list
+   ({ term, means, taughtBy }) so anything answering for the
+   building can be handed the words the workers taught it.
 
    Loads in the browser (window.WitnessOntology) and in node.
-   ===================================================================== */
-(function (root) {
+   ===================================================================== */(function (root) {
   'use strict';
 
   /* ---------- small pure helpers ---------------------------------- */
@@ -148,6 +165,37 @@
     return (state.labor || []).map(function (u) {
       return { name: u.name, role: u.role || null, zone: u.zone || null, currentTask: u.currentTaskId || null };
     });
+  }
+
+  /* The building's learned slang, as a plain list for the digest.
+     Reads state.vocabulary defensively: a state that predates the
+     vocabulary (the seed included) simply has none. */
+  function vocabularyOf(state) {
+    var v = (state && state.vocabulary) || {};
+    return Object.keys(v).sort().map(function (term) {
+      var e = v[term] || {};
+      return { term: term, means: e.means || null, taughtBy: e.taughtBy || null };
+    });
+  }
+
+  /* The single writer of definitions. Pure: returns a NEW state
+     with the word learned, the input untouched. The vocabulary is
+     created lazily — a state with nothing taught yet has no
+     vocabulary key, so the seed's shape never moves. A term or a
+     meaning that isn't there teaches nothing: the input state
+     comes back as it was. opts: { term, means, about?, from, at }. */
+  function learnTerm(state, t) {
+    var term = String((t && t.term) || '').trim();
+    var means = String((t && t.means) || '').trim();
+    if (!term || !means || !state) return state;
+    var next = JSON.parse(JSON.stringify(state));
+    next.vocabulary = next.vocabulary || {};
+    var entry = { means: means };
+    if (t.about) entry.about = t.about;
+    entry.taughtBy = t.from || null;
+    entry.at = t.at || null;
+    next.vocabulary[term] = entry;
+    return next;
   }
 
   /* The same urgency set the map flags derive from (js/wms-map.js
@@ -288,6 +336,7 @@
       tasks: tasksOf(state),
       people: peopleOf(state),
       needsEyes: needsEyesOf(state),
+      vocabulary: vocabularyOf(state),
       prep: prepOf(state)
     };
   }
@@ -297,7 +346,11 @@
   /* The incremental path: re-derive from the new state, keeping
      the prep queue in the order its notes were first seen. The
      content is exactly buildDigest(state)'s — order of the prep
-     queue is the only thing carried over. */
+     queue is the only thing carried over — plus one transient
+     exception: when the vocabulary has grown since the previous
+     digest, this call (and only this call) appends one prep note
+     per new word, announcing it. The next applyChange on the same
+     state does not repeat it: the word is known by then. */
   function applyChange(state, prev) {
     var next = buildDigest(state);
     if (!prev || !Array.isArray(prev.prep)) return next;
@@ -310,10 +363,22 @@
     });
     next.prep.forEach(function (n) { if (fresh[noteKey(n)]) merged.push(n); });
     next.prep = merged;
+    var known = {};
+    (prev.vocabulary || []).forEach(function (v) { known[v.term] = true; });
+    next.vocabulary.forEach(function (v) {
+      if (known[v.term]) return;
+      var forName = managerName(state) || v.taughtBy;
+      if (!forName) return;
+      next.prep.push({
+        'for': forName, about: v.term,
+        note: "New word in the building's vocabulary: '" + v.term + "' — taught by " + (v.taughtBy || 'not said who'),
+        fromChange: "Vocabulary learned '" + v.term + "'"
+      });
+    });
     return next;
   }
 
-  var api = { buildDigest: buildDigest, applyChange: applyChange };
+  var api = { buildDigest: buildDigest, applyChange: applyChange, learnTerm: learnTerm, vocabularyOf: vocabularyOf };
   root.WitnessOntology = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

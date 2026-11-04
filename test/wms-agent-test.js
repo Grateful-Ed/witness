@@ -3,12 +3,16 @@
    Task 3). Played against the real WMS layer: a truck is received by
    voice with damage, the damaged pallet is held, a worker flags it.
    Then the desk (Sam, the manager) asks and tells on the pallet's
-   page. Proves: ask vs tell is decided locally; the agent is sent
-   ONLY this item's record and answers from it, checked; asking saves
-   nothing; a typed and a spoken desk update land in the transcript as
-   desk entries with the person's name; a decision stated at the desk
-   is an event decided by that person and moves nothing in the
-   building; desk entries follow the item to the pages that hold it.
+   page. Proves: ask vs tell is decided locally; asks are dispatched
+   through the central agent (the delegator's prompt and context go
+   out, the model's answer comes back verbatim, a failed routed
+   attempt falls back to the direct call) and the answer is checked
+   against the record; asking saves nothing; a typed and a spoken
+   desk update land in the transcript as desk entries with the
+   person's name; a decision stated at the desk is an event decided
+   by that person and moves nothing in the building; desk entries
+   follow the item to the pages that hold it; and a teaching tell
+   ("'x' means …") lands in the building's vocabulary, attributed.
    Run: node test/wms-agent-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -17,6 +21,7 @@ var W = require('../js/wms.js');
 var C = require('../js/converse.js');
 var P = require('../js/wms-witness.js');
 var A = require('../js/wms-agent.js');
+var O = require('../js/ontology.js');
 
 var failures = 0, passes = 0;
 function check(name, cond) { console.log((cond ? 'PASS' : 'FAIL') + '  ' + name); if (cond) passes++; else failures++; }
@@ -81,9 +86,13 @@ function sansRecords(st) { var x = JSON.parse(JSON.stringify(st)); delete x.reco
   var res = await A.askItem({ state: s, place: 'pallet', id: dmg.id, question: 'Why is this flagged?', fetch: f });
   var sent = f.calls[0];
   check('asks through the Worker /chat (converse plumbing)', f.calls.length === 1 && sent.url === C.CHAT_URL);
-  check('sends the agent prompt, bound to this record only', sent.body.messages[0].content === A.SYSTEM_PROMPT && /ONLY from the ITEM RECORD/.test(A.SYSTEM_PROMPT));
-  check('sends this item\'s record and the question, nothing else', sent.body.messages.length === 2 &&
-    sent.body.messages[1].content === ctx.text + '\n\nDESK QUESTION: Why is this flagged?');
+  check('the ask is dispatched: the system prompt is the delegator\'s, with this surface\'s record law appended unedited',
+    /^You are the (locator|status|planner) sub-agent\./.test(sent.body.messages[0].content) &&
+    sent.body.messages[0].content.slice(-A.SYSTEM_PROMPT.length) === A.SYSTEM_PROMPT && /ONLY from the ITEM RECORD/.test(A.SYSTEM_PROMPT));
+  check('sends the delegator\'s assembled context AND this item\'s record and the question', sent.body.messages.length === 2 &&
+    sent.body.messages[1].content.indexOf('CONTEXT FROM THE DELEGATOR') === 0 &&
+    sent.body.messages[1].content.indexOf(ctx.text) !== -1 &&
+    /DESK QUESTION: Why is this flagged\?$/.test(sent.body.messages[1].content));
   check('returns the agent\'s answer', /^Flagged at receipt/.test(res.answer) && res.attempts === 1);
   check('quotes are checked: a real quote is found, an invented one is not', res.check.quotes.found.indexOf('one sixteen cases, four crushed') !== -1 && res.check.quotes.missing.indexOf('ship it') !== -1);
   check('numbers are checked against the record', res.check.numbers.found.indexOf(4) !== -1);
@@ -101,6 +110,27 @@ function sansRecords(st) { var x = JSON.parse(JSON.stringify(st)); delete x.reco
   check('no connection is said plainly', err && /could not be reached/.test(err.userMessage));
   err = await A.askItem({ state: s, place: 'pallet', id: dmg.id, question: '  ', fetch: stub([reply('x')]) }).then(function () { return null; }, function (e) { return e; });
   check('an empty question is refused before any call', err && /first/.test(err.userMessage));
+
+  /* ---------- ask, routed: verbatim out, honest fallback ---------- */
+  var fR = stub([reply('Verbatim from the model — **markdown** and all, 9 cases.')]);
+  var resR = await A.askItem({ state: s, place: 'pallet', id: dmg.id, question: 'Why is this flagged?', from: 'Sam Whitaker', fetch: fR });
+  check('the routed answer reaches the desk verbatim (nothing re-words it on the way)',
+    resR.answer === 'Verbatim from the model — **markdown** and all, 9 cases.' && fR.calls.length === 1 && resR.attempts === 1);
+  check('the dispatch prompt answers the asker by name', /Answer Sam Whitaker directly/.test(fR.calls[0].body.messages[0].content));
+  check('the routed context carries the building\'s vocabulary', /"vocabulary":\[\]/.test(fR.calls[0].body.messages[1].content));
+  check('the fact-check annotation still runs on a routed answer', resR.check.numbers.missing.indexOf(9) !== -1);
+  var bodies = [];
+  var fF = function (url, init) {
+    bodies.push(JSON.parse(init.body));
+    if (bodies.length === 1) return Promise.reject(new Error('offline'));
+    return Promise.resolve(reply('Direct path answer.'));
+  };
+  var resF = await A.askItem({ state: s, place: 'pallet', id: dmg.id, question: 'Why is this flagged?', fetch: fF });
+  check('a failed routed attempt falls back to the direct call and still answers',
+    resF.answer === 'Direct path answer.' && resF.attempts === 2 && bodies.length === 2);
+  check('the fallback call is the direct one (the plain record prompt, nothing else)',
+    bodies[0].messages[0].content !== A.SYSTEM_PROMPT && bodies[1].messages[0].content === A.SYSTEM_PROMPT &&
+    bodies[1].messages[1].content === ctx.text + '\n\nDESK QUESTION: Why is this flagged?');
 
   /* ---------- tell: a typed desk update joins the record ---------- */
   var nRec = s.records.length;
@@ -157,6 +187,26 @@ function sansRecords(st) { var x = JSON.parse(JSON.stringify(st)); delete x.reco
   check('an item not in the record is refused', !A.deskEntry(s, 'pallet', 'STG-999', { by: 'u-sam', words: 'hello' }).ok && s.records.length === n2);
   var anon = A.deskEntry(JSON.parse(JSON.stringify(s)), 'bin', 'C-08', { by: 'nobody', words: 'wet floor' });
   check('an unknown speaker is not invented: "not said who"', anon.ok && anon.record.by === null && /the desk \(not said who\)/.test(anon.record.text));
+
+  /* ---------- tell: a teaching lands in the building's vocabulary - */
+  var ts = W.seed();
+  var nT = ts.records.length;
+  var taughtTell = "'sweating' means condensation wet on the bottom bags";
+  var tt = A.deskEntry(ts, 'bin', 'C-08', { by: 'u-rosa', words: taughtTell, source: 'voice' });
+  check('a teaching tell still joins the record as the teacher\'s own words', tt.ok && ts.records.length === nT + 1 &&
+    ts.records[nT].words === taughtTell && ts.records[nT].by === 'u-rosa');
+  check('the recorder\'s lesson comes back on the result', !!tt.teach && tt.teach.kind === 'teach' &&
+    tt.teach.term === 'sweating' && tt.teach.means === 'condensation wet on the bottom bags');
+  check('persisting applied the lesson: the vocabulary holds it, taught by Rosa Flores',
+    !!ts.vocabulary && ts.vocabulary.sweating.means === 'condensation wet on the bottom bags' &&
+    ts.vocabulary.sweating.taughtBy === 'Rosa Flores' && !!ts.vocabulary.sweating.at);
+  check('the ontology digest now lists the word for the next dispatch', (function () {
+    var v = O.buildDigest(ts).vocabulary;
+    return v.length === 1 && v[0].term === 'sweating' && v[0].taughtBy === 'Rosa Flores';
+  })());
+  var plain = A.deskEntry(ts, 'bin', 'C-08', { by: 'u-rosa', words: 'This means the truck waits at the door', source: 'voice' });
+  check('an ordinary tell teaches nothing (the word "means" alone is not a lesson)',
+    plain.ok && !plain.teach && Object.keys(ts.vocabulary).length === 1);
 
   /* ---------- the chair ---------- */
   var sub = P.subject(s, 'bin', pa.toBinId);

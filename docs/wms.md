@@ -201,12 +201,16 @@ reader: every place (doors, zones, bins, pallets) with its status
 and contents, the shipments and orders and where each sits in its
 flow, the open tasks with their destinations and hands, the people,
 a `needsEyes` list (the same urgency set the map flags derive
-from), and a prep queue. It is derived data only — `buildDigest`
-reads state and returns a plain JSON object; nothing is written
-back. `applyChange(state, previousDigest)` is the incremental
-path: it re-derives the digest and keeps the prep queue in
-first-seen order; its content always equals a fresh rebuild of
-the same state (a test proves this across real mutations).
+from), the building's learned vocabulary (see *The building's
+slang*, below), and a prep queue. It is derived data only —
+`buildDigest` reads state and returns a plain JSON object; nothing
+is written back. `applyChange(state, previousDigest)` is the
+incremental path: it re-derives the digest and keeps the prep queue
+in first-seen order; its content equals a fresh rebuild of the same
+state (a test proves this across real mutations), with one
+disclosed exception: the call that first sees the vocabulary grow
+also appends a one-time announcement note (below), which a rebuild
+does not carry.
 
 It costs nothing to keep current. The digest updates when the
 state changes — mutations already flow through the store — and the
@@ -265,7 +269,10 @@ calls — the same input always gives the same answer):
   returns a record entry `{ from, text, at }` in the speaker's own
   words. The **caller** persists it through the existing store
   paths. The central agent itself saves nothing and changes no
-  state, anywhere.
+  state, anywhere. A tell in one of the tight quoted teaching
+  forms ("'<term>' means …", "… that's called '<term>'") is a
+  *teaching*: its record carries `{ kind: 'teach', term, means,
+  from, text, at }`, and the caller teaches the ontology (below).
 
 **What is implemented and test-proven** (`test/central-agent-test.js`).
 Three seed workers — Marcus Reed, Tommy Nguyen, Priya Shah — send
@@ -281,18 +288,99 @@ answers, all at the same digest revision; a sub-agent that tries
 to write to its context is refused and the digest is unchanged;
 tells come back as record entries and change nothing; after a real
 state change the delegator refreshes and the next answer reflects
-it.
+it. The same suite now also proves the slang loop at this layer:
+the vocabulary rides in ask context, the ask-don't-guess and
+topicality rules ride in ask prompts, and the recorder classifies
+the quoted teaching forms while leaving ordinary "means" tells
+alone. The live surface's side — dispatch out, verbatim answer
+back, fallback, teaching persisted — is proven with stubbed calls
+in `test/wms-agent-test.js`, and the ontology's side in
+`test/ontology-test.js`.
 
-**What "dormant" means here, exactly.** The module starts with
-`CENTRAL_AGENT_LIVE = false`, with the reason written beside it.
-It is **not wired into any live surface**: no page, no existing JS
-file and no Worker file loads it (a test scans the repo to prove
-it). It makes no network calls and starts no timers (a test scans
-its source). Why off: there is no multi-user glasses traffic to
-route yet, and an always-on proactive loop would spend API credits
-for no demo benefit. The architecture is real and runs in the
-tests; turning it on is a deployment decision, made when there is
-a real multi-user floor to serve.
+**Live on the Witness page (William's call, 2026-11-04).** The
+module's flag reads `CENTRAL_AGENT_LIVE = true`, with the reasoning
+written beside it, and exactly one file loads the module —
+`js/wms-agent.js`, the agent in the Witness page's chair (a test
+scans the repo to prove the importer list is exactly that one).
+The wiring, in that surface:
+
+- **Asks.** The surface calls `receive()` first. The call to Muse
+  Spark then carries the dispatch's composed prompt (the sub-agent
+  named, the standing rules below) with this surface's own record
+  law appended unedited, and a user message holding the context
+  the delegator assembled plus the item's full record. The model's
+  answer is displayed **verbatim** — the delegator never sees it
+  and nothing re-words it; dispatch, not relay, on the live wire
+  too. The surface's existing number/quote check still runs over
+  the answer and is appended as an annotation beneath it — an
+  annotation, not a rewrite.
+- **Tells.** The tell is dispatched to the recorder, and the
+  record the recorder returns is what the surface persists through
+  its existing desk-entry path, unchanged in shape. A teaching
+  record also teaches the vocabulary (next section).
+- **Fallback.** If the delegator is unavailable, returns no
+  dispatch, or the routed call fails, the surface spends its
+  second attempt on the direct call it made before this was wired
+  — two attempts in total, the same honest errors. The page is
+  never worse than it was with the agent dormant.
+
+The module itself still makes no network calls and starts no
+timers (a test scans its source): on the live surface the caller
+makes the one model call, with the fetch it already had. What
+remains a deployment question is scope, not wiring: today the one
+live surface is the desk's Witness page; the glasses remain
+endpoints whose routing can be pointed at the same delegator when
+there is a real multi-user floor to serve.
+
+**The standing rules in every ask prompt** (William, 2026-11-04).
+The delegator's prompt builder appends them to every ask dispatch,
+and the dispatch context for an ask carries the building's current
+vocabulary:
+
+- The vocabulary is in the context — words the workers use, with
+  the meanings they taught. **If the user uses a word you don't
+  know and it isn't in the vocabulary or the record, ask them what
+  it means — never guess a meaning. If they teach you a word, use
+  it.**
+- Topicality is the answerer's own judgment: a request that isn't
+  related to the warehouse or its work is declined in the
+  answerer's own voice ("Sorry, this request isn't related to
+  warehouse process."). There is no code-side topic screen,
+  anywhere — the model decides, per request.
+
+## The building's slang — the ontology learns words (Brief C)
+
+Warehouse workers talk in their own way, and a system built around
+the worker learns the worker's language instead of making the
+worker learn its. Definitions live in warehouse state as
+`state.vocabulary = { term: { means, about?, taughtBy, at } }` —
+created lazily by the first lesson (the seed carries no vocabulary
+key, so the seeded world's shape never moves) and written by
+exactly one writer: `learnTerm(state, { term, means, about, from,
+at })` in js/ontology.js, a pure function that returns a new state.
+
+The loop:
+
+1. Somebody tells the agent a word, in a quoted teaching form:
+   *"'sweating' means condensation wet on the bottom bags"* — or
+   *"When condensation wets the bottom bags, that's called
+   'sweating'."* The recorder classifies the tell as a teaching
+   (the term must be quoted, so an ordinary tell that merely
+   contains the word "means" is never misread).
+2. The caller persists the tell as a record, as always — and also
+   applies `learnTerm`, attributing the definition to who taught
+   it. The worker's answer is a tell and is what gets saved; the
+   question that prompted it is not.
+3. The digest gains the word in its `vocabulary` section
+   (`{ term, means, taughtBy }`), the delegator's next `applyChange`
+   emits one prep note announcing it — *"New word in the building's
+   vocabulary: 'sweating' — taught by Rosa Flores"* — and every
+   later ask dispatch carries the vocabulary in its context.
+4. And when the AI meets a word it doesn't know — in nobody's
+   vocabulary and nowhere in the record — it **asks the worker**
+   rather than assuming (the prompt rule above). A guessed
+   definition would poison every later dispatch; an asked one
+   becomes the next lesson.
 
 ## Walk the shift — the game (js/wms-game.js)
 
@@ -350,11 +438,11 @@ node test/wms-ai-test.js     # 20  — Meta API calls, stubbed /chat
 node test/wms-store-test.js  # 15  — desk-record seam, stubbed fetch
 node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
 node test/wms-witness-test.js # 43 — the Witness page: events, transcript, empty-honest
-node test/wms-agent-test.js  # 48  — the Witness page's agent: ask from the record, desk entries
+node test/wms-agent-test.js  # 59  — the Witness page's agent: ask dispatched through the central agent (verbatim out, fallback), desk entries, teachings learned
 node test/wms-flow-test.js   # 42  — flow-sliced task views (inbound / outbound), the practice banner's exit
 node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
-node test/ontology-test.js   # 39  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, no network
-node test/central-agent-test.js # 52 — the central agent: dispatch not relay, three simulated workers, single writer, dormant
+node test/ontology-test.js   # 48  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, vocabulary/learnTerm, no network
+node test/central-agent-test.js # 61 — the central agent: dispatch not relay, three simulated workers, single writer, LIVE (the agent surface its one importer), slang in context and prompts
 node test/wms-game-test.js   # 39  — Walk the shift: the dealt chain, the offers, the map's own cells, the voice commands, real putaways, the posted count, undealable buildings
 node test/wms-ui-smoke.js    # 37  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
