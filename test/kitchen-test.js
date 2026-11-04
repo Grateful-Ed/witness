@@ -68,7 +68,11 @@ var sw = W.checkWorld(E.seedWorld(), 'kitchen');
 check('dispatch: a warehouse state on a kitchen page is not used', sw.state === null && sw.switched === true);
 check('dispatch: and the switch is said in plain words', /Switched to the kitchen world/.test(sw.notice) && /warehouse/.test(sw.notice));
 var same = W.checkWorld(k, 'kitchen');
-check('dispatch: the same world keeps its state, no notice', same.state === k && !same.notice);
+check('dispatch: the kitchen starts fresh on every open, even over its own saved state (William 2026-11-04)', same.state === null && same.switched === true);
+check('dispatch: and the fresh start is said in plain words', /Fresh kitchen/.test(same.notice) && /starts clean every time it opens/.test(same.notice));
+var wstate = E.seedWorld();
+var wsame = W.checkWorld(wstate, 'warehouse');
+check('dispatch: the warehouse still keeps its state, no notice', wsame.state === wstate && !wsame.notice);
 check('dispatch: nothing saved yet is not a switch', W.checkWorld(null, 'kitchen').switched === false);
 
 /* --- spots by rule ---------------------------------------------------- */
