@@ -19,6 +19,7 @@
   var Mic = window.WitnessMic;
   var WP = window.WitnessWmsWitness;
   var AG = window.WitnessWmsAgent;
+  var G = window.WmsGame;
 
   var params = new URLSearchParams(location.search);
   var state = null;
@@ -400,6 +401,9 @@
   /* ---- Receiving ---- */
   VIEWS.receiving = function () {
     var html = head('Inbound › Receiving', 'Receiving', 'Door appointments and check-in, then receive against the BOL already in the system. Speak the count or type it; a human posts the receipt. Every shortage, overage and damage becomes an OS&D finding, quoted in the receiver\'s own words.');
+    /* Walk the shift (js/wms-game.js): the game panel tops this view
+       only. Practice copies play; the live record gets the signpost. */
+    if (G) html += G.panelHtml(panel, state, store.practice());
     var rows = state.inbound.map(function (s) {
       var st = W.inboundStatus(state, s);
       var sel = ui.rcvShip === s.id;
@@ -890,6 +894,9 @@
     var agLog = document.querySelector('.ag-log');
     if (agLog) agLog.scrollTop = agLog.scrollHeight; /* the newest turn in view */
     wireMics(cur);
+    /* Walk the shift: hand the game its capabilities and let it
+       (re)place the worker circle on the Receiving slice. */
+    if (G) G.afterRender({ act: act, state: state, practice: store.practice(), base: base, render: render });
   }
 
   /* ---------- folding panels (design 2026-11-03) --------------------
@@ -1103,6 +1110,10 @@
     refresh: function () { reload(true).then(function () { toast('Read the desk record again.'); }); },
     print: function () { window.print(); },
     checkin: function (el) { act(function (s) { return W.checkIn(s, el.dataset.id, me); }, 'Checked in — the trailer is at its door and ready to receive.'); },
+    'game-start': function () { if (G) G.ui('start'); },
+    'game-doit': function () { if (G) G.ui('doit'); },
+    'game-auto': function () { if (G) G.ui('auto'); },
+    'game-confirm': function () { if (G) G.ui('confirm'); },
     schedule: function () {
       act(function (s) { return W.schedule(s, { shipmentId: val('apShip'), door: val('apDoor'), day: val('apDay'), start: val('apStart'), end: val('apEnd'), trailer: val('apTrailer') }, me); }, 'Appointment saved.');
     },
@@ -1244,6 +1255,10 @@
     /* A flag is its own link to its own item's Witness page (Task 4). */
     if (e.target.closest('.wmap [data-flag]')) return;
     if (openItem(e.target.closest('.wmap [data-open]'))) { e.preventDefault(); return; }
+    /* Walk the shift: a click on the game's target cell in the
+       Receiving slice works the current task. Slice cells carry no
+       other click behavior (their open hooks are stripped). */
+    if (G && G.cellClick(e.target)) { e.preventDefault(); return; }
     var el = e.target.closest('[data-act]');
     if (!el) return;
     var fn = ACTIONS[el.dataset.act];

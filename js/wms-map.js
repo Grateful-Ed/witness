@@ -287,9 +287,10 @@
        outbound (pick → stage → load):      Bay Locations → Staging → Outbound Docks
 
      Only bins with a reason to be there are drawn (William's bin
-     law): inbound, a putaway destination or a hold; outbound, a pick
-     source or a hold. The page's own panels ride under the stage
-     they concern (anchors), so every existing action stays as it was. */
+     law): inbound, a putaway destination, an open count, or a hold;
+     outbound, a pick source or a hold. The page's own panels ride
+     under the stage they concern (anchors), so every existing action
+     stays as it was. */
 
   var FLOW = {
     'in': [
@@ -311,6 +312,7 @@
     (state.tasks || []).forEach(function (t) {
       if (t.status === 'done') return;
       if (dir === 'in' && t.type === 'putaway') add(t.toBinId, 'Put away here');
+      if (dir === 'in' && t.type === 'count') add(t.binId, 'Count here');
       if (dir === 'out' && t.type === 'pick') add(t.binId, 'Pick from here');
     });
     (state.bins || []).forEach(function (b) { if (b.status === 'hold') add(b.id, 'On hold'); });

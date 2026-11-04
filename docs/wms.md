@@ -227,6 +227,28 @@ Read it in the console on the **Ontology** page (Control, after
 Audit Trail): Needs eyes and the Prep queue first, then Places,
 Open tasks and People, counts ahead of detail.
 
+## Walk the shift — the game (js/wms-game.js)
+
+The Receiving view carries a small game, so a person opening the
+WMS has something to actually do in it. A circle marked YOU is the
+worker on the Receiving slice. Five tasks are dealt from the state
+as it stands — check in at the dock where a shipment sits, bring
+its pallet into the Receiving Bay, put that pallet away, put a
+second pallet away, then spot-count the first bin. Destination
+bins are scanned from the state's empty bins at deal time, and
+both putaways are the console's own tasks, directed to those bins
+and completed through the same WMS calls the Putaway screen uses;
+the spot count is a real cycle count, queued and posted the same
+way. Every step lands on the record as it happens — the map, the
+tables and the audit trail move with the circle. Clicking the
+glowing place works the task; every task also has its button, and
+Auto-run works the whole shift hands-free at about a second a leg.
+
+**Practice copies only.** The game can run solely on a practice
+copy (?practice=1), whose state is never saved anywhere. On the
+live desk record the panel says so and links to a practice copy —
+the dealt tasks can never touch the real record.
+
 ## Tests
 
 ```
@@ -239,6 +261,7 @@ node test/wms-agent-test.js  # 48  — the Witness page's agent: ask from the re
 node test/wms-flow-test.js   # 36  — flow-sliced task views (inbound / outbound)
 node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
 node test/ontology-test.js   # 39  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, no network
+node test/wms-game-test.js   # 28  — Walk the shift: the dealt chain, real putaways, the posted count, undealable buildings
 node test/wms-ui-smoke.js    # 37  — real browser (Playwright), stubbed Worker; skips without Playwright
 ```
 
