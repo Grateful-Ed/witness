@@ -292,6 +292,32 @@ check('flag: empty words refused', !W.flag(s, { unitId: 'u-rosa', words: '  ' })
 r = W.closeFlag(s, s.wms.flags[0].id, 'u-sam', 'Cleaned up');
 check('flag: closes with a note; dashboard counts open flags', r.ok && W.dashboard(s).flagsOpen === 3);
 
+/* A flag's zone is where the words say the problem is (then the
+   task in hand, then the reporter's zone). Own state, so the counts
+   above and the summary below are unchanged. */
+var fz = fresh(), fr;
+fr = W.flag(fz, { unitId: 'u-marcus', words: 'Forklift is leaking oil by B-03' });
+check('flag zone: a taskless Zone A worker names B-03 → zone B', fr.ok && fr.flag.taskId === null && fr.flag.zone === 'B');
+fr = W.flag(fz, { unitId: 'u-marcus', words: 'Wrap is torn on STG-5' });
+check('flag zone: a pallet named → its door\'s zone (STG-5 at Inbound Door 5 → B)', fr.ok && fr.flag.zone === 'B');
+fr = W.flag(fz, { unitId: 'u-dee', words: 'Shrink wrap tangled at Inbound Door 4, also in Zone C' });
+check('flag zone: a door and a zone name in one zone → that zone (C)', fr.ok && fr.flag.zone === 'C');
+fr = W.flag(fz, { unitId: 'u-marcus', words: 'Light out over aisle B by door 5' });
+check('flag zone: no place named, no task → the reporter\'s zone (a bare letter or number is not a place)', fr.ok && fr.flag.zone === 'A');
+var bTask = find(fz, function (t) { return t.zone === 'B' && t.status === 'open'; });
+fr = W.flag(fz, { unitId: 'u-marcus', words: 'Something is off here', taskId: bTask.id });
+check('flag zone: no place named → the task\'s zone, not the reporter\'s', fr.ok && fr.flag.taskId === bTask.id && fr.flag.zone === 'B');
+W.nextFor(fz, 'u-tommy');
+var tommyTask = E.unitById(fz, 'u-tommy').currentTaskId;
+fr = W.flag(fz, { unitId: 'u-tommy', words: 'Saw a puddle by C-04 on the way' });
+check('flag zone: words beat the task in hand; the flag still pins to the task', fr.ok && fr.flag.zone === 'C' &&
+  fr.flag.taskId === tommyTask && task(fz, tommyTask).zone !== 'C');
+fr = W.flag(fz, { unitId: 'u-rosa', words: 'Spill runs from A-02 over to C-07' });
+check('flag zone: places in two zones → no silent pick, falls back (Rosa\'s zone B)', fr.ok && fr.flag.taskId === null && fr.flag.zone === 'B');
+check('flag zone: the words stay verbatim', fr.flag.words === 'Spill runs from A-02 over to C-07');
+check('flag zone: same key set on every flag', fz.wms.flags.slice(-7).every(function (f) {
+  return Object.keys(f).sort().join(',') === 'by,id,label,source,status,taskId,ts,words,zone'; }));
+
 /* ---------- shift summary ---------- */
 var sum = W.shiftSummary(s);
 check('shift summary: computed from engine + WMS (flags, base counts)', sum.flags.length === 4 && typeof sum.base.tasksDone === 'number' && sum.dash.zones.length === 3);

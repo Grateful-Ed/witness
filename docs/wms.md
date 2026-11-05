@@ -109,6 +109,17 @@ model: `flags()` in js/wms-map.js only reads what is there.
   the Flags & Incidents page (there is no item page to land on).
 - Flags are the map home's voice only; the task slices carry none.
 
+A filed flag's zone is where the reporter says the problem is, not
+where the reporter stands (2026-11-05). `api.flag` reads the words
+first: if they name places of this building (bin ids like B-03,
+pallet ids like STG-5 → that pallet's door, door names like Inbound
+Door 5, zone names like Zone B) and all of them sit in one zone, that
+zone wins. The places come from the live state, exact tokens only
+(case aside); no fuzzy match, no model call. Words naming no place,
+or places in two zones, fall back to the task in hand's zone, then
+the reporter's own. The flag's fields and the verbatim words are
+unchanged; the flag still pins to the task in hand.
+
 ## The Witness page: an item's record (console Task 2, 2026-11-02)
 
 `#/witness/<place>/<id>` — opened from the map. Places: `dock`,
@@ -487,7 +498,7 @@ record (js/wms-ui.js).
 ## Tests
 
 ```
-node test/wms-test.js        # 128 — the WMS logic end to end
+node test/wms-test.js        # 137 — the WMS logic end to end
 node test/wms-ai-test.js     # 32  — Meta API calls, stubbed /chat (incl. the game's conversation: context, the intent envelope, answers untouched)
 node test/wms-store-test.js  # 17  — desk-record seam, stubbed fetch (incl. practice-only dressing)
 node test/wms-map-test.js    # 30  — the warehouse map, from the seed world
