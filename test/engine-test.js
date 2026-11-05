@@ -111,7 +111,7 @@ console.log('bottleneck: zone ' + (b && b.zone) + ', ' + (b && b.pending) + ' wa
 /* --- zone stats -------------------------------------------------------- */
 var stats = engine.zoneStats(fresh);
 check('zoneStats covers all zones with workers',
-  ['A', 'B', 'C'].every(function (z) { return stats[z] && stats[z].workersPresent === 2; }));
+  stats.A.workersPresent === 3 && stats.B.workersPresent === 2 && stats.C.workersPresent === 3);
 
 /* --- records ------------------------------------------------------------ */
 check('records grew across completions', fresh.records.length >= 1 &&

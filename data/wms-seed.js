@@ -46,7 +46,11 @@
       { id: 'APT-102', shipmentId: 'IN-1002', door: 'Inbound Door 3', day: 'Today', start: '10:00', end: '11:30',
         carrier: 'Southeast Line', trailer: 'SEL-2208', status: 'scheduled' },
       { id: 'APT-103', shipmentId: 'IN-1003', door: 'Inbound Door 2', day: 'Tomorrow', start: '07:00', end: '08:30',
-        carrier: 'Blue Ridge Freight Lines', trailer: 'BRF-5610', status: 'scheduled' }
+        carrier: 'Blue Ridge Freight Lines', trailer: 'BRF-5610', status: 'scheduled' },
+      { id: 'APT-104', shipmentId: 'IN-1005', door: 'Inbound Door 5', day: 'Today', start: '13:00', end: '14:30',
+        carrier: 'Coastal Express', trailer: 'CX-1187', status: 'scheduled' },
+      { id: 'APT-105', shipmentId: 'IN-1006', door: 'Inbound Door 6', day: 'Tomorrow', start: '09:00', end: '10:30',
+        carrier: 'Southeast Line', trailer: 'SEL-2319', status: 'scheduled' }
     ],
 
     /* The file copy of each BOL, for shipments world.js carries none
@@ -80,7 +84,20 @@
       { id: 'ORD-602', customer: 'Northside Pantry Co-op', priority: 'Normal', shipDate: 'Today', door: 'Outbound Door 4',
         carrier: 'Coastal Express', lines: [{ desc: 'Coffee — cases', qty: 4 }, { desc: 'Tea — cases', qty: 5 }] },
       { id: 'ORD-603', customer: 'Lakeview Grocers', priority: 'Normal', shipDate: 'Tomorrow', door: 'Outbound Door 4',
-        carrier: 'Piedmont Haulers', lines: [{ desc: 'Dog food — bags', qty: 10 }] }
+        carrier: 'Piedmont Haulers', lines: [{ desc: 'Dog food — bags', qty: 10 }] },
+      { id: 'ORD-604', customer: 'Peachtree Corner Store', priority: 'Normal', shipDate: 'Today', door: 'Outbound Door 5',
+        carrier: 'Coastal Express', lines: [{ desc: 'Tomato sauce — cases', qty: 8 }, { desc: 'Cooking oil — cases', qty: 6 }] },
+      { id: 'ORD-605', customer: 'Midtown Market Basket', priority: 'Normal', shipDate: 'Tomorrow', door: 'Outbound Door 6',
+        carrier: 'Piedmont Haulers', lines: [{ desc: 'Flour — bags', qty: 8 }, { desc: 'Sugar — bags', qty: 6 }] }
+    ],
+
+    /* Flags already on the board when a fresh building opens: two
+       open problems from earlier in the shift, in the reporters' own
+       words (a label plus exactly what was said — the flags law).
+       install() stamps their ids and times at seed time. */
+    flags: [
+      { label: 'Forklift leaking oil', words: 'Forklift is leaking oil by B-03', by: 'u-marcus', zone: 'B', source: 'voice' },
+      { label: 'Blocked aisle', words: 'A pallet is sitting in the aisle by C-04 and the forklift cannot get through', by: 'u-priya', zone: 'C', source: 'voice' }
     ],
 
     customers: {

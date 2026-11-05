@@ -121,7 +121,7 @@ check('place: putaway → target bin; consolidate → source bin',
 var w = fresh();
 var dee = E.unitById(w, 'u-dee');
 var emp = G.employeeFor(E, w, E.unitById(w, 'u-marcus'));
-check('employee: someone free in the wearer\'s zone first', emp.name === 'Dee Carter' && emp.status === 'available' && emp.location === 'Zone A');
+check('employee: someone free in the wearer\'s zone first', emp.name === 'Chris Delgado' && emp.status === 'available' && emp.location === 'Zone A');
 E.nextTaskFor(w, dee);
 var emp2 = G.employeeFor(E, w, E.unitById(w, 'u-marcus'));
 check('employee: busy colleague skipped for a free one', emp2.status === 'available' && emp2.name !== 'Dee Carter');

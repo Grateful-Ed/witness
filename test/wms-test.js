@@ -35,7 +35,7 @@ function snapshot(s) { return JSON.stringify(s); }
 /* ---------- seed & install ---------- */
 var s = fresh();
 check('seed: WMS layer installed (items, appointments, slots, orders)', !!s.wms && Object.keys(s.wms.items).length >= 16 &&
-  s.wms.appointments.length === 3 && s.wms.slots.length === 3 && s.wms.orders.length === 3);
+  s.wms.appointments.length === 5 && s.wms.slots.length === 3 && s.wms.orders.length === 5);
 check('seed: BOL file copies filled on inbound', s.inbound.every(function (x) { return x.bol && x.bol.bolNumber; }));
 check('seed: outbound orders carry customer and wave W-000', s.outbound.every(function (o) { return o.customer && o.wave === 'W-000'; }));
 check('seed: engine tasks generated (putaway, picks, receive)', !!task(s, 't-putaway-STG-1') && !!task(s, 't-pick-ORD-501-B-04') && !!task(s, 't-receive-IN-1001'));
@@ -44,7 +44,7 @@ W.install(s);
 check('install is idempotent (a second install changes nothing)', snapshot(s) === before);
 var raw = E.seedWorld(); E.generateTasks(raw);
 W.install(raw);
-check('install upgrades a plain engine state without touching its tasks', raw.tasks.length === 17 && !!raw.wms);
+check('install upgrades a plain engine state without touching its tasks', raw.tasks.length === 19 && !!raw.wms);
 
 /* ---------- dock & yard ---------- */
 s = fresh();
@@ -199,9 +199,9 @@ check('order: customer required', !r.ok);
 r = W.createOrder(s, { customer: 'Test', lines: [{ desc: 'Tea — cases', qty: 0 }] });
 check('order: quantity must be 1 or more', !r.ok);
 r = W.createOrder(s, { customer: 'Corner Store', priority: 'High', lines: [{ desc: 'Sugar — bags', qty: 5 }] }, 'u-sam');
-check('order: saved as New, not on the floor', r.ok && r.order.id === 'ORD-604' && !E.orderById(s, 'ORD-604') && !find(s, function (t) { return t.orderId === 'ORD-604'; }));
-r = W.releaseWave(s, ['ORD-601', 'ORD-603', 'ORD-604'], 'u-sam');
-check('wave: released as W-001', r.ok && r.waveId === 'W-001' && s.wms.orders.length === 1);
+check('order: saved as New, not on the floor', r.ok && r.order.id === 'ORD-606' && !E.orderById(s, 'ORD-606') && !find(s, function (t) { return t.orderId === 'ORD-606'; }));
+r = W.releaseWave(s, ['ORD-601', 'ORD-603', 'ORD-606'], 'u-sam');
+check('wave: released as W-001', r.ok && r.waveId === 'W-001' && s.wms.orders.length === 3);
 var o601 = E.orderById(s, 'ORD-601'), o603 = E.orderById(s, 'ORD-603');
 check('allocation: peaches allocated from a bin that holds 20 (A-01)', o601.lines[0].allocated && o601.lines[0].binId === 'A-01');
 check('allocation: held dog food is never allocated — line short with the numbers', !o603.lines[0].allocated && o603.lines[0].short && o603.lines[0].short.free === 0);
@@ -269,7 +269,7 @@ check('priority: High-priority order picks come first within the same type', (fu
 /* ---------- labor proposals ---------- */
 s = fresh();
 var props = W.proposals(s);
-check('proposals: zone B backing up (8 waiting) → move someone from a lighter zone', props.length >= 1 && props[0].toZone === 'B' && /Zone B has 8 tasks waiting/.test(props[0].why));
+check('proposals: zone B backing up (9 waiting) → move someone from a lighter zone', props.length >= 1 && props[0].toZone === 'B' && /Zone B has 9 tasks waiting/.test(props[0].why));
 var u0 = E.unitById(s, props[0].unitId), z0 = u0.zone;
 check('proposals change nothing on their own', u0.zone === z0 && s.wms.decisions.length === 0);
 r = W.decide(s, props[0], false, 'u-sam');
@@ -290,11 +290,11 @@ r = W.flag(s, { unitId: 'u-rosa', words: 'Light out over aisle B' });
 check('flag: no task in hand still lands; no label → "Unlabeled"', r.ok && r.flag.taskId === null && r.flag.label === 'Unlabeled');
 check('flag: empty words refused', !W.flag(s, { unitId: 'u-rosa', words: '  ' }).ok);
 r = W.closeFlag(s, s.wms.flags[0].id, 'u-sam', 'Cleaned up');
-check('flag: closes with a note; dashboard counts open flags', r.ok && W.dashboard(s).flagsOpen === 1);
+check('flag: closes with a note; dashboard counts open flags', r.ok && W.dashboard(s).flagsOpen === 3);
 
 /* ---------- shift summary ---------- */
 var sum = W.shiftSummary(s);
-check('shift summary: computed from engine + WMS (flags, base counts)', sum.flags.length === 2 && typeof sum.base.tasksDone === 'number' && sum.dash.zones.length === 3);
+check('shift summary: computed from engine + WMS (flags, base counts)', sum.flags.length === 4 && typeof sum.base.tasksDone === 'number' && sum.dash.zones.length === 3);
 
 /* ---------- the spoken word (local, deterministic) ---------- */
 check('parseQty: digits', W.parseQty('picked 10') === 10);
@@ -330,7 +330,7 @@ check('act: putaway lands in the bin that was said', out.ok && binQty(s, 'A-07',
 out = W.act(s, 'u-marcus', W.interpret(s, 'u-marcus', 'what\'s next'));
 check('act: "what\'s next" pulls a task', out.ok && !!W.currentOf(s, 'u-marcus'));
 out = W.act(s, 'u-marcus', { intent: 'problem', heard: 'Pallet is leaning badly', label: 'Leaning pallet' });
-check('act: a problem plan files a flag with the words', out.ok && s.wms.flags[0].words === 'Pallet is leaning badly');
+check('act: a problem plan files a flag with the words', out.ok && s.wms.flags[s.wms.flags.length - 1].words === 'Pallet is leaning badly');
 
 /* ---------- conservation across a whole shift ---------- */
 s = fresh();

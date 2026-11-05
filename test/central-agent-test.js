@@ -110,8 +110,8 @@ check('locator: the peaches are in A-01 (40), B-01 (12), B-09 (16), C-01 (9) and
   var got = r[1].facts.map(function (f) { return f.id + ':' + f.qty; }).sort();
   return deepEq(got, ['A-01:40', 'B-01:12', 'B-09:16', 'C-01:9', 'STG-3:15']) && /pallet STG-3 at Inbound Door 1/.test(r[1].answer);
 })());
-check('status: the needs-eyes list is exactly the held bin A-05',
-  r[2].facts.length === 1 && r[2].facts[0].id === 'A-05' && /1 thing needs eyes: Bin A-05 on hold/.test(r[2].answer));
+check('status: the needs-eyes list is the held bin and the two standing flags',
+  r[2].facts.length === 3 && r[2].facts[0].id === 'A-05' && /3 things need eyes: Bin A-05 on hold; Flag FLG-001 awaiting a decision; Flag FLG-002 awaiting a decision/.test(r[2].answer));
 check('status: the peaches putaway is open, going to A-03, unassigned',
   r[3].facts[0].task === 't-putaway-STG-3' && r[3].facts[0].destination === 'A-03' &&
   /to A-03 is open, unassigned/.test(r[3].answer));
@@ -216,7 +216,7 @@ check('after the change: the delegator refreshed to rev 1 and B-04 reads on hold
   /^Bin B-04 is on hold \(recount needed\)\.$/.test(r5b.answer));
 check('the refreshed digest equals the ontology module\'s own rebuild', deepEq(JSON.parse(JSON.stringify(a5.digest())), O.buildDigest(s5)));
 var eyes = CA.SUB_AGENTS.status.respond(a5.receive({ from: PRIYA, text: 'What needs eyes?' }));
-check('needs-eyes now lists both held bins', eyes.facts.length === 2 && eyes.rev === 1);
+check('needs-eyes now lists both held bins and the standing flags', eyes.facts.length === 4 && eyes.rev === 1);
 
 /* ---------- 6. live by William's call: the flag and the repo ---- */
 var src = fs.readFileSync(path.join(__dirname, '..', 'js', 'central-agent.js'), 'utf8');

@@ -30,9 +30,10 @@ var s = W.seed();
 var before = JSON.stringify(s);
 var f0 = M.flags(s, W);
 var h0 = M.html(s, W);
-check('seed: the held bin A-05 is the only urgent item → exactly one flag', f0.length === 1 && f0[0].href === '#/witness/bin/A-05');
+check('seed: the held bin and the standing worker flags → two flag entries', f0.length === 2 && f0[0].href === '#/witness/bin/A-05' &&
+  f0[1].href === '#/flags' && f0[1].host.place === 'zone' && f0[1].host.id === 'B' && /FLG-001/.test(f0[1].why) && /FLG-002/.test(f0[1].why));
 check('seed: the flag sits on bin A-05 itself', f0[0].host && f0[0].host.place === 'bin' && f0[0].host.id === 'A-05' && flagOn(h0, 'bin', 'A-05'));
-check('seed: one flag mark in the map HTML', count(h0, /class="wm-flag"/g) === 1);
+check('seed: two flag marks in the map HTML', count(h0, /class="wm-flag"/g) === 2);
 check('seed: a stocked, not-held bin (A-01) carries no flag', !flagOn(h0, 'bin', 'A-01'));
 check('seed: no pallet, dock or order carries a flag', !/data-place="(pallet|dock|order)"[^>]*>[^]*?<span class="wm-flags">/.test(h0.replace(/data-place="bin"[^]*$/, '')) &&
   ['STG-1', 'STG-2', 'STG-3', 'STG-4'].every(function (id) { return !flagOn(h0, 'pallet', id); }));
@@ -50,7 +51,7 @@ check('flags add no buttons, forms or tables to the map', !/<button|<input|<sele
 /* ---------- 3. when nothing is urgent, the map is clean ---------- */
 var sc = W.seed();
 W.release(sc, { binId: 'A-05' }, 'u-sam');
-check('A-05 released → no flags at all', M.flags(sc, W).length === 0 && count(M.html(sc, W), /wm-flag/g) === 0);
+check('A-05 released → only the worker flags mark remains', M.flags(sc, W).length === 1 && M.flags(sc, W)[0].href === '#/flags' && count(M.html(sc, W), /class="wm-flag"/g) === 1);
 
 /* ---------- 4. a receipt with damage: held pallet + open OS&D ---------- */
 var s2 = W.seed();
@@ -83,7 +84,7 @@ s2.wms.osd.forEach(function (f) { if (f.status === 'open') W.resolveOsd(s2, f.id
 check('all findings closed → the shipment flag is gone', !M.flags(s2, W).some(function (f) { return f.place === 'shipment'; }) && !flagOn(M.html(s2, W), 'dock', ship.door));
 W.release(s2, { stagingId: dmg.id }, 'u-sam');
 W.refresh(s2);
-check('hold released → the pallet flag is gone', !flagOn(M.html(s2, W), 'pallet', dmg.id) && hrefs(M.flags(s2, W)).join() === '#/witness/bin/A-05');
+check('hold released → the pallet flag is gone', !flagOn(M.html(s2, W), 'pallet', dmg.id) && hrefs(M.flags(s2, W)).join() === '#/flags,#/witness/bin/A-05');
 
 /* ---------- 5. a worker's flag (can't verify) → its task, where it works ---------- */
 var pa = E.taskById(s2, 't-putaway-' + dmg.id);
@@ -114,8 +115,8 @@ check('a held pallet the walls cannot place is still flagged, under the map', (f
 })());
 check('a worker flag with no task lands on the Flags page, marked in its zone', (function () {
   var s8 = W.seed(); s8.wms.flags.push({ id: 'FLG-009', label: 'Spill', words: 'oil by the door', by: 'u-rosa', taskId: null, zone: 'B', ts: '', status: 'open' });
-  var x = M.flags(s8, W).filter(function (f) { return f.id === 'FLG-009'; })[0];
-  return !!x && x.href === '#/flags' && x.host.place === 'zone' && x.host.id === 'B' && /<h3>Zone B<span class="wm-flags">/.test(M.html(s8, W));
+  var x = M.flags(s8, W).filter(function (f) { return f.href === '#/flags'; })[0];
+  return !!x && /Flag FLG-009 awaiting a decision/.test(x.why) && x.host.place === 'zone' && x.host.id === 'B' && /<h3>Zone B<span class="wm-flags">/.test(M.html(s8, W));
 })());
 check('state text in a flag\'s name is escaped', (function () {
   var s9 = W.seed(); s9.bins[0].id = '<b>x'; s9.bins[0].status = 'hold';
