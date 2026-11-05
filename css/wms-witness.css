@@ -62,6 +62,8 @@
 .wp-sub { margin: 0; color: var(--wp-ink-2); }
 .wp-facts { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .wp-fact { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--wp-yellow); color: var(--wp-yellow-ink); border: 1px solid var(--wp-yellow-edge); }
+/* Job assignment: the job this item belongs to, and who holds it. */
+.wp-job { margin: 6px 0 0; font-size: 13px; color: var(--wp-ink-2, inherit); }
 
 /* The agent's chair: at the top, reserved, plainly empty. */
 .wp-agent {

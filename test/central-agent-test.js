@@ -115,15 +115,19 @@ check('status: the needs-eyes list is the held bin and the two standing flags',
 check('status: the peaches putaway is open, going to A-03, unassigned',
   r[3].facts[0].task === 't-putaway-STG-3' && r[3].facts[0].destination === 'A-03' &&
   /to A-03 is open, unassigned/.test(r[3].answer));
-check('planner: Tommy (zone B) gets the STG-5 putaway into B-03',
-  r[4].facts[0].task === 't-putaway-STG-5' && r[4].facts[0].destination === 'B-03' &&
-  /zone B/.test(r[4].answer));
+/* Job assignment (briefs/claude-brief-job-assignment.md): the seed
+   deals Tommy (Putaway) the oldest putaway job, STG-2, and Priya
+   (Picking) the oldest picking job, ORD-501. The planner reads their
+   own queued work — never a pool task in their zone. */
+check('planner: Tommy gets his own job\'s task — the STG-2 putaway into A-03, queued for him',
+  r[4].facts[0].task === 't-putaway-STG-2' && r[4].facts[0].destination === 'A-03' &&
+  r[4].facts[0].why === 'queued' && /^Next for you/.test(r[4].answer));
 check('recorder: Priya\'s tell comes back as a record entry { from, text, at }',
   deepEq(r[5].record, { from: PRIYA, text: 'Pallet STG-4 has a torn wrap on the north side', at: dispatches[5].at }) &&
   deepEq(Object.keys(r[5].record).sort(), ['at', 'from', 'text']));
 check('status: B-04 is a status and nothing else ("Bin B-04 is ok.")', r[6].answer === 'Bin B-04 is ok.');
-check('planner: Priya (zone C) gets the water putaway into C-03',
-  r[7].facts[0].task === 't-putaway-STG-4' && r[7].facts[0].destination === 'C-03');
+check('planner: Priya gets her own job\'s first task — the ORD-501 pick at B-04',
+  r[7].facts[0].task === 't-pick-ORD-501-B-04' && r[7].facts[0].destination === 'B-04' && r[7].facts[0].why === 'queued');
 check('each worker\'s inbox holds only their own answers', inbox[MARCUS].length === 3 && inbox[TOMMY].length === 2 && inbox[PRIYA].length === 3);
 
 /* byte-identical: the answer the worker got is the sub-agent's own

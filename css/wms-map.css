@@ -202,3 +202,21 @@
 @media (max-width: 760px) {
   .wm-flags { top: -12px; right: -11px; }
 }
+
+/* ---------- job ownership (job assignment) ------------------------
+   A held job's tasks carry their holder's initials on the place they
+   work. Bottom-left, so a flag (top-right) never covers it. Pointer
+   events pass through: a click still opens the place's Witness page,
+   which names the owner. */
+.wm-owners {
+  position: absolute; bottom: -7px; left: -6px; z-index: 1;
+  display: inline-flex; gap: 1px; pointer-events: none;
+}
+.wm-owner {
+  display: inline-block; min-width: 15px; height: 13px; padding: 0 2px;
+  border-radius: 7px; background: #1f2a33; color: #ffffff; border: 1px solid #ffffff;
+  font: 700 8px/13px system-ui, sans-serif; letter-spacing: .02em; text-align: center;
+}
+@media (prefers-color-scheme: dark) {
+  .wm-owner { background: #e8edf1; color: #171c21; border-color: #171c21; }
+}

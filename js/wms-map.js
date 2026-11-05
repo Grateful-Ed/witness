@@ -204,14 +204,61 @@
     return l ? '<span class="wm-flags">' + l.map(flagLink).join('') + '</span>' : '';
   }
 
+  /* ---------- job ownership (job assignment) ---------------------
+     briefs/claude-brief-job-assignment.md: the bird's-eye map gains
+     job ownership — each open task of a HELD job carries its holder's
+     mark (initials) on the place it works: the dock for a receive, the
+     pallet for a putaway, the staged order for a pack or load, the bin
+     for a pick, count, breakdown, or the source bin of a move. The map
+     still explains nothing: the mark is initials only; the job's
+     Witness page shows the owner. Pool jobs carry no mark. Pure. */
+  function initials(name) {
+    return String(name || '').split(/\s+/).filter(Boolean).map(function (w) { return w.charAt(0).toUpperCase(); }).join('').slice(0, 2);
+  }
+  function owners(state) {
+    var ix = {};
+    var jobs = (state.wms && state.wms.jobs) || [];
+    if (!jobs.length) return ix;
+    var byId = {};
+    jobs.forEach(function (j) { if (j.status === 'open' && j.owner) byId[j.id] = j.owner; });
+    function mark(place, id, uid) {
+      if (!id) return;
+      var k = place + '|' + id;
+      ix[k] = ix[k] || [];
+      if (ix[k].indexOf(uid) === -1) ix[k].push(uid);
+    }
+    (state.tasks || []).forEach(function (t) {
+      var uid = t.status !== 'done' && t.jobId ? byId[t.jobId] : null;
+      if (!uid) return;
+      if (t.type === 'receive') {
+        var sh = null;
+        (state.inbound || []).forEach(function (x) { if (x.id === t.shipmentId) sh = x; });
+        if (sh) mark('dock', sh.door, uid);
+      } else if (t.type === 'putaway') mark('pallet', t.stagingId, uid);
+      else if (t.type === 'pack' || t.type === 'load') mark('order', t.orderId, uid);
+      else if (t.type === 'pick' || t.type === 'count' || t.type === 'breakdown') mark('bin', t.binId, uid);
+      else mark('bin', t.fromBinId, uid);
+    });
+    return ix;
+  }
+  function ownerMarks(state, oix, place, id) {
+    var l = oix && oix[place + '|' + id];
+    if (!l || !l.length) return '';
+    return '<span class="wm-owners">' + l.map(function (uid) {
+      var u = null;
+      (state.labor || []).forEach(function (x) { if (x.id === uid) u = x; });
+      return '<span class="wm-owner" data-owner="' + esc(uid) + '" aria-label="' + esc(u ? u.name : uid) + '">' + esc(initials(u ? u.name : uid)) + '</span>';
+    }).join('') + '</span>';
+  }
+
   /* ---------- rendering ------------------------------------------- */
 
   /* An item a person can open: its Witness page. */
   var OPEN = ' data-open tabindex="0" role="link"';
 
-  function dockHtml(side, d, ix) {
+  function dockHtml(side, d, ix, om) {
     if (!d) return '';
-    var fl = flagsOn(ix, 'dock', d.doorId);
+    var fl = flagsOn(ix, 'dock', d.doorId) + (om ? ownerMarks(om.state, om.ix, 'dock', d.doorId) : '');
     return '<div class="wm-dock wm-' + side + (d.busy ? ' busy' : '') + '" data-place="dock" data-side="' + side + '" data-id="' + esc(d.doorId) + '"' + OPEN + ' title="' +
       esc(d.name + ' — ' + d.word + (d.ref ? ' ' + d.ref : '')) + '">' + fl +
       '<span class="wm-dock-name">' + esc(d.name) + '</span>' +
@@ -219,20 +266,20 @@
       '</div>';
   }
 
-  function palletHtml(p, ix) {
-    var fl = flagsOn(ix, 'pallet', p.id);
+  function palletHtml(p, ix, om) {
+    var fl = flagsOn(ix, 'pallet', p.id) + (om ? ownerMarks(om.state, om.ix, 'pallet', p.id) : '');
     return '<span class="wm-pallet' + (p.held ? ' held' : '') + '" data-place="pallet" data-id="' + esc(p.id) + '"' + OPEN + ' title="' +
       esc(p.id + ' · ' + p.qty + ' × ' + p.desc + (p.held ? ' · on hold' : '')) + '">' + fl + '</span>';
   }
 
-  function orderHtml(o, ix) {
-    var fl = flagsOn(ix, 'order', o.id);
+  function orderHtml(o, ix, om) {
+    var fl = flagsOn(ix, 'order', o.id) + (om ? ownerMarks(om.state, om.ix, 'order', o.id) : '');
     return '<span class="wm-pallet out' + (o.packed ? ' packed' : '') + '" data-place="order" data-id="' + esc(o.id) + '"' + OPEN + ' title="' +
       esc(o.id + (o.customer ? ' · ' + o.customer : '') + (o.packed ? ' · packed' : ' · picked, not packed')) + '">' + fl + '</span>';
   }
 
-  function binHtml(b, ix) {
-    var fl = flagsOn(ix, 'bin', b.id);
+  function binHtml(b, ix, om) {
+    var fl = flagsOn(ix, 'bin', b.id) + (om ? ownerMarks(om.state, om.ix, 'bin', b.id) : '');
     return '<span class="wm-bin' + (b.stocked ? ' stocked' : '') + (b.held ? ' held' : '') + '" data-place="bin" data-id="' + esc(b.id) + '"' + OPEN + ' title="' +
       esc(b.id + ' — ' + b.title + (b.held ? ' · on hold' : '')) + '">' + esc(b.id) + fl + '</span>';
   }
@@ -250,6 +297,7 @@
   function html(state, W) {
     var m = model(state, W);
     var fls = flags(state, W), ix = flagIndex(fls);
+    var om = { state: state, ix: owners(state) };
     var n = m.rows;
     var out = '<div class="wm-surface wm-board"><div class="wmap" role="group" aria-label="Warehouse map: inbound docks, receiving bay, bay locations, staging, outbound docks" style="--wm-rows:' + n + '">';
 
@@ -260,17 +308,17 @@
     out += '<div class="wm-bays-head" style="grid-row:2"><span class="wm-band-label">Bay Locations</span></div>';
     out += '<div class="wm-bays" style="grid-row:3 / span ' + n + '">' + m.zones.map(function (z) {
       return '<section class="wm-zone" data-place="zone" data-id="' + esc(z.zone) + '"><h3>Zone ' + esc(z.zone) + flagsOn(ix, 'zone', z.zone) + '</h3><div class="wm-bins">' +
-        z.bins.map(function (b) { return binHtml(b, ix); }).join('') + '</div></section>';
+        z.bins.map(function (b) { return binHtml(b, ix, om); }).join('') + '</div></section>';
     }).join('') + '</div>';
 
     for (var i = 0; i < n; i++) {
       var row = 'grid-row:' + (i + 3), di = m.inbound[i], dout = m.outbound[i];
-      out += '<div class="wm-cell wm-col-in" style="' + row + '">' + dockHtml('in', di, ix) + '</div>';
+      out += '<div class="wm-cell wm-col-in" style="' + row + '">' + dockHtml('in', di, ix, om) + '</div>';
       /* Each lane is named for its row: Receiving Bay N beside Inbound
          Dock N, Staging N beside Outbound Dock N (design 2026-11-03). */
-      out += '<div class="wm-cell wm-col-rcv wm-lane" style="' + row + '"' + (di ? ' data-place="receiving" data-id="' + esc(di.doorId) + '"><span class="wm-lane-label">Receiving Bay ' + (i + 1) + '</span>' + di.lane.map(function (p) { return palletHtml(p, ix); }).join('') : '>') + '</div>';
-      out += '<div class="wm-cell wm-col-stg wm-lane" style="' + row + '"' + (dout ? ' data-place="staging" data-id="' + esc(dout.doorId) + '"><span class="wm-lane-label">Staging ' + (i + 1) + '</span>' + dout.lane.map(function (o) { return orderHtml(o, ix); }).join('') : '>') + '</div>';
-      out += '<div class="wm-cell wm-col-out" style="' + row + '">' + dockHtml('out', dout, ix) + '</div>';
+      out += '<div class="wm-cell wm-col-rcv wm-lane" style="' + row + '"' + (di ? ' data-place="receiving" data-id="' + esc(di.doorId) + '"><span class="wm-lane-label">Receiving Bay ' + (i + 1) + '</span>' + di.lane.map(function (p) { return palletHtml(p, ix, om); }).join('') : '>') + '</div>';
+      out += '<div class="wm-cell wm-col-stg wm-lane" style="' + row + '"' + (dout ? ' data-place="staging" data-id="' + esc(dout.doorId) + '"><span class="wm-lane-label">Staging ' + (i + 1) + '</span>' + dout.lane.map(function (o) { return orderHtml(o, ix, om); }).join('') : '>') + '</div>';
+      out += '<div class="wm-cell wm-col-out" style="' + row + '">' + dockHtml('out', dout, ix, om) + '</div>';
     }
 
     out += '</div>';
@@ -393,7 +441,7 @@
     return out.split(OPEN).join('');
   }
 
-  var api = { model: model, html: html, flags: flags, slice: slice, sliceHtml: sliceHtml, FLOW: FLOW, DOCKS_PER_WALL: DOCKS_PER_WALL };
+  var api = { model: model, html: html, flags: flags, owners: owners, slice: slice, sliceHtml: sliceHtml, FLOW: FLOW, DOCKS_PER_WALL: DOCKS_PER_WALL };
   root.WitnessWmsMap = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

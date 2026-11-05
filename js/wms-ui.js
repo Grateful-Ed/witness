@@ -84,6 +84,16 @@
   function isManager() { var u = E.unitById(state, me); return u && u.role === 'manager'; }
   function managerId() { var m = null; state.labor.forEach(function (u) { if (!m && u.role === 'manager') m = u.id; }); return m; }
   function workers() { return state.labor.filter(function (u) { return u.role === 'worker'; }); }
+  /* Job assignment: a unit's departments, in words ('' off the live
+     building — Walk the Shift's world has no departments). */
+  function deptWords(u) {
+    if (!u || !W.jobsOn(state) || !Array.isArray(u.depts) || !u.depts.length) return '';
+    return u.depts.map(W.deptLabel).join(' · ');
+  }
+  function unitLabel(u) {
+    var d = deptWords(u);
+    return u.name + ' (Zone ' + u.zone + (d ? ' · ' + d : '') + ')';
+  }
   function val(id) { var el = $(id); return el ? el.value : ''; }
   function opt(v, label, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(label) + '</option>'; }
   function items() { return Object.keys(state.wms.items).sort(); }
@@ -231,7 +241,7 @@
     var sel = $('whoSel');
     var html = '';
     state.labor.forEach(function (u) {
-      html += opt(u.id, u.name + (u.role === 'manager' ? ' (Manager)' : ' (Zone ' + u.zone + ')'), u.id === me);
+      html += opt(u.id, u.role === 'manager' ? u.name + ' (Manager)' : unitLabel(u), u.id === me);
     });
     sel.innerHTML = html;
   }
@@ -764,6 +774,7 @@
 
   /* ---- Task queues ---- */
   VIEWS.queues = function () {
+    if (W.jobsOn(state)) return jobQueues();
     var html = head('Labor › Task Queues', 'Task Queues', 'Each worker\'s task in hand, what is queued for them, and what the system would hand them next. Reassign any open task; if the worker\'s hands are full it is queued ahead of everything else.');
     html += voicePanel();
     html += '<div class="cards">' + workers().map(function (u) {
@@ -798,6 +809,56 @@
     return html;
   };
 
+  /* ---- Task queues on the live building: jobs (job assignment) ----
+     briefs/claude-brief-job-assignment.md. Work is assigned by JOB,
+     by department. Each worker's card shows who they are, their
+     department, the job(s) they hold and that job's tasks in order.
+     Each department's pool waits below, oldest first. The only way a
+     held job changes hands is the manager's Reassign job. */
+  function jobQueues() {
+    var html = head('Labor › Task Queues', 'Task Queues', 'Work is assigned by job, by department. A job is one shipment\'s or order\'s whole task flow; once it is someone\'s, none of its tasks go to anyone else. When a worker finishes a job, the WMS deals them the oldest job in their department\'s pool.');
+    html += voicePanel();
+    html += '<div class="cards" data-jobs="cards">' + workers().map(function (u) {
+      var q = W.queueFor(state, u.id);
+      var held = q.jobs || [];
+      return '<div class="wcard" data-unit="' + esc(u.id) + '"><div class="w-h"><b>' + esc(u.name) + '</b>' + chip('Zone ' + u.zone, 'info') + ' ' + chip(deptWords(u) || 'No department', 'type') + '</div><div class="w-b">' +
+        '<p class="w-task">' + (q.current ? chip(q.current.type, 'type') + ' ' + esc(q.current.title) : '<span class="hint">Nothing in hand</span>') + '</p>' +
+        (held.length ? held.map(function (j) {
+          var left = W.jobTasks(state, j.id).filter(function (t) { return t.status !== 'done'; });
+          return '<b class="hint" data-job="' + esc(j.id) + '">Job ' + esc(j.id) + ' · ' + esc(j.title) + '</b><ol class="w-q">' +
+            left.map(function (t) { return '<li>' + esc(t.title) + (t.status === 'assigned' ? ' <span class="hint">(in hand)</span>' : '') + '</li>'; }).join('') + '</ol>';
+        }).join('') : '<b class="hint">No job held</b><ol class="w-q"><li>Nothing waiting in ' + esc(deptWords(u) || 'their department') + '</li></ol>') +
+        '</div></div>';
+    }).join('') + '</div><br>';
+    var pools = W.DEPTS.map(function (d) {
+      var pl = W.pool(state, d.id);
+      return '<tr data-pool="' + esc(d.id) + '"><td><b>' + esc(d.label) + '</b></td><td class="num">' + pl.length + '</td><td>' +
+        (pl.length ? pl.map(function (j, i) { return (i ? ' · ' : '') + '<span class="id">' + esc(j.id) + '</span> ' + esc(j.title); }).join('') : '<span class="hint">Empty</span>') + '</td></tr>';
+    });
+    html += panel('Job pools', table(['Department', 'Waiting', 'Jobs, oldest first'], pools) +
+      '<div class="panel-b"><p class="law">The WMS deals from these pools on its own: when a job appears, and when a worker frees up. Nobody pulls from a pool, and voice never assigns.</p></div>', null, true);
+    var open = (state.wms.jobs || []).filter(function (j) { return j.status === 'open'; });
+    if (isManager()) {
+      html += panel('Reassign job', '<div class="form wide"><div class="field"><label>Job</label><select id="rjJob">' + open.map(function (j) {
+        return opt(j.id, j.id + ' · ' + j.title + ' — ' + (j.owner ? uname(j.owner) : W.deptLabel(j.dept) + ' pool'));
+      }).join('') + '</select></div><div class="field"><label>Give to</label><select id="rjUnit">' + workers().map(function (u) { return opt(u.id, unitLabel(u)); }).join('') + '</select></div></div>' +
+        '<div class="form-actions"><button class="btn primary" data-act="reassign-job">Move job</button></div>' +
+        '<div class="panel-b"><p class="law">A manager\'s act, recorded with who moved it, when, and from whom. The job\'s remaining tasks move with it; done tasks keep their doer. The worker must work the job\'s department.</p></div>');
+    }
+    var moves = state.records.filter(function (r) { return r.kind === 'job-reassign'; }).slice().reverse().map(function (r) {
+      return '<tr><td class="id">' + time(r.ts) + '</td><td class="id">' + esc(r.jobId) + '</td><td>' + esc(r.from ? uname(r.from) : 'Pool') + ' → ' + esc(uname(r.to)) + '</td><td>' + esc(uname(r.by)) + '</td></tr>';
+    });
+    html += panel('Job moves', table(['Time', 'Job', 'Move', 'By'], moves, 'No job has been moved by hand.'), null, true);
+    var rows = state.tasks.filter(function (t) { return t.status !== 'done'; }).map(function (t) {
+      var b = W.blocked(state, t), j = W.jobOf(state, t.id);
+      return '<tr><td class="id">' + esc(t.id) + '</td><td>' + chip(t.type, 'type') + '</td><td>' + esc(t.zone || '—') + '</td><td>' + esc(t.title) +
+        (j ? '<br><span class="hint">Job ' + esc(j.id) + '</span>' : '') + (b ? '<br><span class="hint" style="color:#b3261e">' + esc(b) + '</span>' : '') + '</td><td>' + taskChip(t) + '</td><td>' +
+        esc(t.assignee ? uname(t.assignee) : (j && j.owner ? uname(j.owner) : 'Pool')) + '</td></tr>';
+    });
+    html += panel('Open tasks', table(['Task', 'Type', 'Zone', 'Title', 'Status', 'Holder'], rows, 'No open tasks.'), null, true);
+    return html;
+  }
+
   /* ---- Labor management ---- */
   VIEWS.labor = function () {
     var html = head('Labor › Management', 'Labor Management', 'Where work is backing up, and who could move. Proposals come from the live numbers; nothing moves until a manager approves.');
@@ -806,9 +867,16 @@
       return '<tr><td><b>' + esc(p.unitName) + '</b></td><td>Zone ' + esc(p.fromZone) + ' → ' + esc(p.toZone) + '</td><td>' + esc(p.why) + '</td><td class="actions"><button class="btn small primary" data-act="approve" data-i="' + i + '">Approve</button> <button class="btn small" data-act="decline" data-i="' + i + '">Decline</button></td></tr>';
     })) + '<div class="panel-b"><p class="law">A proposal, not a decision. Approving changes the worker\'s zone; it does not reassign their task in hand.</p></div>' : '<p class="empty">No zone is backing up past the threshold, and nobody is idle while work waits elsewhere.</p>', null, !!props.length);
     var d = W.dashboard(state);
+    if (W.jobsOn(state)) {
+      /* The proposal reads job load, so the table does too. */
+      html += panel('Zone load (jobs)', table(['Zone', 'Jobs waiting', 'Held', 'In pool', 'Workers', 'Per worker'], W.jobLoad(state).map(function (z) {
+        return '<tr><td>Zone ' + esc(z.zone) + '</td><td class="num">' + z.pending + '</td><td class="num">' + z.held + '</td><td class="num">' + z.pool + '</td><td class="num">' + z.workers + '</td><td class="num">' + (Math.round(z.load * 10) / 10).toFixed(1) + '</td></tr>';
+      })), null, true);
+    } else {
     html += panel('Zone load', table(['Zone', 'Waiting', 'Workers', 'Per worker', 'Done'], d.zones.map(function (z) {
       return '<tr><td>Zone ' + esc(z.zone) + '</td><td class="num">' + z.pending + '</td><td class="num">' + z.workers + '</td><td class="num">' + (Math.round(z.load * 10) / 10).toFixed(1) + '</td><td class="num">' + z.done + '</td></tr>';
     })), null, true);
+    }
     var a = ui.ask;
     html += panel('Ask the building', '<p class="hint">Ask in your own words. Muse Spark answers only from this building\'s live numbers — shown under the answer, with any number it used that is not in the data called out.</p>' +
       '<div class="field"><textarea id="askQ" placeholder="Where is it backing up? Who should I move?">' + esc(a ? a.q : '') + '</textarea></div>' +
@@ -908,9 +976,14 @@
     var cur = W.currentOf(state, uid);
     var html = head('Floor › RF Console', 'RF Console', mgr ? 'The handheld a worker carries, run from the desk. Pick a worker to act as them.' : 'Your handheld. Hold to talk: "what\'s next", "picked 10", "in A-03", "done", or say what\'s wrong.');
     if (mgr) {
-      html += '<div class="rf" style="margin-bottom:8px"><select class="cell" style="width:100%;text-align:left" id="rfWho">' + workers().map(function (w) { return opt(w.id, w.name + ' (Zone ' + w.zone + ')', w.id === uid); }).join('') + '</select></div>';
+      html += '<div class="rf" style="margin-bottom:8px"><select class="cell" style="width:100%;text-align:left" id="rfWho">' + workers().map(function (w) { return opt(w.id, unitLabel(w), w.id === uid); }).join('') + '</select></div>';
     }
-    var screen = '<div class="rf-screen"><div class="rf-top"><span>' + esc(u.name.toUpperCase()) + ' · ZONE ' + esc(u.zone) + '</span><span>' + time(new Date().toISOString()) + '</span></div>';
+    var rfDept = deptWords(u);
+    var screen = '<div class="rf-screen"><div class="rf-top"><span>' + esc(u.name.toUpperCase()) + ' · ZONE ' + esc(u.zone) + (rfDept ? ' · ' + esc(rfDept.toUpperCase()) : '') + '</span><span>' + time(new Date().toISOString()) + '</span></div>';
+    if (W.jobsOn(state)) {
+      var rfJobs = W.jobsOf(state, uid);
+      screen += '<div class="rf-detail" data-rf-job>' + (rfJobs.length ? 'JOB ' + esc(rfJobs.map(function (j) { return j.id.replace(/^J-/, ''); }).join(', then ')) : 'NO JOB ASSIGNED — the WMS deals the next one from your department\'s pool') + '</div>';
+    }
     if (cur) {
       var blk = W.blocked(state, cur);
       screen += '<div class="rf-type">' + esc(cur.type) + ' · ' + esc(cur.id.replace(/^t-/, '')) + '</div>';
@@ -1409,6 +1482,7 @@
       act(function (s) { return W.closeLoad(s, el.dataset.id, { seal: seal, by: me }); }, function (r) { return 'Shipped — ' + r.load.id + ' closed, BOL ' + r.load.bolNumber + '.'; });
     },
     reassign: function () { var t = val('raTask'), u = val('raUnit'); act(function (s) { return W.reassign(s, t, u, me); }, function (r) { return 'Reassigned — ' + r.how + '.'; }); },
+    'reassign-job': function () { var j = val('rjJob'), u = val('rjUnit'); act(function (s) { return W.reassignJob(s, j, u, me); }, function (r) { return 'Job ' + r.job.id + ' moved to ' + uname(r.to) + ' — ' + r.moved + ' open task' + (r.moved === 1 ? '' : 's') + ' moved.'; }); },
     approve: function (el) { var p = W.proposals(state)[+el.dataset.i]; act(function (s) { return W.decide(s, p, true, me); }, 'Approved — the worker\'s zone changed.'); },
     decline: function (el) { var p = W.proposals(state)[+el.dataset.i]; act(function (s) { return W.decide(s, p, false, me); }, 'Declined — recorded.'); },
     ask: function () { askBuilding(val('askQ')); },

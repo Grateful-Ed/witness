@@ -87,6 +87,22 @@
       taskIds: [], shipmentIds: [], stagingIds: [], orderIds: [], binIds: [], loadIds: [], descs: null };
   }
 
+  /* Job assignment (briefs/claude-brief-job-assignment.md): the open
+     jobs this item's tasks belong to, and who holds each — the job's
+     page shows the owner (the map only marks it). Read only. */
+  var DEPT_LABEL = { inbound: 'Inbound', putaway: 'Putaway', replen: 'Replenishment', picking: 'Picking', packship: 'Pack & Ship', count: 'Cycle Count' };
+  function jobsOf(state, s) {
+    var out = [];
+    var jobs = arr(wms(state).jobs);
+    arr(state.tasks).forEach(function (t) {
+      if (!t.jobId || !has(s.taskIds, t.id) || out.some(function (x) { return x.id === t.jobId; })) return;
+      var j = find(jobs, function (x) { return x.id === t.jobId; });
+      if (!j || j.status !== 'open') return;
+      out.push({ id: j.id, title: j.title, dept: DEPT_LABEL[j.dept] || j.dept, owner: j.owner || null, ownerName: who(state, j.owner) });
+    });
+    return out;
+  }
+
   function subject(state, place, id, opts) {
     opts = opts || {};
     var s = blank(place, id);
@@ -185,7 +201,7 @@
   /* ---------- the events: the important moments --------------------- */
 
   /* The word for each kind of record. Decision kinds are a human's call. */
-  var DECISION = { hold: 1, release: 1, ship: 1, reassign: 1, wave: 1, reallocate: 1, 'labor-move': 1 };
+  var DECISION = { hold: 1, release: 1, ship: 1, reassign: 1, 'job-reassign': 1, wave: 1, reallocate: 1, 'labor-move': 1 };
 
   function verbOf(r) {
     if (r.kind === 'complete') {
@@ -194,7 +210,7 @@
         move: 'Moved', replen: 'Replenished', consolidate: 'Moved', breakdown: 'Broken down' }[r.type] || 'Done';
     }
     return { arrive: 'Arrived', schedule: 'Scheduled', hold: 'Held', release: 'Released', incident: 'Update', ship: 'Shipped',
-      reassign: 'Reassigned', 'putaway-override': 'Put away elsewhere', 'move-requested': 'Move requested',
+      reassign: 'Reassigned', 'job-reassign': 'Job moved', 'putaway-override': 'Put away elsewhere', 'move-requested': 'Move requested',
       order: 'Ordered', wave: 'Released to pick', reallocate: 'Re-allocated', 'count-queued': 'Count queued' }[r.kind] || 'Noted';
   }
 
@@ -222,6 +238,7 @@
     if (has(s.taskIds, r.taskId)) return true;
     if (has(s.shipmentIds, r.shipmentId)) return true;
     if (has(s.loadIds, r.loadId)) return true;
+    if (r.kind === 'job-reassign' && r.jobId && s.jobIds && has(s.jobIds, r.jobId)) return true;
     if (r.target && (has(s.binIds, r.target.binId) || has(s.stagingIds, r.target.stagingId))) return true;
     if (TEXT_KINDS.indexOf(r.kind) !== -1) return s.orderIds.some(function (id) { return namesId(r.text, id); });
     return false;
@@ -334,6 +351,11 @@
 
   function model(state, place, id) {
     var s = subject(state, place, id);
+    /* The item's jobs (open ones carry their holder) and every job its
+       tasks ever belonged to — a manager's move of one shows here. */
+    s.jobs = s.found ? jobsOf(state, s) : [];
+    s.jobIds = [];
+    arr(state.tasks).forEach(function (t) { if (t.jobId && has(s.taskIds, t.id)) add(s.jobIds, t.jobId); });
     var ev = events(state, s), tr = transcript(state, s);
     var voices = [];
     tr.forEach(function (x) { add(voices, x.by || '(not said who)'); });
@@ -403,6 +425,10 @@
     out += '<header class="wp-head"><div class="wp-kind">Witness page · ' + esc(s.kind) + (s.via ? ' at ' + esc(s.via) : '') + '</div>' +
       '<h1>' + esc(s.title) + '</h1><p class="wp-sub">' + esc(s.sub) + '</p>' +
       (s.facts.length ? '<div class="wp-facts">' + s.facts.map(function (f) { return '<span class="wp-fact">' + esc(f) + '</span>'; }).join('') + '</div>' : '') +
+      (s.jobs && s.jobs.length ? s.jobs.map(function (j) {
+        return '<p class="wp-job" data-job="' + esc(j.id) + '">Job <b>' + esc(j.id) + '</b> · ' + esc(j.dept) + ' · ' +
+          (j.ownerName ? 'held by <b>' + esc(j.ownerName) + '</b>' : 'waiting in the ' + esc(j.dept) + ' pool') + '</p>';
+      }).join('') : '') +
       '</header>';
     var A = agentLib();
     out += A ? A.chairHtml(state, s, opts.agent) :

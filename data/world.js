@@ -98,18 +98,24 @@
     /* Labor units — a labor unit is an employee. Eight workers:
        three in A, two in B, three in C — B runs thin on purpose,
        its queue is the building's bottleneck — plus a manager over
-       the building and a lead hand in B. */
+       the building and a lead hand in B.
+
+       depts: the departments a unit works (job assignment, William
+       2026-11-05). The WMS deals each unit jobs from these
+       departments' pools only: inbound, putaway, replen
+       (replenishment), picking, packship (pack & ship), count
+       (cycle count). Managers work no department. */
     labor: [
-      { id: 'u-marcus', name: 'Marcus Reed', role: 'worker', zone: 'A', currentTaskId: null },
-      { id: 'u-dee', name: 'Dee Carter', role: 'worker', zone: 'A', currentTaskId: null },
-      { id: 'u-chris', name: 'Chris Delgado', role: 'worker', zone: 'A', currentTaskId: null },
-      { id: 'u-tommy', name: 'Tommy Nguyen', role: 'worker', zone: 'B', currentTaskId: null },
-      { id: 'u-rosa', name: 'Rosa Flores', role: 'worker', zone: 'B', currentTaskId: null },
-      { id: 'u-jay', name: 'Jay Patel', role: 'worker', zone: 'C', currentTaskId: null },
-      { id: 'u-priya', name: 'Priya Shah', role: 'worker', zone: 'C', currentTaskId: null },
-      { id: 'u-grace', name: 'Grace Liu', role: 'worker', zone: 'C', currentTaskId: null },
-      { id: 'u-sam', name: 'Sam Whitaker', role: 'manager', zone: 'A', currentTaskId: null },
-      { id: 'u-pat', name: 'Pat Sullivan', role: 'manager', zone: 'B', currentTaskId: null }
+      { id: 'u-marcus', name: 'Marcus Reed', role: 'worker', zone: 'A', depts: ['inbound'], currentTaskId: null },
+      { id: 'u-dee', name: 'Dee Carter', role: 'worker', zone: 'A', depts: ['putaway'], currentTaskId: null },
+      { id: 'u-chris', name: 'Chris Delgado', role: 'worker', zone: 'A', depts: ['replen', 'count'], currentTaskId: null },
+      { id: 'u-tommy', name: 'Tommy Nguyen', role: 'worker', zone: 'B', depts: ['putaway'], currentTaskId: null },
+      { id: 'u-rosa', name: 'Rosa Flores', role: 'worker', zone: 'B', depts: ['replen'], currentTaskId: null },
+      { id: 'u-jay', name: 'Jay Patel', role: 'worker', zone: 'C', depts: ['packship', 'count'], currentTaskId: null },
+      { id: 'u-priya', name: 'Priya Shah', role: 'worker', zone: 'C', depts: ['picking'], currentTaskId: null },
+      { id: 'u-grace', name: 'Grace Liu', role: 'worker', zone: 'C', depts: ['picking'], currentTaskId: null },
+      { id: 'u-sam', name: 'Sam Whitaker', role: 'manager', zone: 'A', depts: [], currentTaskId: null },
+      { id: 'u-pat', name: 'Pat Sullivan', role: 'manager', zone: 'B', depts: [], currentTaskId: null }
     ],
 
     /* Inbound: what is expected at the doors. IN-1001 is at Inbound Door 1

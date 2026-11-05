@@ -186,6 +186,18 @@
       });
     }
     var w = state.wms;
+    /* Departments (job assignment): a live unit from before jobs takes
+       the seed's departments for its id. Never for the game world. */
+    if (state.world !== GAME_WORLD) {
+      var seedLabor = null;
+      state.labor.forEach(function (u) {
+        if (Array.isArray(u.depts)) return;
+        seedLabor = seedLabor || E.seedWorld().labor;
+        var su = null;
+        seedLabor.forEach(function (x) { if (x.id === u.id) su = x; });
+        u.depts = su && Array.isArray(su.depts) ? su.depts.slice() : [];
+      });
+    }
     ['appointments', 'slots', 'orders', 'waves', 'receipts', 'osd', 'loads', 'flags', 'counts', 'decisions']
       .forEach(function (k) { if (!Array.isArray(w[k])) w[k] = []; });
     if (!w.items) w.items = copy(S.items);
@@ -292,22 +304,28 @@
       if (o.status !== 'staged at door' || o.packed) return;
       var id = 't-pack-' + o.id;
       if (task(state, id)) return;
-      state.tasks.push({
+      var pk = {
         id: id, type: 'pack', zone: doorZone(state, o.door),
         title: 'Pack ' + o.id + (o.customer ? ' for ' + o.customer : ''),
         detail: o.lines.map(function (l) { return (l.pickedQty || 0) + ' × ' + l.desc; }).join(', ') +
           ' — pack, label, stage at ' + o.door + '.',
         orderId: o.id, status: 'open', assignee: null, createdAt: api.now()
-      });
+      };
+      /* Pack sits ahead of its order's load task, so a job's task
+         list reads in flow order: pick → pack → load. */
+      var li = -1;
+      state.tasks.forEach(function (x, i) { if (x.id === 't-load-' + o.id) li = i; });
+      if (li === -1) state.tasks.push(pk); else state.tasks.splice(li, 0, pk);
     });
   }
 
   /* After anything changes: the engine derives its work, then the
      WMS layer derives its own. */
-  function refresh(state) {
+  function refresh(state, finisher) {
     E.generateTasks(state);
     generateWmsTasks(state);
     state.tasks.forEach(function (t) { if (!t.createdAt) t.createdAt = api.now(); });
+    syncJobs(state, finisher);
     return state;
   }
   api.refresh = refresh;
@@ -370,14 +388,18 @@
   }
   api.currentOf = function (state, unitId) { return currentOf(state, unit(state, unitId)); };
 
-  /* Give a worker their next task (or the one in hand). */
+  /* Give a worker their next task (or the one in hand). On the live
+     building this only ever reaches into the worker's OWN jobs — the
+     next workable task of a job assigned to them. It never pulls from
+     a pool and never touches another worker's job. (Walk the Shift's
+     own world keeps its pull mechanics.) */
   api.nextFor = function (state, unitId) {
     var u = unit(state, unitId);
     if (!u) return { ok: false, reason: 'No such labor unit.', task: null };
     var cur = currentOf(state, u);
     if (cur) return { ok: true, task: cur, already: true };
     u.currentTaskId = null;
-    var list = candidates(state, u);
+    var list = jobsOn(state) ? ownTasks(state, u.id, true) : candidates(state, u);
     if (!list.length) return { ok: true, task: null };
     var t = list[0];
     t.status = 'assigned';
@@ -393,6 +415,11 @@
     var u = unit(state, unitId);
     if (!u) return null;
     var cur = currentOf(state, u);
+    if (jobsOn(state)) {
+      /* The job model: the queue IS the worker's jobs, in order.
+         Nothing is suggested from anywhere else. */
+      return { unit: u, current: cur, queued: ownTasks(state, u.id, false), suggested: [], jobs: api.jobsOf(state, u.id) };
+    }
     var queued = state.tasks.filter(function (t) { return t.status === 'open' && t.queuedFor === u.id; });
     var suggested = candidates(state, u).filter(function (t) { return t.queuedFor !== u.id; }).slice(0, 3);
     return { unit: u, current: cur, queued: queued, suggested: suggested };
@@ -402,6 +429,9 @@
      straight to them; otherwise it is queued for them, ahead of
      anything else. */
   api.reassign = function (state, taskId, toUnitId, byUnit) {
+    /* On the live building a task never changes hands alone — its
+       whole job does, by a manager (api.reassignJob). */
+    if (jobsOn(state)) return no('Work is assigned by job here. Move the whole job instead (Reassign job).');
     var t = task(state, taskId);
     var to = unit(state, toUnitId);
     if (!t || t.status === 'done') return no('That task is already closed.');
@@ -426,6 +456,317 @@
     record(state, 'Reassigned "' + t.title + '"' + (from ? ' from ' + from.name : '') + ' to ' + to.name +
       ' (' + how + ') by ' + name(state, byUnit) + '.', { kind: 'reassign', taskId: t.id, by: byUnit || null, zone: t.zone });
     return { ok: true, how: how };
+  };
+
+  /* ---------- jobs: work assigned at job granularity ------------------
+     briefs/claude-brief-job-assignment.md (William, 2026-11-05).
+
+     A JOB is the full task flow of one shipment or order (receive →
+     putaway; pick → pack → load). A staged pallet with no shipment
+     behind it is a putaway job of its own; a replenishment, move,
+     consolidation, breakdown or cycle count is a job of one task.
+     TASKS are the steps inside a job.
+
+     - Each job belongs to one DEPARTMENT, read from the first task it
+       was born with (receive → Inbound, putaway → Putaway, pick →
+       Picking, …). Each labor unit works one or more departments
+       (unit.depts).
+     - The SYSTEM assigns: when a job appears, and when a unit frees
+       up, each free unit is dealt the OLDEST job in its departments'
+       pools (job createdAt, then job sequence). Never by a worker
+       asking, never by voice.
+     - EXCLUSIVITY: a held job's open tasks are queued for its holder
+       (task.queuedFor — the shape PR #40's voice already reads) and
+       nobody else can reach them on any read here.
+     - A unit is FREE when none of its jobs has a workable task. When
+       a finisher's job closes, the finisher is dealt first.
+     - The only way a held job changes hands is reassignJob: a named
+       manager, on the desk, recorded with who, when, and from whom.
+
+     Live building only. Walk the Shift's world (world: 'game') never
+     gets jobs and keeps its pull mechanics exactly as they are. */
+
+  var DEPTS = [
+    { id: 'inbound', label: 'Inbound' },
+    { id: 'putaway', label: 'Putaway' },
+    { id: 'replen', label: 'Replenishment' },
+    { id: 'picking', label: 'Picking' },
+    { id: 'packship', label: 'Pack & Ship' },
+    { id: 'count', label: 'Cycle Count' }
+  ];
+  var DEPT_OF_TYPE = { receive: 'inbound', putaway: 'putaway', replen: 'replen', move: 'replen', consolidate: 'replen',
+    breakdown: 'replen', pick: 'picking', pack: 'packship', load: 'packship', count: 'count' };
+  api.DEPTS = DEPTS;
+  api.deptLabel = function (id) {
+    for (var i = 0; i < DEPTS.length; i++) if (DEPTS[i].id === id) return DEPTS[i].label;
+    return id || '—';
+  };
+  api.deptsOf = function (state, unitId) {
+    var u = unit(state, unitId);
+    return u && Array.isArray(u.depts) ? u.depts.slice() : [];
+  };
+
+  function jobsOn(state) { return !!state && !!state.wms && state.world !== GAME_WORLD; }
+  api.jobsOn = jobsOn;
+
+  function jobList(state) { return (state.wms && state.wms.jobs) || []; }
+  api.job = function (state, id) {
+    var l = jobList(state);
+    for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
+    return null;
+  };
+  api.jobOf = function (state, taskId) {
+    var t = task(state, taskId);
+    return t && t.jobId ? api.job(state, t.jobId) : null;
+  };
+  /* A job's tasks, in flow order (the order they stand in the list). */
+  function jobTasks(state, jobId) {
+    return state.tasks.filter(function (t) { return t.jobId === jobId; });
+  }
+  api.jobTasks = jobTasks;
+
+  /* Which job a task belongs to. */
+  function jobKeyOf(state, t) {
+    if (t.type === 'receive' && t.shipmentId) return { id: 'J-' + t.shipmentId, kind: 'shipment', ref: t.shipmentId };
+    if (t.type === 'putaway') {
+      var p = null;
+      state.staging.forEach(function (x) { if (x.id === t.stagingId) p = x; });
+      if (p && p.shipmentId) return { id: 'J-' + p.shipmentId, kind: 'shipment', ref: p.shipmentId };
+      return { id: 'J-' + t.stagingId, kind: 'pallet', ref: t.stagingId };
+    }
+    if ((t.type === 'pick' || t.type === 'pack' || t.type === 'load') && t.orderId) return { id: 'J-' + t.orderId, kind: 'order', ref: t.orderId };
+    return { id: 'J-' + String(t.id).replace(/^t-/, '').replace(/\s*—\s*/g, '-').replace(/\s+/g, '-'), kind: 'task', ref: t.id };
+  }
+
+  function jobTitle(state, k, t) {
+    if (k.kind === 'shipment') { var s = shipment(state, k.ref); return k.ref + (s && s.desc ? ' — ' + s.desc : ''); }
+    if (k.kind === 'order') { var o = order(state, k.ref); return k.ref + (o && o.customer ? ' — ' + o.customer : ''); }
+    return t.title;
+  }
+
+  /* Is the job's whole flow finished? Every task done, and nothing
+     more still to come from its shipment or order. */
+  function jobFinished(state, j, tasks) {
+    if (tasks.some(function (t) { return t.status !== 'done'; })) return false;
+    if (j.kind === 'shipment') {
+      var s = shipment(state, j.ref);
+      if (s && s.status !== 'received') return false;
+      return !state.staging.some(function (p) { return p.shipmentId === j.ref; });
+    }
+    if (j.kind === 'order') {
+      var o = order(state, j.ref);
+      return !o || o.status === 'shipped';
+    }
+    return true;
+  }
+
+  function hasWorkable(state, j) {
+    return jobTasks(state, j.id).some(function (t) { return t.status !== 'done' && !blocked(state, t); });
+  }
+
+  /* Open jobs a unit holds, in the order they were given to them. */
+  api.jobsOf = function (state, unitId) {
+    return jobList(state).filter(function (j) { return j.status === 'open' && j.owner === unitId; })
+      .sort(function (a, b) { return a.assignedAt < b.assignedAt ? -1 : a.assignedAt > b.assignedAt ? 1 : a.seq - b.seq; });
+  };
+
+  /* The unit's own open tasks, job by job, in flow order. workable:
+     leave out what a hold blocks. The task in hand is left out. */
+  function ownTasks(state, unitId, workable) {
+    var out = [];
+    api.jobsOf(state, unitId).forEach(function (j) {
+      jobTasks(state, j.id).forEach(function (t) {
+        if (t.status !== 'open') return;
+        if (workable && blocked(state, t)) return;
+        out.push(t);
+      });
+    });
+    return out;
+  }
+
+  function isFree(state, u) {
+    return !api.jobsOf(state, u.id).some(function (j) { return hasWorkable(state, j); });
+  }
+
+  /* A department's pool: open jobs nobody holds, oldest first. */
+  function byAge(a, b) {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+    return a.seq - b.seq;
+  }
+  api.pool = function (state, dept) {
+    return jobList(state).filter(function (j) { return j.status === 'open' && !j.owner && (!dept || j.dept === dept); }).sort(byAge);
+  };
+
+  function giveJob(state, j, u, act, extra) {
+    j.owner = u.id;
+    j.assignedAt = api.now();
+    var h = { ts: j.assignedAt, act: act, to: u.id };
+    if (extra) Object.keys(extra).forEach(function (k) { h[k] = extra[k]; });
+    j.history.push(h);
+  }
+
+  /* The job pass, run after every change on the live building. */
+  function syncJobs(state, finisher) {
+    if (!jobsOn(state)) return;
+    var w = state.wms;
+    if (!Array.isArray(w.jobs)) w.jobs = [];
+    if (!w.seq) w.seq = {};
+
+    /* 1. Every task belongs to a job; a new task's job appears. */
+    state.tasks.forEach(function (t) {
+      if (t.jobId && api.job(state, t.jobId)) return;
+      var k = jobKeyOf(state, t);
+      var j = api.job(state, k.id);
+      if (j && j.kind === 'task' && j.ref !== t.id) { k.id += '-' + ((w.seq.job || 0) + 1); j = null; }
+      if (!j) {
+        w.seq.job = (w.seq.job || 0) + 1;
+        j = { id: k.id, kind: k.kind, ref: k.ref, title: jobTitle(state, k, t), dept: DEPT_OF_TYPE[t.type] || 'putaway',
+          createdAt: t.createdAt || api.now(), seq: w.seq.job, status: 'open', owner: null, assignedAt: null, history: [] };
+        w.jobs.push(j);
+      } else if (j.status === 'done' && t.status !== 'done') {
+        j.status = 'open'; j.owner = null; j.assignedAt = null; delete j.doneAt;
+        j.history.push({ ts: api.now(), act: 'reopened' });
+      }
+      t.jobId = j.id;
+    });
+
+    /* 2. Jobs whose flow is finished close; a vanished task (a
+       withdrawn replenishment) takes its job with it. */
+    w.jobs.forEach(function (j) {
+      if (j.status !== 'open') return;
+      var ts = jobTasks(state, j.id);
+      if (!jobFinished(state, j, ts)) return;
+      j.status = 'done';
+      j.doneAt = api.now();
+      j.history.push({ ts: j.doneAt, act: ts.length ? 'done' : 'withdrawn', by: j.owner });
+    });
+
+    /* 3. Work already in someone's hands (a state from before jobs)
+       makes them the holder of that job. */
+    w.jobs.forEach(function (j) {
+      if (j.status !== 'open' || j.owner) return;
+      var held = null;
+      jobTasks(state, j.id).forEach(function (t) {
+        if (held || t.status === 'done') return;
+        if (t.status === 'assigned' && t.assignee) held = t.assignee;
+        else if (t.queuedFor) held = t.queuedFor;
+      });
+      var hu = held ? unit(state, held) : null;
+      if (hu) giveJob(state, j, hu, 'adopted');
+    });
+
+    /* 4. Deal: each free unit takes the oldest workable job in its
+       departments' pools. The finisher goes first. */
+    var order0 = state.labor.filter(function (u) { return u.role === 'worker' && Array.isArray(u.depts) && u.depts.length; });
+    if (finisher) {
+      order0.sort(function (a, b) { return (a.id === finisher ? 0 : 1) - (b.id === finisher ? 0 : 1); });
+    }
+    order0.forEach(function (u) {
+      if (!isFree(state, u)) return;
+      var next = null;
+      api.pool(state).forEach(function (j) {
+        if (next || u.depts.indexOf(j.dept) === -1 || !hasWorkable(state, j)) return;
+        next = j;
+      });
+      if (next) giveJob(state, next, u, 'assigned');
+    });
+
+    /* 5. Exclusivity, written where every surface reads it: a held
+       job's open tasks are queued for its holder; a pool job's are
+       queued for nobody. */
+    state.tasks.forEach(function (t) {
+      if (t.status !== 'open') return;
+      var j = api.job(state, t.jobId);
+      if (j && j.status === 'open' && j.owner) t.queuedFor = j.owner;
+      else delete t.queuedFor;
+    });
+  }
+  api.syncJobs = syncJobs;
+
+  /* MANAGER REASSIGN — the only way a held job changes hands. A named
+     manager moves job X from A to B; the remaining tasks move (one in
+     A's hands goes back to open, queued for B); completed tasks keep
+     their doer. Recorded: who moved it, when, from whom. A pool job
+     can be given out the same way ("from the pool"). Voice never
+     calls this. */
+  api.reassignJob = function (state, jobId, toUnitId, byUnit) {
+    if (!jobsOn(state)) return no('Jobs run on the live building only.');
+    var j = api.job(state, jobId);
+    if (!j) return no('No such job.');
+    if (j.status !== 'open') return no('Job ' + j.id + ' is already finished.');
+    var by = unit(state, byUnit);
+    if (!by || by.role !== 'manager') return no('Only a manager can move a job. Sign in as a manager.');
+    var to = unit(state, toUnitId);
+    if (!to || to.role !== 'worker') return no('Pick a worker to give it to.');
+    if (!Array.isArray(to.depts) || to.depts.indexOf(j.dept) === -1) return no(to.name + ' does not work ' + api.deptLabel(j.dept) + '.');
+    if (j.owner === to.id) return no(to.name + ' already holds ' + j.id + '.');
+    var from = j.owner ? unit(state, j.owner) : null;
+    var moved = 0;
+    jobTasks(state, j.id).forEach(function (t) {
+      if (t.status === 'done') return;
+      if (t.status === 'assigned') {
+        var hu = unit(state, t.assignee);
+        if (hu && hu.currentTaskId === t.id) hu.currentTaskId = null;
+        t.status = 'open';
+        t.assignee = null;
+      }
+      t.queuedFor = to.id;
+      moved++;
+    });
+    var ts = api.now();
+    giveJob(state, j, to, 'reassigned', { from: from ? from.id : null, by: by.id });
+    record(state, 'Job ' + j.id + ' (' + j.title + ') moved ' + (from ? 'from ' + from.name : 'from the pool') + ' to ' + to.name +
+      ' by ' + by.name + ' — ' + moved + ' open task' + (moved === 1 ? '' : 's') + ' moved.',
+      { kind: 'job-reassign', jobId: j.id, from: from ? from.id : null, to: to.id, by: by.id, ts: ts });
+    /* The one who lost it may be free now: the system deals to them. */
+    syncJobs(state);
+    return { ok: true, job: j, from: from ? from.id : null, to: to.id, moved: moved };
+  };
+
+  /* Job load by zone: open jobs, placed where their next open task is
+     (else where they began), against the workers in that zone. */
+  function jobZone(state, j) {
+    var ts = jobTasks(state, j.id);
+    for (var i = 0; i < ts.length; i++) if (ts[i].status !== 'done' && ts[i].zone) return ts[i].zone;
+    for (var k = 0; k < ts.length; k++) if (ts[k].zone) return ts[k].zone;
+    return null;
+  }
+  api.jobZone = jobZone;
+  api.jobLoad = function (state) {
+    return state.zones.map(function (z) {
+      var pending = 0, held = 0;
+      jobList(state).forEach(function (j) {
+        if (j.status !== 'open' || jobZone(state, j) !== z) return;
+        pending++;
+        if (j.owner) held++;
+      });
+      var workers = state.labor.filter(function (u) { return u.role === 'worker' && u.zone === z; }).length;
+      return { zone: z, pending: pending, held: held, pool: pending - held, workers: workers, load: pending / Math.max(workers, 1) };
+    });
+  };
+
+  /* The bottleneck the labor proposal reads. Live building: JOB load
+     per worker, by zone — same thresholds as the engine (at least 4
+     waiting, and at least double the lightest zone's load). The
+     suggested worker comes from the lightest zone, one holding no job
+     if there is one. Elsewhere: the engine's task-count call. */
+  api.bottleneck = function (state) {
+    if (!jobsOn(state)) return E.bottleneck(state);
+    var rows = api.jobLoad(state);
+    var worst = rows.slice().sort(function (a, b) { return b.load !== a.load ? b.load - a.load : b.pending - a.pending; })[0];
+    var lightest = rows.slice().sort(function (a, b) { return a.load !== b.load ? a.load - b.load : a.pending - b.pending; })[0];
+    if (!worst || worst.zone === lightest.zone) return null;
+    if (worst.pending < 4) return null;
+    if (worst.load < 2 * lightest.load) return null;
+    if (lightest.workers < 1) return null;
+    var cands = state.labor.filter(function (u) { return u.role === 'worker' && u.zone === lightest.zone; });
+    var pick = null;
+    cands.forEach(function (u) { if (!pick && !api.jobsOf(state, u.id).length) pick = u; });
+    if (!pick) pick = cands[0];
+    if (!pick) return null;
+    return { zone: worst.zone, pending: worst.pending, workers: worst.workers, loadPerWorker: worst.load, unit: 'job',
+      suggestion: { unitId: pick.id, unitName: pick.name, fromZone: lightest.zone, fromPending: lightest.pending,
+        fromWorkers: lightest.workers, toZone: worst.zone } };
   };
 
   /* ---------- completing work ------------------------------------------ */
@@ -544,6 +885,10 @@
     var why = blocked(state, t);
     if (why) return no(why);
     var res;
+    /* Who finishes: the job's holder. If this closes their job, they
+       are dealt the next one from their department's pool first. */
+    var tj = t.jobId ? api.job(state, t.jobId) : null;
+    var finisher = (tj && tj.owner) || t.assignee || null;
 
     if (t.type === 'receive') {
       return no('Receive this in Receiving — count it against the BOL, then post the receipt.');
@@ -636,7 +981,7 @@
       return no('This task type cannot be completed here.');
     }
 
-    refresh(state);
+    refresh(state, finisher);
     return res;
   };
 
@@ -836,6 +1181,7 @@
       made.push(tid);
     });
     if (made.length) {
+      syncJobs(state);
       record(state, 'Cycle count queued for ' + made.length + ' bin' + (made.length === 1 ? '' : 's') + ' (' + (opts.reason || 'cycle count') +
         ') by ' + name(state, opts.by) + '.', { kind: 'count-queued', by: opts.by || null });
     }
@@ -894,6 +1240,7 @@
     state.tasks.push({ id: id, type: 'move', zone: f.zone, title: 'Move ' + qty + ' × ' + m.desc + ' ' + f.id + ' → ' + t.id,
       detail: 'Bin-to-bin move requested by ' + name(state, byUnit) + '.', desc: m.desc, fromBinId: f.id, toBinId: t.id, qty: qty,
       status: 'open', assignee: null, createdAt: api.now() });
+    syncJobs(state);
     record(state, 'Move requested: ' + qty + ' × ' + m.desc + ' ' + f.id + ' → ' + t.id + ' by ' + name(state, byUnit) + '.',
       { kind: 'move-requested', taskId: id, by: byUnit || null });
     return { ok: true, taskId: id };
@@ -1112,15 +1459,19 @@
 
   api.proposals = function (state) {
     var out = [];
-    var b = E.bottleneck(state);
+    var b = api.bottleneck(state);
+    var unitWord = jobsOn(state) ? 'job' : 'task';
     if (b && b.suggestion) {
       var s = b.suggestion;
       out.push({ key: 'bottleneck-' + s.unitId + '-' + s.toZone, unitId: s.unitId, unitName: s.unitName, fromZone: s.fromZone, toZone: s.toZone,
-        why: 'Zone ' + b.zone + ' has ' + b.pending + ' tasks waiting for ' + b.workers + ' worker' + (b.workers === 1 ? '' : 's') +
+        why: 'Zone ' + b.zone + ' has ' + b.pending + ' ' + unitWord + (b.pending === 1 ? '' : 's') + ' waiting for ' + b.workers + ' worker' + (b.workers === 1 ? '' : 's') +
           ' (' + (Math.round(b.loadPerWorker * 10) / 10) + ' each). Zone ' + s.fromZone + ' has ' + s.fromPending + ' for ' + s.fromWorkers + '.' });
     }
     /* Idle hands: a worker with nothing workable in their zone while
-       another zone has open work. */
+       another zone has open work. On the live building work is dealt
+       by department, not zone, so a zone move gives an idle worker
+       nothing — only the job-load bottleneck is proposed there. */
+    if (jobsOn(state)) return out;
     var openBy = {};
     state.tasks.forEach(function (t) {
       if (t.status === 'open' && !blocked(state, t) && t.zone) openBy[t.zone] = (openBy[t.zone] || 0) + 1;
@@ -1258,7 +1609,7 @@
     loadsShipped.forEach(function (l) { unitsOut += l.totals ? l.totals.units : 0; });
     var unitsIn = 0;
     state.wms.receipts.forEach(function (r) { r.lines.forEach(function (l) { unitsIn += l.received; }); });
-    var bn = E.bottleneck(state);
+    var bn = api.bottleneck(state);
     return {
       tasks: t,
       zones: zones,
