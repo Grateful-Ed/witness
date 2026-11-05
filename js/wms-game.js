@@ -201,6 +201,18 @@
     var r = find(ROLES, function (x) { return x.id === id; });
     return r ? r.label : ROLES[0].label;
   }
+  /* The role label with its article, so the line reads right for
+     every role: "an Inbound dock worker", "a Cycle counter". */
+  function aRole(id) {
+    var label = roleLabel(id);
+    return (/^[aeiou]/i.test(label) ? 'an ' : 'a ') + label;
+  }
+  /* The one cannot-deal line: names the REQUESTED shift and says
+     plainly that a fresh practice copy is what deals it again. */
+  function cannotDeal(id) {
+    return 'This practice building cannot deal ' + aRole(id) + ' shift — its work for that shift is spent. ' +
+      'Reload the practice copy for a fresh building, or try another shift type.';
+  }
   function openPicksFor(state, orderId) {
     return (state.tasks || []).filter(function (t) {
       return t.type === 'pick' && t.orderId === orderId && t.status !== 'done';
@@ -353,7 +365,7 @@
   function begin(state, role) {
     role = role || 'inbound';
     var chain = buildShift(state, role);
-    if (!chain) return no('This building cannot deal a ' + roleLabel(role) + ' shift right now — try another shift type, or reload the practice copy for a fresh building.');
+    if (!chain) return no(cannotDeal(role));
     if (chain.role === 'inbound') direct(state, chain);
     record(state, chain.role === 'inbound'
       ? 'Walk the shift started — five receiving tasks on a practice copy.'
@@ -496,6 +508,11 @@
   var autoTimer = null;
 
   function cur() { return session && !session.done ? session.chain.steps[session.i] : null; }
+  /* The shift type in play: the running chain's own role while a
+     shift runs; otherwise — no shift yet, or the last one finished —
+     the type the panel has selected, which is the shift that starts
+     next. A finished shift never names the next one. */
+  function activeRole() { return session && !session.done ? session.chain.role : roleWanted; }
   function total() { return session ? session.chain.steps.length : TOTAL; }
   function samePlace(a, b) { return !!a && !!b && a.place === b.place && a.id === b.id; }
   function wait(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
@@ -620,7 +637,7 @@
     var step = cur();
     if (!step) return Promise.resolve();
     session.busy = true;
-    var chain = session.chain, idx = session.i;
+    var sess = session, chain = session.chain, idx = session.i;
     var chainP = Promise.resolve();
     if (step.from && !samePlace(step.from, session.at)) {
       session.at = step.from;
@@ -628,6 +645,7 @@
       chainP = wait(GLIDE_MS + PAUSE_MS);
     }
     return chainP.then(function () {
+      if (session !== sess) return; /* the shift was reset (practice switched) mid-walk */
       if (step.kind === 'count' && !session.countArmed) {
         session.glideTo = step.target;
         session.glidePx = cellPx(step.target.place, step.target.id);
@@ -657,7 +675,7 @@
           if (session.auto) scheduleAuto();
         }
       });
-    }).catch(function () { session.busy = false; });
+    }).catch(function () { sess.busy = false; });
   }
 
   function confirm() {
@@ -686,6 +704,19 @@
       afterRender._rz = true;
       window.addEventListener('resize', function () { if (session) { session.px = null; mount(); } });
     }
+  }
+
+  /* The console switched practice copy on or off in place (no page
+     load): forget the shift exactly as a fresh page load would — no
+     session, no voice line, the panel's selections back to their
+     defaults, no circle on the board. */
+  function reset() {
+    clearTimeout(autoTimer);
+    session = null;
+    voiceNote = null;
+    autoWanted = false;
+    roleWanted = 'inbound';
+    removeCircle();
   }
 
   /* A click on a cell of the warehouse map: true when the game took
@@ -737,8 +768,8 @@
           voiceNote = { text: '', did: 'Shift type changed to ' + roleLabel(next) + ' — the ' + prevLabel +
             ' shift was set aside; the tasks it finished stay on the record.', meta: null };
         } else {
-          voiceNote = { text: '', did: 'Shift type changed to ' + roleLabel(next) + ', but this building cannot deal that shift right now — the ' +
-            prevLabel + ' shift was set aside; the tasks it finished stay on the record.', meta: null };
+          voiceNote = { text: '', did: 'Shift type changed to ' + roleLabel(next) + ', but ' + cannotDeal(next).charAt(0).toLowerCase() + cannotDeal(next).slice(1) +
+            ' The ' + prevLabel + ' shift was set aside; the tasks it finished stay on the record.', meta: null };
         }
         if (CTX.render) CTX.render();
       });
@@ -759,6 +790,7 @@
           if (CTX.render) CTX.render();
           if (session.auto) scheduleAuto();
         }
+        return r;
       });
     }
     if (name === 'doit') { doStep(); return; }
@@ -804,7 +836,7 @@
      tasks do I need to do" truthfully, and nothing she could invent
      state from beyond it. Pure read of the session. */
   function voiceContext() {
-    var role = session ? session.chain.role : roleWanted;
+    var role = activeRole();
     var ctx = { role: role, roleLabel: roleLabel(role), offer: null, step: 0, total: 0,
       pending: 'none', remaining: [], at: null, done: false };
     if (!session) return ctx;
@@ -863,9 +895,12 @@
   function actOn(cmd, text, say) {
     if (cmd === 'start') {
       if (session && !session.done) { note(text, 'the shift is already under way — nothing changed.'); return; }
-      ui('start').then(function () {
-        if (session) note(text, 'shift started — the first task is offered below.', say);
-        else note(text, 'this building could not deal a shift — nothing was done.');
+      var before = session;
+      ui('start').then(function (r) {
+        /* started only when a NEW chain was dealt — a finished shift
+           still on the panel is not the one starting */
+        if (session && session !== before) note(text, roleLabel(session.chain.role) + ' shift started — the first task is offered below.', say);
+        else note(text, ((r && r.reason) || cannotDeal(roleWanted)) + ' Nothing was done.');
       });
       return;
     }
@@ -950,7 +985,7 @@
      or — mid-shift — the role switched to. The active role is the
      dealt chain's own while a shift runs. */
   function roleRow() {
-    var active = session ? session.chain.role : roleWanted;
+    var active = activeRole();
     return '<p class="hint">Shift type</p><div class="form-actions">' + ROLES.map(function (r) {
       return '<button class="btn' + (r.id === active ? ' primary' : '') + '" data-act="game-role" data-role="' + r.id + '">' + esc(r.label) + '</button>';
     }).join('') + '</div>';
@@ -961,7 +996,7 @@
       return panel('Walk the shift',
         '<p>The game runs on a practice copy, so the real record stays clean. ' +
         'Open one and work a five-task receiving shift on the warehouse map below — tasks are offered one at a time and confirmed by voice, and every move lands on the practice record as it happens.</p>' +
-        '<div class="form-actions"><a class="btn primary" href="wms.html?practice=1#/dashboard">Open a practice copy</a></div>');
+        '<div class="form-actions"><a class="btn primary" href="wms.html?practice=1#/dashboard" data-act="enter-practice">Open a practice copy</a></div>');
     }
     var autoOn = session ? session.auto : autoWanted;
     var autoBtn = '<button class="btn" data-act="game-auto">Auto-run: ' + (autoOn ? 'On' : 'Off') + '</button>';
@@ -969,7 +1004,7 @@
       var intro = roleWanted === 'inbound'
         ? '<p>Five receiving tasks on the map below. You are the circle. Work it the way the job works: ' +
           'a task is offered, you walk to it, and you confirm it done — by voice, like the glasses.</p>'
-        : '<p>A ' + esc(roleLabel(roleWanted)) + ' shift on the map below. You are the circle. Work it the way the job works: ' +
+        : '<p>' + esc(aRole(roleWanted).charAt(0).toUpperCase() + aRole(roleWanted).slice(1)) + ' shift on the map below. You are the circle. Work it the way the job works: ' +
           'a task is offered, you walk to it, and you confirm it done — by voice, like the glasses.</p>';
       return panel('Walk the shift',
         roleRow() + intro +
@@ -1016,7 +1051,7 @@
     direct: direct, begin: begin, performStep: performStep,
     armCount: armCount, confirmCount: confirmCount, countContents: countContents,
     elapsedText: elapsedText, voiceCommand: voiceCommand, voiceContext: voiceContext, TOTAL: TOTAL,
-    afterRender: afterRender, cellClick: cellClick, ui: ui, hear: hear, panelHtml: panelHtml
+    afterRender: afterRender, reset: reset, cellClick: cellClick, ui: ui, hear: hear, panelHtml: panelHtml
   };
   root.WmsGame = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

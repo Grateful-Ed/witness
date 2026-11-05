@@ -28,7 +28,7 @@
   var busy = false;
   var micActive = false;
   var lastSync = null;
-  var ui = {                /* page-only selections; never saved */
+  function freshUi() { return {                /* page-only selections; never saved */
     rcvShip: null, rcvLines: null, rcvTranscript: '', rcvSource: 'typed', rcvPhoto: null, rcvPhotoFlags: [],
     selBin: null, zoneFilter: '', binSearch: '', taskType: '', taskZone: '', taskStatus: 'active',
     recKind: '', rfUnit: null, rfReply: '', rfHeard: '', rfPhoto: null, rfPhotoRead: null,
@@ -39,9 +39,10 @@
        reload forgets it), and the last turn as shown. */
     voice: { unit: null, stage: null, heard: '', line: '', note: '', guide: null, busy: false, refused: false },
     folded: {}   /* folded panels, by screen + panel title; this page only */
-  };
+  }; }
+  var ui = freshUi();
 
-  var store = S.create({
+  function makeStore(practice) { return S.create({
     fetch: window.fetch.bind(window),
     seed: W.seed,
     /* Practice copies are dressed — stocked fuller than the live
@@ -57,8 +58,9 @@
       }
       return null;
     },
-    practice: params.has('practice')
-  });
+    practice: practice
+  }); }
+  var store = makeStore(params.has('practice'));
 
   /* ---------- helpers --------------------------------------------- */
 
@@ -1217,16 +1219,44 @@
     return n === null ? null : n;
   }
 
+  /* Enter or leave the practice copy IN PLACE (demo polish,
+     2026-11-05). A full page load painted the screen twice — the
+     static "Loading the desk record…" shell, then the view. Here the
+     URL gains or loses the practice flag (same page, same view: the
+     hash rides along), the store is rebuilt for the new mode, the
+     page-only selections and the game are forgotten as a fresh load
+     would forget them, and the current view stays on screen until
+     the new state lands — one render. Mid-save or mid-recording it
+     falls back to the full load, which is always correct. */
+  function switchPractice(on, push) {
+    var u = new URL(location.href);
+    if (on) u.searchParams.set('practice', '1'); else u.searchParams.delete('practice');
+    if (busy || micActive || !window.history || !history.pushState) { location.href = u.toString(); return; }
+    if (push) history.pushState(null, '', u.toString());
+    store = makeStore(on);
+    var fresh = freshUi();
+    Object.keys(ui).forEach(function (k) { delete ui[k]; });
+    Object.keys(fresh).forEach(function (k) { ui[k] = fresh[k]; });
+    lastSync = null;
+    var t = document.querySelector('.toast');
+    if (t && t.parentNode) t.parentNode.removeChild(t);   /* the old mode's toast goes with it, as on a load */
+    if (G && G.reset) G.reset();
+    return reload();
+  }
+
   var ACTIONS = {
     retry: function () { $('main').innerHTML = '<div class="loading">Loading the desk record…</div>'; reload(); },
     practice: function () { store.enterPractice(); reload(); },
     /* End the practice copy: same page and view (the hash rides
        along), without the practice flag — a full load, so the store
        is rebuilt against the live desk record. */
-    'end-practice': function () {
-      var u = new URL(location.href);
-      u.searchParams.delete('practice');
-      location.href = u.toString();
+    'end-practice': function () { switchPractice(false, true); },
+    /* Open a practice copy from the game panel: the same in-place
+       switch. The link keeps its href, so a new tab still works. */
+    'enter-practice': function (el, e) {
+      if (e && (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey)) return;
+      if (e) e.preventDefault();
+      switchPractice(true, true);
     },
     'reset-world': function () {
       if (!window.confirm('Replace the desk record with a fresh WMS warehouse? The state stored there now is overwritten for everyone.')) return;
@@ -1394,7 +1424,7 @@
     var fn = ACTIONS[el.dataset.act];
     if (!fn) return;
     if (el.tagName !== 'A') e.preventDefault();
-    fn(el);
+    fn(el, e);
   });
 
   document.addEventListener('input', function (e) {
@@ -1426,6 +1456,13 @@
     }
   });
 
+  /* Back / forward across the practice switch: follow the URL's
+     flag in place. A plain hash move never changes the flag. */
+  window.addEventListener('popstate', function () {
+    var want = new URLSearchParams(location.search).has('practice');
+    if (want !== store.practice()) switchPractice(want, false);
+  });
+
   window.addEventListener('hashchange', function () {
     document.body.classList.remove('nav-open');
     if (/^#\/?witness\//.test(location.hash)) window.scrollTo(0, 0);
@@ -1452,5 +1489,5 @@
   });
 
   /* For tests and the console. */
-  window.WitnessWmsPage = { getState: function () { return state; }, store: store, ui: ui, workHear: workHear };
+  window.WitnessWmsPage = { getState: function () { return state; }, get store() { return store; }, ui: ui, workHear: workHear };
 })();
