@@ -213,11 +213,12 @@ async function handleAsr(request, env) {
 }
 
 /* ---------------- /save + /samples ----------------
-   Scan storage. The SCANS KV binding is created and bound outside
-   this repo (dashboard / wrangler, by William); no namespace is
-   declared in wrangler.jsonc. Until the binding exists both routes
-   answer 501 storage-not-connected — an expected, honest state, not
-   an error in the code. */
+   Scan storage. The SCANS KV binding is declared in
+   worker/wrangler.jsonc (production namespace WITNESS_kv, plus a
+   dedicated preview namespace) and bound to this Worker. If the
+   binding is ever missing, both routes answer 501
+   storage-not-connected — an expected, honest state, not an error
+   in the code. */
 
 function storageMissing(origin) {
   return json(501, { ok: false, error: 'storage-not-connected' }, origin);
