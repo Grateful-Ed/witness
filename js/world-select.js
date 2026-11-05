@@ -66,7 +66,7 @@
     worldFromSearch: worldFromSearch, stateWorld: stateWorld, checkWorld: checkWorld
   };
 
-  api.kitchenLine = 'Kitchen world — the demo\'s home-scale warehouse. Groceries land on the Counter; the receipt scan in the glasses view creates the work.';
+  api.kitchenLine = 'Kitchen world — the demo\'s home-scale warehouse. Groceries land on the Counter. Double-tap to scan a receipt — META reads it and creates the putaway job — then hold anywhere to talk.';
   api.warehouseLine = 'Warehouse world — the receiving dock. Open the view, hold anywhere to talk, double-tap to capture: you speak what you see, and META checks it against the camera.';
 
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
