@@ -268,7 +268,7 @@
       reallocate: [],
       ship: ['loadId'],
       'labor-move': ['approved'],
-      'job-reassign': ['jobId', 'from', 'to'],
+      'job-reassign': ['jobId', 'from', 'to', 'crossDept'],
       desk: ['words', 'source', 'decision', 'on'],
       game: []
     }
