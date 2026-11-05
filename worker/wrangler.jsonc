@@ -1,0 +1,19 @@
+{
+  "name": "witness",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-23",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "persist": true, "invocation_logs": true },
+    "traces": { "enabled": false, "persist": true, "head_sampling_rate": 1 }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SCANS",
+      "id": "7b95f49bb5ab477ebc0492555140cdba",
+      "preview_id": "9af22a51c5784cc1b72b305683e2e47e"
+    }
+  ]
+}
