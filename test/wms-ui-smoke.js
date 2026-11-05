@@ -30,10 +30,16 @@ var server = http.createServer(function (req, res) {
 });
 
 var kv = null, gets = 0, posts = 0, chats = [], asrs = 0;
+var asrText = 'I decided to keep it on hold until the carrier calls back.';
 function chatReply(body) {
   var sys = body.messages[0].content;
   var content;
-  if (/Witness agent on one warehouse item/.test(sys)) {
+  if (/working their real task queue/.test(sys)) {
+    /* Work by voice: META names the intent from the worker's words */
+    var said = String(body.messages[1].content.split('THE WORKER SAID (verbatim):\n')[1] || '').toLowerCase();
+    var intent = /next/.test(said) ? 'next' : /picked|done|put away|counted/.test(said) ? 'complete' : /leak|broken|crushed/.test(said) ? 'problem' : 'answer';
+    content = JSON.stringify({ intent: intent, about: 'current', say: intent === 'answer' ? 'I do not have that in front of me.' : 'On it.' });
+  } else if (/Witness agent on one warehouse item/.test(sys)) {
     content = 'Flagged at receipt: Tommy said "one sixteen cases, four crushed". It is on hold.';
   } else if (/spoken count into numbers/.test(sys)) {
     content = JSON.stringify({ lines: [
@@ -64,7 +70,7 @@ server.listen(0, async function () {
       if (req.method() === 'GET') { gets++; return route.fulfill(kv ? { status: 200, headers: cors, body: kv } : { status: 404, headers: cors, body: '{"ok":false}' }); }
       posts++; kv = req.postData(); return route.fulfill({ status: 200, headers: cors, body: '{"ok":true}' });
     }
-    if (u.pathname === '/asr') { asrs++; return route.fulfill({ status: 200, headers: cors, body: JSON.stringify({ text: 'I decided to keep it on hold until the carrier calls back.' }) }); }
+    if (u.pathname === '/asr') { asrs++; return route.fulfill({ status: 200, headers: cors, body: JSON.stringify({ text: asrText }) }); }
     if (u.pathname === '/chat') { var b = JSON.parse(req.postData()); chats.push(b); return route.fulfill({ status: 200, headers: cors, body: JSON.stringify(chatReply(b)) }); }
     return route.fulfill({ status: 404, headers: cors, body: '{}' });
   });
@@ -269,6 +275,51 @@ server.listen(0, async function () {
       /^Shipment /.test(await page.textContent('.wp-page h1')));
     await go('#/dashboard');
   }
+
+  /* Work by voice on the live queue (the full-flow voice brief):
+     real hold-to-talk through the stubbed /asr. Every act stages and
+     asks with nothing saved; only the next yes saves. */
+  async function say(text) {
+    asrText = text;
+    var b = await page.locator('#wvTalk').boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+    await page.waitForFunction(function (t) { var v = window.WitnessWmsPage.ui.voice; return !v.busy && v.heard === t && !!v.line; }, text, { timeout: 8000 }).catch(function () {});
+    await page.waitForTimeout(150);
+    return page.evaluate(function () { var v = window.WitnessWmsPage.ui.voice; return { line: v.line, note: v.note, staged: !!v.stage, refused: v.refused, shown: (document.querySelector('#main .notice.info, #main .notice.bad') || {}).textContent || '' }; });
+  }
+  await go('#/queues');
+  check('Work by voice rides the Task Queues screen', !!(await page.$('#wvTalk')) && !!(await page.$('#wvWho')));
+  await page.selectOption('#wvWho', 'u-tommy');
+  await page.waitForTimeout(150);
+  s = await st();
+  var tommyBefore = s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId;
+  var vp = posts;
+  var v1 = await say("what's next");
+  s = await st();
+  check('voice: "what\'s next" stages the queue\'s offer and asks — nothing saved', /Take it\? Say yes/.test(v1.line) && v1.staged && posts === vp && !tommyBefore &&
+    !s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId && v1.shown === v1.line);
+  var v2 = await say('yes');
+  s = await st();
+  var tCur = s.tasks.find(function (t) { return t.id === s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId; });
+  check('voice: the next "yes" takes it — one save', /^Taken: /.test(v2.line) && posts === vp + 1 && !!tCur && tCur.takenVia === 'voice');
+  vp = posts;
+  var doneWords = tCur.type === 'pick' ? 'picked ' + tCur.qty : 'done';
+  var v3 = await say(doneWords);
+  check('voice: a completion stages "Mark … complete?" — nothing saved', /^Mark ".*" complete/.test(v3.line) && v3.staged && posts === vp);
+  var v4 = await say('yes');
+  s = await st();
+  var closed = s.tasks.find(function (t) { return t.id === tCur.id; });
+  check('voice: the next "yes" closes it through the WMS path, attributed by voice, words after the act', closed.status === 'done' && closed.via === 'voice' &&
+    closed.doneBy === 'u-tommy' && posts === vp + 1 && !v4.refused && /Next:|Nothing else waiting/.test(v4.line));
+  vp = posts;
+  var v5 = await say('oil leaking by B-03');
+  var v6 = await say('no');
+  check('voice: a spoken problem stages a flag; "no" files nothing', /^File a flag with your words/.test(v5.line) && /^Not filed/.test(v6.line) && posts === vp);
+  await go('#/putaway');
+  check('Work by voice rides the flow views too (Putaway)', !!(await page.$('#wvTalk')));
 
   /* Every view renders */
   var views = ['dashboard', 'receiving', 'osd', 'putaway', 'locations', 'items', 'counts', 'replen', 'orders', 'picking', 'ship', 'queues', 'labor', 'flags', 'summary', 'audit', 'ontology', 'rf'];

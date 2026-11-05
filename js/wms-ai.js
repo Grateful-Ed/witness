@@ -21,6 +21,10 @@
         and shows her words only when the work really happened
         (js/wms-game.js owns that honesty); 'answer' replies pass
         through untouched.
+     6. workTurn      — the same envelope, generalized to the live
+        task queues (js/wms-voice.js): META names an intent; code
+        stages the act, asks, and runs it only on the next turn's
+        yes, through js/wms.js. This call mutates nothing.
 
    The request/retry/error plumbing is bol.js's readBody + sendRead —
    reused, never forked. Pure: the caller hands in fetch. Loads in the
@@ -265,7 +269,86 @@
       .then(function (r) { return { intent: r.value.intent, say: r.value.say, attempts: r.attempts }; });
   }
 
+  /* ---------- 6. work by voice: the live task queues ----------------- */
+  /* The same envelope as gameTurn, generalized from the game's steps
+     to the console's real task queue (js/wms-voice.js owns the act).
+     The model only NAMES the intent; code resolves it against the
+     live state, stages any act and asks, and runs it only on the
+     next turn's yes. Nothing in this call mutates anything. "about"
+     says whether a completion is about the task in hand — anything
+     but "current" makes the surface ask instead of act. */
+
+  var WORK_INTENTS = ['complete', 'next', 'repeat', 'problem', 'confirm', 'deny', 'answer', 'none'];
+  var WORK_ABOUT = ['current', 'other', 'unclear'];
+
+  var WORK_PROMPT = [
+    'You are META, the voice of Witness — the same META a worker talks to through the warehouse glasses. You are on the warehouse console with one worker, working their real task queue. The context below says who the worker is, the task in their hands (if any), a question waiting for their yes or no (if any), and what is next in their queue.',
+    '',
+    'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
+    '{"intent":"answer","about":"current","say":"..."}',
+    '',
+    '"intent" is one of:',
+    '- "complete": the worker says the task in their hands is done (including a spoken pick quantity, a bin they put it in, or a count). Only when their words mean it is finished.',
+    '- "next": the worker asks for their next task.',
+    '- "repeat": the worker asks you to repeat or say again what their task is.',
+    '- "problem": the worker reports something wrong — damage, a shortage, a spill, a wrong pallet, anything broken or unsafe. A task with a problem is not finished: never "complete".',
+    '- "confirm": the worker says yes to the question waiting for them.',
+    '- "deny": the worker says no, wait, or cancel to the question waiting for them.',
+    '- "answer": a question about the work, or anything you respond to without changing the work. Most turns that are not commands are this.',
+    '- "none": you cannot tell what the worker wants. "say" asks a short clarifying question.',
+    '',
+    '"about" (for "complete"): "current" when the words are about the task in hand; "other" when the words name a different task, bin, pallet or order; "unclear" when you cannot tell which task they mean. Use "current" for every other intent.',
+    '',
+    '"say" is what you say back: one or two short sentences, in your own voice, the way you talk to a worker on the floor.',
+    '',
+    'Rules:',
+    '- Never invent state. The context is all you know. If the worker asks about something it does not cover, say you do not have it in front of you (intent "answer").',
+    '- You never close, take or file anything yourself: the console asks the worker to confirm every change, and shows your words only after the work has really happened.',
+    '- You are a warehouse-work assistant. If a request is not related to warehouse work or this warehouse\'s processes, decline it in your own voice (intent "answer").'
+  ].join('\n');
+
+  /* The context is composed by js/wms-voice.js from the live state;
+     this builder only frames it. */
+  function workBody(context, words) {
+    var c = context || {};
+    var lines = ['WORK CONTEXT'];
+    lines.push('Worker: ' + (c.worker || 'a worker') + (c.zone ? ' (Zone ' + c.zone + ')' : ''));
+    lines.push(c.inHand ? 'Task in hand: ' + c.inHand : 'No task in hand.');
+    if (c.pending) lines.push('Waiting for the worker\'s yes or no: ' + c.pending);
+    if (c.nextUp && c.nextUp.length) {
+      lines.push('Next in the queue:');
+      c.nextUp.forEach(function (o, i) { lines.push((i + 1) + '. ' + o); });
+    } else {
+      lines.push('Nothing else is waiting in the queue.');
+    }
+    lines.push('');
+    lines.push('THE WORKER SAID (verbatim):');
+    lines.push(words);
+    return textBody(WORK_PROMPT, lines.join('\n'));
+  }
+
+  function acceptWork(parsed) {
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (WORK_INTENTS.indexOf(parsed.intent) === -1) return null;
+    var say = str(parsed.say);
+    if (!say) return null;
+    if (say.length > 500) say = say.slice(0, 500);
+    var about = WORK_ABOUT.indexOf(parsed.about) === -1 ? (parsed.intent === 'complete' ? 'unclear' : 'current') : parsed.about;
+    return { intent: parsed.intent, about: about, say: say };
+  }
+
+  function workTurn(doFetch, context, words, url) {
+    if (!String(words || '').trim()) return Promise.reject(Object.assign(new Error('empty'), { userMessage: 'Nothing was heard. Hold the button and say it again.' }));
+    return B.sendRead(doFetch, url, workBody(context, words), acceptWork)
+      .then(function (r) { return { intent: r.value.intent, about: r.value.about, say: r.value.say, attempts: r.attempts }; });
+  }
+
   var api = {
+    WORK_PROMPT: WORK_PROMPT,
+    WORK_INTENTS: WORK_INTENTS,
+    workBody: workBody,
+    acceptWork: acceptWork,
+    workTurn: workTurn,
     RECEIVE_PROMPT: RECEIVE_PROMPT,
     LABEL_PROMPT: LABEL_PROMPT,
     PUTAWAY_PROMPT: PUTAWAY_PROMPT,
