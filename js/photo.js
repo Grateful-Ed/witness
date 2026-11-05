@@ -28,6 +28,17 @@
    page says so plainly and whatever already exists (the human scan,
    the photo flags) stays on screen. Nothing is invented to fill a
    gap.
+
+   SAM 3.1 TOGGLE (William, 2026-11-05; briefs/claude-brief-sam-toggle.md):
+   a switch in the Step 2 panel, default OFF, remembered in this
+   browser. OFF is exactly the flow above — no /segment calls, no
+   record changes. ON fires SAM 3.1 through the Worker's /segment route
+   in parallel with the photo scan, one call per concept, and attaches
+   what it finds as segmentation EVIDENCE: boxes drawn over the sheet,
+   counts per side handed to the comparison as part of the photo scan,
+   the boxes saved on the OS&D record. SAM renders no verdicts — it
+   measures; Spark compares; a human decides. A concept that fails
+   gives no evidence and the record says so; it never blocks the scan.
    ===================================================================== */
 (function () {
   'use strict';
@@ -35,6 +46,7 @@
   var WORKER_BASE = 'https://witness.e-william-harris96.workers.dev';
   var CHAT_URL = WORKER_BASE + '/chat';
   var SAVE_URL = WORKER_BASE + '/save';
+  var SEGMENT_URL = WORKER_BASE + '/segment';
 
   /* The test loads' contact sheets, at their public URLs. The photo
      scan reads exactly the file the tester sees on this page. */
@@ -47,6 +59,28 @@
     b: 'Load B — peaches stack'
   };
   var SIDES = ['front', 'right', 'back', 'left', 'overall'];
+
+  /* ---------- SAM 3.1 evidence: constants -------------------------- */
+
+  var SAM_CONCEPTS = ['cardboard box', 'shipping label', 'damaged cardboard box', 'torn plastic wrap'];
+  var SAM_DAMAGE_CONCEPTS = ['damaged cardboard box', 'torn plastic wrap'];
+  var SAM_STORE_KEY = 'witness.samEvidence';
+
+  /* Contact-sheet geometry, read from the real files in
+     test-data/photos/ (test/sam-toggle-test.js pins it against their
+     headers). Both sheets are a clean 2 x 2 grid of equal panels:
+     FRONT | RIGHT over BACK | LEFT, with a thin white gutter on the
+     centre lines. SAM boxes arrive normalized 0–1000, so the split is
+     at 500 on both axes. A box whose centre sits in the gutter band,
+     or which straddles a centre line, belongs to no one panel and is
+     attributed to "overall". A sheet not listed here is not a known
+     grid: all its evidence is "overall" rather than a guess. */
+  var SHEET_GEOMETRY = {
+    a: { file: 'test-data/photos/load-a-container-cube.webp', w: 1920, h: 1280, grid: [['front', 'right'], ['back', 'left']] },
+    b: { file: 'test-data/photos/load-b-peaches-stack.webp', w: 1600, h: 1600, grid: [['front', 'right'], ['back', 'left']] }
+  };
+  var GUTTER_LO = 485;
+  var GUTTER_HI = 515;
 
   var PHOTO_PROMPT = [
     'You are the photo scan for a warehouse receiving cross-check. You are shown one contact sheet with four panels of the SAME pallet load, labeled FRONT, RIGHT, BACK, LEFT. Read each panel separately and flag everything that would belong in a receiving or OS&D (overage, shortage & damage) report: damage, crushed or open cartons, torn or loose wrap, leaks or stains, leaning or shifted stack, loose items, broken pallet, anything out of place. Also flag a side that looks sound when that is genuinely what the panel shows.',
@@ -76,6 +110,21 @@
     'Rules: ground every verdict in the two flag lists given — never invent an observation neither scan made. One verdict per distinct point. A human\'s decision (reject, rewrap, send to repackaging) is always listed and is "cant-verify" for the photo scan — decisions are part of the record, not something a photo can confirm.'
   ].join('\n');
 
+  /* Appended to COMPARE_PROMPT only when the SAM toggle is ON; with
+     the toggle OFF the comparison prompt is exactly the text above. */
+  var COMPARE_SAM_RULE = [
+    '',
+    'SAM 3.1 EVIDENCE: the PHOTO SCAN may carry a block labeled "SAM 3.1 segmentation evidence". SAM 3.1 is a segmentation model run on the same photos: it only outlines and counts things matching a fixed concept ("cardboard box", "shipping label", "damaged cardboard box", "torn plastic wrap") and reports which side each was found on. Treat the block as part of the PHOTO scan — you may cite it in the "photo" field and the note (for example "SAM 3.1 outlined 2 damaged cardboard boxes on the front"). It is NOT a third scan and NOT a verdict: never give it a verdict of its own, never let it settle a point by itself, and never cite a number or location the block does not contain. A concept marked "unavailable" produced no evidence — say nothing about it.'
+  ].join('\n');
+
+  var LABEL_PROMPT = [
+    'You are reading one crop of a contact-sheet photo. A segmentation model located what may be a shipping label in this crop. Read the text on it exactly as printed.',
+    '',
+    'Return ONLY a JSON object, no prose, no code fences: {"text":"..."}',
+    'Use "" when there is no readable label text. Never guess characters you cannot see.'
+  ].join('\n');
+  var LABEL_CROP_MAX = 4;
+
   /* Step 2 state. humanScan is captured when a run starts, so a new
      Step 1 scan mid-comparison cannot swap the inputs under it. */
   var humanScan = null;    /* {transcript, flags|null, loadKey, loadLabel} */
@@ -84,6 +133,8 @@
   var osdText = '';
   var busy = false;
   var osdSaveTimer = null;
+  var samEvidence = null;  /* null when the toggle was OFF for this run */
+  var runSeq = 0;
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -213,12 +264,13 @@
     return out;
   }
 
-  function askCompare(scan, pFlags) {
+  function askCompare(scan, pFlags, sam) {
     var user = 'HUMAN SCAN — transcript:\n' + scan.transcript +
       '\n\nHUMAN SCAN — flags:\n' + JSON.stringify(scan.flags || []) +
       '\n\nPHOTO SCAN — flags:\n' + JSON.stringify(pFlags);
+    if (sam) user += '\n\nPHOTO SCAN — SAM 3.1 segmentation evidence (measurement from the same photos; not a third scan, not a verdict):\n' + JSON.stringify(samEvidenceBlock(sam));
     return chat([
-      { role: 'system', content: COMPARE_PROMPT },
+      { role: 'system', content: sam ? COMPARE_PROMPT + '\n' + COMPARE_SAM_RULE : COMPARE_PROMPT },
       { role: 'user', content: user }
     ], 'comparison', 16000).then(function (parsed) {
       var v = normaliseVerdicts(parsed);
@@ -228,6 +280,247 @@
         throw wrong;
       }
       return v;
+    });
+  }
+
+  /* ---------- SAM 3.1 evidence -------------------------------------- */
+
+  /* Which panel a normalized 0–1000 box belongs to. Pure. */
+  function sideForBox(loadKey, box) {
+    var g = SHEET_GEOMETRY[loadKey];
+    if (!g || !box) return 'overall';
+    function band(lo, hi) { return lo < GUTTER_LO && hi > GUTTER_HI; }
+    if (band(box.x1, box.x2) || band(box.y1, box.y2)) return 'overall';
+    var cx = (box.x1 + box.x2) / 2;
+    var cy = (box.y1 + box.y2) / 2;
+    if ((cx >= GUTTER_LO && cx <= GUTTER_HI) || (cy >= GUTTER_LO && cy <= GUTTER_HI)) return 'overall';
+    return g.grid[cy < 500 ? 0 : 1][cx < 500 ? 0 : 1];
+  }
+
+  /* /segment results -> the record's samEvidence. Pure. results is one
+     entry per concept: {concept, matches} on success, {concept,
+     failed: true} on any failure. Boxes keep only box + side + score. */
+  function buildSamEvidence(loadKey, results) {
+    var ev = { on: true, concepts: {} };
+    SAM_CONCEPTS.forEach(function (concept) {
+      var r = null;
+      (results || []).forEach(function (x) { if (x && x.concept === concept) r = x; });
+      if (!r || r.failed || !Array.isArray(r.matches)) {
+        ev.concepts[concept] = { count: null, boxes: [], unavailable: true };
+        return;
+      }
+      var boxes = [];
+      r.matches.forEach(function (m) {
+        var b = m && m.box;
+        if (!b || [b.x1, b.y1, b.x2, b.y2].some(function (v) { return typeof v !== 'number' || !isFinite(v); })) return;
+        var out = { x1: b.x1, y1: b.y1, x2: b.x2, y2: b.y2, side: sideForBox(loadKey, b) };
+        if (typeof m.score === 'number') out.score = m.score;
+        boxes.push(out);
+      });
+      ev.concepts[concept] = { count: boxes.length, boxes: boxes };
+    });
+    return ev;
+  }
+
+  /* The evidence block the comparison sees: counts per concept per
+     side, and each located damage item as a photo-side observation.
+     Pure. */
+  function samEvidenceBlock(ev) {
+    var block = { counts: {}, located_damage: [] };
+    SAM_CONCEPTS.forEach(function (concept) {
+      var c = ev.concepts[concept];
+      if (!c || c.unavailable) { block.counts[concept] = 'unavailable'; return; }
+      var per = {};
+      SIDES.forEach(function (s) { per[s] = 0; });
+      c.boxes.forEach(function (b) { per[b.side] = (per[b.side] || 0) + 1; });
+      per.total = c.count;
+      block.counts[concept] = per;
+      if (SAM_DAMAGE_CONCEPTS.indexOf(concept) !== -1) {
+        c.boxes.forEach(function (b) {
+          block.located_damage.push({ observation: concept, side: b.side, box: [b.x1, b.y1, b.x2, b.y2] });
+        });
+      }
+    });
+    return block;
+  }
+
+  /* The deterministic OS&D lines for SAM. Pure. [] when OFF. */
+  function samOsdLines(ev) {
+    if (!ev) return [];
+    var missing = SAM_CONCEPTS.filter(function (c) { return !ev.concepts[c] || ev.concepts[c].unavailable; });
+    if (missing.length === SAM_CONCEPTS.length) {
+      return ['SAM 3.1 evidence was requested but unavailable — none was attached.'];
+    }
+    var cartons = ev.concepts['cardboard box'];
+    var lines = [cartons && !cartons.unavailable
+      ? 'SAM 3.1 evidence attached: ' + cartons.count + (cartons.count === 1 ? ' carton' : ' cartons') + ' segmented (concept "cardboard box").'
+      : 'SAM 3.1 evidence attached (carton count unavailable).'];
+    if (missing.length) {
+      lines.push('SAM 3.1 evidence was requested but unavailable for: ' + missing.join(', ') + '.');
+    }
+    return lines;
+  }
+
+  /* The /save payload for the OS&D. Pure. With the toggle OFF (ev
+     null) this is exactly the pre-toggle record. */
+  function osdPayload(scan, text, list, savedAt, ev) {
+    var payload = {
+      load: scan.loadLabel || null,
+      kind: 'osd',
+      transcript: text,
+      flags: [],
+      verdicts: list || [],
+      savedAt: savedAt
+    };
+    if (ev) payload.samEvidence = ev;
+    return payload;
+  }
+
+  function samIsOn() {
+    try { return window.localStorage.getItem(SAM_STORE_KEY) === 'on'; } catch (e) { return false; }
+  }
+  function setSamOn(on) {
+    try { window.localStorage.setItem(SAM_STORE_KEY, on ? 'on' : 'off'); } catch (e) { /* the switch still works for this page */ }
+  }
+
+  /* One /segment call. Never rejects: a failure is {concept, failed}. */
+  function askSegment(loadKey, concept) {
+    return fetch(SEGMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageUrl: SHEETS[loadKey], concept: concept })
+    }).then(function (r) {
+      if (!r.ok) return { concept: concept, failed: true };
+      return r.json().then(function (j) {
+        if (!j || !Array.isArray(j.matches)) return { concept: concept, failed: true };
+        return { concept: concept, matches: j.matches };
+      });
+    }).catch(function () { return { concept: concept, failed: true }; });
+  }
+
+  function runSam(loadKey) {
+    return Promise.all(SAM_CONCEPTS.map(function (c) { return askSegment(loadKey, c); }))
+      .then(function (results) { return buildSamEvidence(loadKey, results); });
+  }
+
+  var SAM_COLORS = {
+    'cardboard box': '#4da3ff',
+    'shipping label': '#f5c542',
+    'damaged cardboard box': '#ff5a5a',
+    'torn plastic wrap': '#c084fc'
+  };
+
+  /* Draw the boxes over the sheet. Display-only. */
+  function renderSamOverlay(loadKey, ev) {
+    var fig = $('samFigure');
+    if (!fig) return;
+    fig.innerHTML = '';
+    fig.appendChild(el('h3', 'subhead', 'SAM 3.1 evidence — what it outlined'));
+    var frame = el('div');
+    frame.style.position = 'relative';
+    frame.style.lineHeight = '0';
+    var img = el('img');
+    img.id = 'samSheet';
+    img.src = SHEET_GEOMETRY[loadKey] ? SHEET_GEOMETRY[loadKey].file : SHEETS[loadKey];
+    img.alt = 'The ' + (LOADS[loadKey] || 'load') + ' contact sheet with SAM 3.1 boxes drawn over it';
+    img.style.width = '100%';
+    img.style.display = 'block';
+    frame.appendChild(img);
+    var layer = el('div');
+    layer.style.position = 'absolute';
+    layer.style.inset = '0';
+    layer.style.pointerEvents = 'none';
+    SAM_CONCEPTS.forEach(function (concept) {
+      var c = ev.concepts[concept];
+      if (!c || c.unavailable) return;
+      c.boxes.forEach(function (b) {
+        var d = el('div', 'sam-box');
+        d.setAttribute('data-concept', concept);
+        d.title = concept;
+        d.style.position = 'absolute';
+        d.style.left = (b.x1 / 10) + '%';
+        d.style.top = (b.y1 / 10) + '%';
+        d.style.width = (Math.max(0, b.x2 - b.x1) / 10) + '%';
+        d.style.height = (Math.max(0, b.y2 - b.y1) / 10) + '%';
+        d.style.border = '2px solid ' + SAM_COLORS[concept];
+        d.style.boxSizing = 'border-box';
+        layer.appendChild(d);
+      });
+    });
+    frame.appendChild(layer);
+    fig.appendChild(frame);
+    var legend = el('p', 'note');
+    SAM_CONCEPTS.forEach(function (concept, i) {
+      var c = ev.concepts[concept];
+      var sw = el('span', null, '■ ');
+      sw.style.color = SAM_COLORS[concept];
+      legend.appendChild(sw);
+      legend.appendChild(document.createTextNode(concept + ': ' +
+        (c && !c.unavailable ? c.count : 'unavailable') + (i < SAM_CONCEPTS.length - 1 ? ' · ' : '')));
+    });
+    fig.appendChild(legend);
+    fig.appendChild(el('p', 'note', 'SAM 3.1 only outlines and counts. It gives no verdicts — the comparison below and you do.'));
+    fig.hidden = false;
+  }
+
+  /* Label crops (stretch): crop each located shipping label from the
+     sheet (same-origin image, so the canvas is readable) and ask
+     Spark to read it through /chat as a data: image — the same
+     transport the BOL camera read already uses live. At most
+     LABEL_CROP_MAX crops, highest SAM score first. Each crop is
+     failure-tolerant; a failed or blank read adds nothing. */
+  function sheetImage(loadKey) {
+    return new Promise(function (resolve) {
+      var img = $('samSheet');
+      if (!img) { resolve(null); return; }
+      if (img.complete && img.naturalWidth) { resolve(img); return; }
+      img.addEventListener('load', function () { resolve(img); });
+      img.addEventListener('error', function () { resolve(null); });
+    });
+  }
+
+  function cropDataUrl(img, b) {
+    var W = img.naturalWidth, H = img.naturalHeight;
+    var pad = 0.15;
+    var x1 = b.x1 * W / 1000, y1 = b.y1 * H / 1000, x2 = b.x2 * W / 1000, y2 = b.y2 * H / 1000;
+    var pw = (x2 - x1) * pad, ph = (y2 - y1) * pad;
+    x1 = Math.max(0, x1 - pw); y1 = Math.max(0, y1 - ph);
+    x2 = Math.min(W, x2 + pw); y2 = Math.min(H, y2 + ph);
+    var w = Math.round(x2 - x1), h = Math.round(y2 - y1);
+    if (w < 4 || h < 4) return null;
+    var scale = Math.min(4, Math.max(1, 384 / Math.max(w, h)));
+    var c = document.createElement('canvas');
+    c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+    c.getContext('2d').drawImage(img, x1, y1, w, h, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.9);
+  }
+
+  function readLabels(loadKey, ev) {
+    var labels = ev.concepts['shipping label'];
+    if (!labels || labels.unavailable || !labels.boxes.length) return Promise.resolve([]);
+    var picks = labels.boxes.slice().sort(function (a, b) { return (b.score || 0) - (a.score || 0); }).slice(0, LABEL_CROP_MAX);
+    return sheetImage(loadKey).then(function (img) {
+      if (!img) return [];
+      return Promise.all(picks.map(function (b) {
+        var url;
+        try { url = cropDataUrl(img, b); } catch (e) { url = null; }
+        if (!url) return null;
+        return chat([
+          { role: 'system', content: LABEL_PROMPT },
+          { role: 'user', content: [
+            { type: 'text', text: 'Read this label crop and return the JSON.' },
+            { type: 'image_url', image_url: { url: url } }
+          ] }
+        ], 'label read', 3000).then(function (parsed) {
+          var t = parsed && typeof parsed.text === 'string' ? parsed.text.trim() : '';
+          if (!t) return null;
+          return {
+            label: 'Shipping label read',
+            side: b.side,
+            detail: 'SAM 3.1 located a shipping label here; read from the crop: "' + t + '"'
+          };
+        }).catch(function () { return null; });
+      })).then(function (reads) { return reads.filter(Boolean); });
     });
   }
 
@@ -280,7 +573,7 @@
 
   /* ---------- the OS&D report --------------------------------------- */
 
-  function buildOsd(scan, pFlags, list) {
+  function buildOsd(scan, pFlags, list, ev) {
     var lines = [];
     var flags = list.filter(function (v) { return v.verdict === 'flag'; });
     var unverified = list.filter(function (v) { return v.verdict === 'cant-verify'; });
@@ -311,6 +604,10 @@
     if (!agreed.length) lines.push('- None.');
     agreed.forEach(function (v) { lines.push('- ' + v.point); });
     lines.push('');
+    if (ev) {
+      samOsdLines(ev).forEach(function (l) { lines.push(l); });
+      lines.push('');
+    }
     lines.push('The machine never signs off — a human decides.');
     return lines.join('\n');
   }
@@ -329,14 +626,7 @@
   function saveOsd() {
     if (!osdText || !humanScan) return;
     var sb = $('osdSaveBtn');
-    var payload = {
-      load: humanScan.loadLabel || null,
-      kind: 'osd',
-      transcript: osdText,
-      flags: [],
-      verdicts: verdicts || [],
-      savedAt: new Date().toISOString()
-    };
+    var payload = osdPayload(humanScan, osdText, verdicts, new Date().toISOString(), samEvidence);
     if (sb) { sb.disabled = true; sb.textContent = 'Saving…'; }
     fetch(SAVE_URL, {
       method: 'POST',
@@ -419,6 +709,20 @@
     photoFlags = null;
     verdicts = null;
     osdText = '';
+    samEvidence = null;
+    var samRun = null;
+    var myRun = ++runSeq;
+    var fig = $('samFigure');
+    if (fig) fig.hidden = true;
+    if (samIsOn()) {
+      /* In parallel with the photo scan; never rejects. */
+      samRun = runSam(scan.loadKey).then(function (ev) {
+        if (myRun !== runSeq) return { ev: ev, reads: [] }; /* a newer run owns the page */
+        renderSamOverlay(scan.loadKey, ev);
+        return readLabels(scan.loadKey, ev).catch(function () { return []; })
+          .then(function (reads) { return { ev: ev, reads: reads }; });
+      });
+    }
     var btn = $('photoBtn');
     if (btn) btn.disabled = true;
     $('photoFlags').hidden = true;
@@ -427,6 +731,18 @@
     setStatus('Running the photo scan — reading all four sides…', 'busy');
     setPhotoStatus('Reading the ' + (LOADS[scan.loadKey] || 'load') + ' sheet, side by side…');
     return askPhoto(scan.loadKey).then(function (pFlags) {
+      if (samRun) {
+        setPhotoStatus('Photo scan done. Waiting for the SAM 3.1 evidence…');
+        return samRun.then(function (sam) {
+          samEvidence = sam.ev;
+          var all = pFlags.concat(sam.reads);
+          photoFlags = all;
+          renderPhotoFlags(all);
+          setStatus('Photo scan done. Comparing the two scans…', 'busy');
+          setPhotoStatus('Comparing your scan against the photo scan…');
+          return askCompare(scan, all, samEvidence);
+        });
+      }
       photoFlags = pFlags;
       renderPhotoFlags(pFlags);
       setStatus('Photo scan done. Comparing the two scans…', 'busy');
@@ -435,7 +751,7 @@
     }).then(function (list) {
       verdicts = list;
       renderVerdicts(list);
-      osdText = buildOsd(scan, photoFlags, list);
+      osdText = samEvidence ? buildOsd(scan, photoFlags, list, samEvidence) : buildOsd(scan, photoFlags, list);
       renderOsd(osdText);
       var flags = list.filter(function (v) { return v.verdict === 'flag'; }).length;
       setStatus(flags
@@ -444,7 +760,9 @@
       setPhotoStatus('Done. The comparison and the OS&D report are below.');
       busy = false;
       if (btn) btn.disabled = false;
-      return { photoFlags: photoFlags, verdicts: verdicts, osd: osdText };
+      var done = { photoFlags: photoFlags, verdicts: verdicts, osd: osdText };
+      if (samEvidence) done.samEvidence = samEvidence;
+      return done;
     }).catch(function (e) {
       busy = false;
       if (btn) btn.disabled = false;
@@ -490,7 +808,23 @@
     if (btn) btn.addEventListener('click', runFromPage);
     var sb = $('osdSaveBtn');
     if (sb) sb.addEventListener('click', saveOsd);
+    var sw = $('samToggle');
+    if (sw) {
+      sw.checked = samIsOn();
+      showSamState();
+      sw.addEventListener('change', function () { setSamOn(sw.checked); showSamState(); });
+    }
     refresh();
+  }
+
+  function showSamState() {
+    var sw = $('samToggle');
+    var st = $('samToggleState');
+    if (sw && st) {
+      st.textContent = sw.checked
+        ? 'ON — SAM 3.1 outlines cartons, labels and damage as extra evidence for the photo scan. It gives no verdicts.'
+        : 'OFF — the photo scan runs on its own, as always.';
+    }
   }
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
@@ -504,6 +838,14 @@
     PHOTO_PROMPT: PHOTO_PROMPT,
     COMPARE_PROMPT: COMPARE_PROMPT,
     _buildOsd: buildOsd,
+    COMPARE_SAM_RULE: COMPARE_SAM_RULE,
+    SAM_CONCEPTS: SAM_CONCEPTS,
+    SHEET_GEOMETRY: SHEET_GEOMETRY,
+    _sideForBox: sideForBox,
+    _buildSamEvidence: buildSamEvidence,
+    _samEvidenceBlock: samEvidenceBlock,
+    _samOsdLines: samOsdLines,
+    _osdPayload: osdPayload,
     getState: function () {
       return { humanScan: humanScan, photoFlags: photoFlags, verdicts: verdicts, osd: osdText, busy: busy };
     }

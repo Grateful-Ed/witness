@@ -30,6 +30,11 @@
      approved by William 2026-10-31).
      No key or secret value ever appears in this file; both live as
      Worker bindings/secrets set outside the repo.
+   - POST /segment — {imageUrl, concept}: one SAM 3.1 concept
+     segmentation of one public image, over Meta's Responses API.
+     Answers {concept, matches: [{box: {x1,y1,x2,y2}, score?}]} with
+     boxes normalized 0–1000 in the image's own frame. Masks are parsed
+     past and never forwarded (SAM toggle brief, William 2026-11-05).
 
    The Meta API key lives ONLY as this Worker's secret binding,
    META_API_KEY (set in the dashboard: Worker -> Settings -> Variables
@@ -38,6 +43,7 @@
    Upstreams:
    - https://api.meta.ai/v1/chat/completions
    - https://api.meta.ai/v1/asr/transcribe
+   - https://api.meta.ai/v1/responses (model sam-3.1, /segment only)
    ===================================================================== */
 
 const ALLOWED_ORIGINS = [
@@ -62,6 +68,15 @@ const MAX_CHAT_BODY_CHARS = 60000;
    this larger cap instead; text-only requests keep the 60,000 cap. */
 const MAX_CHAT_IMAGE_BODY_CHARS = 1500000;
 const STATE_KEY = '__warehouse_state__';
+/* /segment: SAM 3.1, one concept per call (Meta's docs: one noun
+   phrase per request; lists return nothing). The concept set is the
+   SAM toggle brief's, fixed server-side so the route cannot be used
+   as an open segmentation proxy. Images must be the project's own
+   public files. */
+const SAM_MODEL = 'sam-3.1';
+const SAM_CONCEPTS = ['cardboard box', 'shipping label', 'damaged cardboard box', 'torn plastic wrap'];
+const SAM_IMAGE_PREFIX = 'https://grateful-ed.github.io/witness/';
+const MAX_SEGMENT_BODY_CHARS = 2000;
 const MAX_STATE_BODY_CHARS = 500000;
 
 function originAllowed(origin) {
@@ -257,6 +272,10 @@ async function handleSave(request, env) {
   /* bol: a bill of lading read (the BOL camera slice), kept only when
      it is a plain object. */
   if (body.bol && typeof body.bol === 'object' && !Array.isArray(body.bol)) scan.bol = body.bol;
+  /* samEvidence: SAM 3.1 boxes attached to an OS&D when the photo
+     scan's SAM toggle is ON (boxes only; the page never has masks).
+     Kept only when it is a plain object. */
+  if (body.samEvidence && typeof body.samEvidence === 'object' && !Array.isArray(body.samEvidence)) scan.samEvidence = body.samEvidence;
   const key = savedAt + '__' + loadLabel;
   try {
     await env.SCANS.put(key, JSON.stringify(scan));
@@ -345,6 +364,131 @@ async function handleStatePost(request, env) {
   return json(200, { ok: true }, origin);
 }
 
+/* ---------------- /segment ----------------
+   SAM 3.1 over the Responses API, built to Meta's docs
+   (dev.meta.ai/docs/media-segmentation, /docs/sam/segmenting,
+   /docs/sam/reading-segmentation):
+   - request: one user message with an input_text part (the concept,
+     a bare noun phrase) and an input_image part (image_url: a public
+     URL or a data URL). metadata.include_confidence "true" asks for c;
+     metadata.mask_encoding "one_bit" keeps the reply small (the masks
+     are thrown away here anyway). store false: nothing kept upstream.
+   - reply: special-token text in output_text. One line per frame
+     ("<0f>" for an image), comma-separated records, each record =
+     object id, one box token, one mask token:
+     <|box;x1=..;y1=..;x2=..;y2=..;w=..;h=..[;c=..]|><|mask;...|>
+     Box corners are source pixels (x2/y2 inclusive); w/h is the
+     source image size; c is optional. Zero matches is an empty
+     output_text — a normal result, not an error. */
+
+/* Box records out of SAM's output text. Pure. Mask tokens are skipped
+   (their base85 payload can hold any printable character, so only a
+   box token that opens a record — right after a frame marker or a
+   record comma — is read). Fields are read by key, so c may be absent. */
+function parseSamBoxes(text) {
+  const out = [];
+  if (typeof text !== 'string' || !text) return out;
+  const re = /(?:<\d+f>|,)(\d+)<\|box;([^|]*)\|>/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const f = {};
+    m[2].split(';').forEach(function (kv) {
+      const i = kv.indexOf('=');
+      if (i > 0) f[kv.slice(0, i)] = Number(kv.slice(i + 1));
+    });
+    const ok = ['x1', 'y1', 'x2', 'y2', 'w', 'h'].every(function (k) { return isFinite(f[k]); }) && f.w > 0 && f.h > 0;
+    if (!ok) continue;
+    const box = { x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2, w: f.w, h: f.h };
+    if (isFinite(f.c)) box.c = f.c;
+    out.push(box);
+  }
+  return out;
+}
+
+/* Pixel box -> {box: {x1,y1,x2,y2} normalized 0–1000, score?}. */
+function normaliseSamBox(b) {
+  function n(v, size) { return Math.max(0, Math.min(1000, Math.round(v * 1000 / size))); }
+  const match = { box: { x1: n(b.x1, b.w), y1: n(b.y1, b.h), x2: n(b.x2, b.w), y2: n(b.y2, b.h) } };
+  if (typeof b.c === 'number') match.score = Math.round(b.c * 1000) / 1000;
+  return match;
+}
+
+/* Every output_text in a non-streamed Responses reply, joined. */
+function responsesText(j) {
+  if (!j || !Array.isArray(j.output)) return null;
+  const parts = [];
+  j.output.forEach(function (item) {
+    if (!item || !Array.isArray(item.content)) return;
+    item.content.forEach(function (c) {
+      if (c && c.type === 'output_text' && typeof c.text === 'string') parts.push(c.text);
+    });
+  });
+  return parts.join('\n');
+}
+
+async function handleSegment(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  if (!originAllowed(origin)) return json(403, { error: 'origin not allowed' }, origin);
+  if (!env.META_API_KEY) return keyMissing(origin);
+
+  const raw = await request.text();
+  if (raw.length > MAX_SEGMENT_BODY_CHARS) return json(413, { error: 'request too large' }, origin);
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch (e) {
+    return json(400, { error: 'expected a JSON body' }, origin);
+  }
+  if (!body || typeof body.imageUrl !== 'string' || body.imageUrl.indexOf(SAM_IMAGE_PREFIX) !== 0) {
+    return json(400, { error: 'body needs an "imageUrl" that is one of the project\'s own public images' }, origin);
+  }
+  if (SAM_CONCEPTS.indexOf(body.concept) === -1) {
+    return json(400, { error: 'body needs a "concept" from: ' + SAM_CONCEPTS.join(', ') }, origin);
+  }
+
+  const upstream = {
+    model: SAM_MODEL,
+    input: [{
+      type: 'message',
+      role: 'user',
+      content: [
+        { type: 'input_text', text: body.concept },
+        { type: 'input_image', image_url: body.imageUrl }
+      ]
+    }],
+    metadata: { include_confidence: 'true', mask_encoding: 'one_bit' },
+    store: false
+  };
+
+  let res;
+  try {
+    res = await fetch('https://api.meta.ai/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + env.META_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(upstream)
+    });
+  } catch (e) {
+    return json(502, { error: 'segmentation service unreachable from the Worker' }, origin);
+  }
+  if (!res.ok) {
+    return json(502, { error: 'segmentation service answered with an error (HTTP ' + res.status + ')' }, origin);
+  }
+  let j;
+  try {
+    j = await res.json();
+  } catch (e) {
+    return json(502, { error: 'segmentation service answered in a shape the Worker cannot read' }, origin);
+  }
+  const text = responsesText(j);
+  if (text === null) {
+    return json(502, { error: 'segmentation service answered in a shape the Worker cannot read' }, origin);
+  }
+  return json(200, { concept: body.concept, matches: parseSamBoxes(text).map(normaliseSamBox) }, origin);
+}
+
 /* ---------------- router ---------------- */
 
 export default {
@@ -354,12 +498,13 @@ export default {
 
     if (request.method === 'OPTIONS') return preflight(request);
 
-    if (url.pathname === '/chat' || url.pathname === '/asr' || url.pathname === '/save') {
+    if (url.pathname === '/chat' || url.pathname === '/asr' || url.pathname === '/save' || url.pathname === '/segment') {
       if (request.method !== 'POST') {
         return json(405, { error: 'method not allowed' }, origin);
       }
       if (url.pathname === '/chat') return handleChat(request, env);
       if (url.pathname === '/asr') return handleAsr(request, env);
+      if (url.pathname === '/segment') return handleSegment(request, env);
       return handleSave(request, env);
     }
 
@@ -376,6 +521,6 @@ export default {
       return handleSamples(request, env);
     }
 
-    return json(404, { error: 'the witness Worker serves /chat, /asr, /save, /state and /samples' }, origin);
+    return json(404, { error: 'the witness Worker serves /chat, /asr, /save, /segment, /state and /samples' }, origin);
   }
 };
