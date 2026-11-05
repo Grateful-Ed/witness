@@ -74,6 +74,8 @@ var wstate = E.seedWorld();
 var wsame = W.checkWorld(wstate, 'warehouse');
 check('dispatch: the warehouse still keeps its state, no notice', wsame.state === wstate && !wsame.notice);
 check('dispatch: nothing saved yet is not a switch', W.checkWorld(null, 'kitchen').switched === false);
+check('welcome: the warehouse glasses line exists and says the job plainly', typeof W.warehouseLine === 'string' && /receiving dock/.test(W.warehouseLine) && /hold anywhere to talk/.test(W.warehouseLine));
+check('welcome: the kitchen line is unchanged', /home-scale warehouse/.test(W.kitchenLine));
 
 /* --- spots by rule ---------------------------------------------------- */
 check('rule: milk → Fridge (exact item rule)', spot('2% milk').spot === 'Fridge' && spot('2% milk').source === 'item rule');

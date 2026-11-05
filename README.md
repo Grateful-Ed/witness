@@ -2,6 +2,8 @@
 
 **Live:** [WMS console](https://grateful-ed.github.io/witness/wms.html) · [Warehouse glasses](https://grateful-ed.github.io/witness/glasses.html) · [Kitchen glasses](https://grateful-ed.github.io/witness/glasses.html?world=kitchen) · [Receiving cross-check](https://grateful-ed.github.io/witness/)
 
+*Directed by E. William Harris IV (domain: air-export freight operations). Project management and records by Faye (AI), William's Muse assistant; code by Claude (AI). Authorship is stated the way it happened: directed by William, built with AI.*
+
 **Witness is a warehouse run by voice and vision — and one day soon, through a pair of glasses.**
 
 A receiver's hands are busy. A warehouse's paperwork lies. Witness starts from those two facts: the people doing the work should be able to talk to the system, the system should check what it's told against what it can see, and no machine should ever sign off on freight — a human decides.

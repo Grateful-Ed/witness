@@ -66,6 +66,9 @@
     worldFromSearch: worldFromSearch, stateWorld: stateWorld, checkWorld: checkWorld
   };
 
+  api.kitchenLine = 'Kitchen world — the demo\'s home-scale warehouse. Groceries land on the Counter; the receipt scan in the glasses view creates the work.';
+  api.warehouseLine = 'Warehouse world — the receiving dock. Open the view, hold anywhere to talk, double-tap to capture: you speak what you see, and META checks it against the camera.';
+
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
 
   /* ---------- browser: pick the seed before the engine loads ---------- */
@@ -86,11 +89,16 @@
     p.style.cssText = 'margin:0 0 12px;padding:8px 12px;border-radius:6px;background:#fff6d6;color:#3d3200;font:14px/1.4 system-ui,sans-serif;';
     host.insertBefore(p, host.firstChild);
   };
-  api.kitchenLine = 'Kitchen world — the demo\'s home-scale warehouse. Groceries land on the Counter; the receipt scan in the glasses view creates the work.';
 
   /* In the kitchen, every page says so at the top. Pages other than
      the glasses view also link to it, since that is where the receipt
      is scanned. */
+  if (current === 'warehouse' && typeof document !== 'undefined' && /glasses\.html$/.test(root.location.pathname || '')) {
+    document.addEventListener('DOMContentLoaded', function () {
+      api.announce(api.warehouseLine, document.getElementById('start') ? 'start' : null);
+    });
+  }
+
   if (current === 'kitchen' && typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
       var where = document.getElementById('start') ? 'start' : null;
