@@ -57,6 +57,15 @@ var server = http.createServer(function (req, res) {
 async function load(browser, world) {
   var page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.route(/^https?:\/\/(?!127\.0\.0\.1)/, function (r) { r.abort(); });
+  /* The warehouse glasses boot from the shared /state record (glasses
+     shared-state brief) — a stubbed, in-page one; nothing leaves. */
+  var kv = null;
+  await page.route(/\/state$/, function (r) {
+    var cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
+    if (r.request().method() === 'GET') return r.fulfill(kv ? { status: 200, headers: cors, body: kv } : { status: 404, headers: cors, body: '{}' });
+    kv = r.request().postData();
+    return r.fulfill({ status: 200, headers: cors, body: '{"ok":true}' });
+  });
   await page.goto('http://127.0.0.1:' + server.address().port + '/glasses.html' + (world ? '?world=' + world : ''));
   await page.waitForSelector('.gh-info');
   return page;
