@@ -509,7 +509,7 @@ node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens
 node test/ontology-test.js   # 48  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, vocabulary/learnTerm, no network
 node test/central-agent-test.js # 61 — the central agent: dispatch not relay, three simulated workers, single writer, LIVE (the agent surface its one importer), slang in context and prompts
 node test/wms-game-test.js   # 67  — Walk the shift: the dealt chains (all four shift types), the offers, the map's own cells, the voice commands, real putaways, the posted count, undealable buildings, the practice dressing, hear() with META stubbed
-node test/wms-ui-smoke.js    # 37  — real browser (Playwright), stubbed Worker; skips without Playwright
+node test/wms-ui-smoke.js    # 38  — real browser (Playwright), stubbed Worker; skips without Playwright. Not counted in the node-suite total; run it on its own (needs Playwright + Chromium)
 ```
 
 ## Left out, and why
