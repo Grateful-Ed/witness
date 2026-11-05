@@ -66,12 +66,12 @@ check('Inbound Door 1 holds IN-1001 and is unloading', (function () {
   var dr = place(d, 'door', 'Inbound Door 1');
   return !!dr && dr.status === 'unloading' && deepEq(dr.contents, [{ id: 'IN-1001' }]);
 })());
-check('shipments: all four, IN-1001 staged at its door', d.shipments.length === 4 &&
+check('shipments: all six, IN-1001 staged at its door', d.shipments.length === 6 &&
   d.shipments[0].id === 'IN-1001' && d.shipments[0].status === 'staged at door' && d.shipments[0].at === 'Inbound Door 1');
-check('orders: 3 released + 3 entered = 6', d.orders.length === 6 &&
+check('orders: 3 released + 5 entered = 8', d.orders.length === 8 &&
   d.orders.filter(function (o) { return o.flow === 'released'; }).length === 3 &&
-  d.orders.filter(function (o) { return o.flow === 'entered'; }).length === 3);
-check('people: 7 labor units, Sam the manager, nobody mid-task', d.people.length === 7 &&
+  d.orders.filter(function (o) { return o.flow === 'entered'; }).length === 5);
+check('people: 10 labor units, Sam the manager, nobody mid-task', d.people.length === 10 &&
   d.people.filter(function (p) { return p.name === 'Sam Whitaker' && p.role === 'manager'; }).length === 1 &&
   d.people.every(function (p) { return p.currentTask === null; }));
 check('tasks: every open task in state, none done', d.tasks.length === s.tasks.filter(function (t) { return t.status !== 'done'; }).length &&
@@ -81,8 +81,9 @@ check('a putaway task carries its item and its destination bin', (function () {
   var dt = d.tasks.filter(function (x) { return x.id === 't-putaway-STG-3'; })[0];
   return !!t && !!dt && dt.kind === 'putaway' && dt.item === 'Canned peaches — cases' && dt.destination === t.toBinId;
 })());
-check('needsEyes on the seed is exactly the held bin', d.needsEyes.length === 1 &&
-  d.needsEyes[0].place === 'bin' && d.needsEyes[0].id === 'A-05' && /on hold/.test(d.needsEyes[0].reason));
+check('needsEyes on the seed is the held bin and the two standing flags', d.needsEyes.length === 3 &&
+  d.needsEyes[0].place === 'bin' && d.needsEyes[0].id === 'A-05' && /on hold/.test(d.needsEyes[0].reason) &&
+  d.needsEyes[1].id === 'FLG-001' && d.needsEyes[2].id === 'FLG-002');
 check('prep on the seed is empty (no change has touched anyone\'s work)', d.prep.length === 0);
 check('the digest is plain JSON — it round-trips whole', deepEq(JSON.parse(JSON.stringify(d)), d));
 

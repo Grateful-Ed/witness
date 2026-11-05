@@ -137,7 +137,7 @@ check('summary names every labor unit', p.labor.every(function (u) { return sum.
 check('summary lists expected inbound (IN-1002, 10 pallets, Zone B)',
   /IN-1002 — Inbound Door 3 \(Zone B\) — 10 pallets — expected today/.test(sum.text));
 var zb = sum.facts.zones.filter(function (z) { return z.zone === 'B'; })[0];
-check('Zone B shows 10 pallets expected, not yet arrived', zb.incomingPallets === 10);
+check('Zone B shows 26 pallets expected, not yet arrived', zb.incomingPallets === 26);
 check('summary lists every open order', p.outbound.every(function (o) { return sum.text.indexOf(o.id) !== -1; }));
 check('summary is compact (under 4,000 chars)', sum.text.length < 4000);
 

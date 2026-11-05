@@ -157,8 +157,15 @@
         orders: copy(S.orders).map(function (o) { o.status = 'new'; return o; }),
         waves: [{ id: 'W-000', orderIds: state.outbound.map(function (o) { return o.id; }), releasedAt: null, by: null, note: 'Released before this shift' }],
         receipts: [], osd: [], loads: [], flags: [], counts: [], decisions: [],
-        seq: { apt: 104, rcv: 1, osd: 1, wave: 1, ord: 604, load: 1, flag: 1, count: 1, move: 1, replen: 1, trk: 100231, bol: 1, cnt: 1 }
+        seq: { apt: 106, rcv: 1, osd: 1, wave: 1, ord: 606, load: 1, flag: 1, count: 1, move: 1, replen: 1, trk: 100231, bol: 1, cnt: 1 }
       };
+      /* The seed's standing flags (data/wms-seed.js): filed earlier
+         in the shift, still open. Ids come from the flag sequence so
+         the next filed flag continues the run. */
+      (S.flags || []).forEach(function (f) {
+        state.wms.flags.push({ id: nextId(state, 'flag', 'FLG-', 3), label: f.label, words: f.words, by: f.by,
+          taskId: null, zone: f.zone, ts: api.now(), status: 'open', source: f.source || 'voice' });
+      });
     }
     var w = state.wms;
     ['appointments', 'slots', 'orders', 'waves', 'receipts', 'osd', 'loads', 'flags', 'counts', 'decisions']

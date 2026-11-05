@@ -52,7 +52,7 @@
       { id: 'A-01', zone: 'A', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 40 }] },
       { id: 'A-02', zone: 'A', status: 'ok', contents: [{ desc: 'Paper towels — cases', qty: 22 }] },
       { id: 'A-03', zone: 'A', status: 'ok', contents: [] },
-      { id: 'A-04', zone: 'A', status: 'ok', contents: [{ desc: 'Laundry detergent — cases', qty: 16 }] },
+      { id: 'A-04', zone: 'A', status: 'ok', contents: [{ desc: 'Laundry detergent — cases', qty: 16 }, { desc: 'Flour — bags', qty: 10 }] },
       { id: 'A-05', zone: 'A', status: 'hold', contents: [{ desc: 'Dog food — bags', qty: 25 }] },
       { id: 'A-06', zone: 'A', status: 'ok', needsBreakdown: true, contents: [{ desc: 'Mixed grocery', qty: 24 }] },
       { id: 'A-07', zone: 'A', status: 'ok', contents: [] },
@@ -68,7 +68,7 @@
       { id: 'B-06', zone: 'B', status: 'ok', contents: [] },
       { id: 'B-07', zone: 'B', status: 'ok', contents: [{ desc: 'Cooking oil — cases', qty: 20 }] },
       { id: 'B-08', zone: 'B', status: 'ok', contents: [{ desc: 'Flour — bags', qty: 14 }] },
-      { id: 'B-09', zone: 'B', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 16 }] },
+      { id: 'B-09', zone: 'B', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 16 }, { desc: 'Canned tomatoes — cases', qty: 9 }] },
       { id: 'B-10', zone: 'B', status: 'ok', contents: [] },
       /* Zone C */
       { id: 'C-01', zone: 'C', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 9 }] },
@@ -95,16 +95,21 @@
       { id: 'STG-8', door: 'Inbound Door 6', desc: 'Flour — bags', qty: 20 }
     ],
 
-    /* Labor units — a labor unit is an employee. Six workers spread
-       two to a zone, one manager over the building. */
+    /* Labor units — a labor unit is an employee. Eight workers:
+       three in A, two in B, three in C — B runs thin on purpose,
+       its queue is the building's bottleneck — plus a manager over
+       the building and a lead hand in B. */
     labor: [
       { id: 'u-marcus', name: 'Marcus Reed', role: 'worker', zone: 'A', currentTaskId: null },
       { id: 'u-dee', name: 'Dee Carter', role: 'worker', zone: 'A', currentTaskId: null },
+      { id: 'u-chris', name: 'Chris Delgado', role: 'worker', zone: 'A', currentTaskId: null },
       { id: 'u-tommy', name: 'Tommy Nguyen', role: 'worker', zone: 'B', currentTaskId: null },
       { id: 'u-rosa', name: 'Rosa Flores', role: 'worker', zone: 'B', currentTaskId: null },
       { id: 'u-jay', name: 'Jay Patel', role: 'worker', zone: 'C', currentTaskId: null },
       { id: 'u-priya', name: 'Priya Shah', role: 'worker', zone: 'C', currentTaskId: null },
-      { id: 'u-sam', name: 'Sam Whitaker', role: 'manager', zone: 'A', currentTaskId: null }
+      { id: 'u-grace', name: 'Grace Liu', role: 'worker', zone: 'C', currentTaskId: null },
+      { id: 'u-sam', name: 'Sam Whitaker', role: 'manager', zone: 'A', currentTaskId: null },
+      { id: 'u-pat', name: 'Pat Sullivan', role: 'manager', zone: 'B', currentTaskId: null }
     ],
 
     /* Inbound: what is expected at the doors. IN-1001 is at Inbound Door 1
@@ -147,7 +152,21 @@
           lines: [{ name: 'All-purpose cleaner', match: ['cleaner'], pieces: 6, weightLb: 216 },
                   { name: 'Aerosol air freshener', match: ['aerosol', 'air freshener'], pieces: 4, weightLb: 88 },
                   { name: 'Paper towels', match: ['towel'], pieces: 6, weightLb: 120 },
-                  { name: 'Dish soap', match: ['soap', 'dish'], pieces: 4, weightLb: 200 }] } }
+                  { name: 'Dish soap', match: ['soap', 'dish'], pieces: 4, weightLb: 200 }] } },
+      { id: 'IN-1005', door: 'Inbound Door 5', desc: 'Beverages — Coastal Express', pallets: 8, status: 'expected today',
+        lines: [{ desc: 'Bottled water — cases', pallets: 5, perPallet: 30 },
+                { desc: 'Tea — cases', pallets: 3, perPallet: 20 }],
+        bol: { bolNumber: 'CX-1005', carrier: 'Coastal Express', shipper: 'Blue Ridge Beverage Co.',
+          consignee: 'Witness Demo Warehouse', piecesClaimed: 210, totalWeightLb: 5940,
+          lines: [{ name: 'Bottled water', match: ['water'], pieces: 150, weightLb: 5400 },
+                  { name: 'Tea', match: ['tea'], pieces: 60, weightLb: 540 }] } },
+      { id: 'IN-1006', door: 'Inbound Door 6', desc: 'Dry goods — Southeast Line', pallets: 8, status: 'expected tomorrow',
+        lines: [{ desc: 'Flour — bags', pallets: 4, perPallet: 25 },
+                { desc: 'Sugar — bags', pallets: 4, perPallet: 20 }],
+        bol: { bolNumber: 'SEL-1006', carrier: 'Southeast Line', shipper: 'Georgia Milling Co.',
+          consignee: 'Witness Demo Warehouse', piecesClaimed: 180, totalWeightLb: 3300,
+          lines: [{ name: 'Flour', match: ['flour'], pieces: 100, weightLb: 2500 },
+                  { name: 'Sugar', match: ['sugar'], pieces: 80, weightLb: 800 }] } }
     ],
 
     /* Outbound: orders to pick from the bins. door is where picked
