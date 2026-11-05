@@ -113,13 +113,19 @@ check('wms.html loads the flow styles', fs.readFileSync(path.join(__dirname, '..
 /* 9. the practice banner carries its exit, everywhere it renders
    (William, 2026-11-04: the banner had no way out). One helper is
    the banner's only source, both page heads use it, and the exit is
-   a navigation to the same page without the practice flag. */
+   a navigation to the same page without the practice flag.
+   Demo polish (2026-11-05): the exit now switches IN PLACE — the
+   same URL minus the flag (hash and view preserved), one render, no
+   page load; the full load stays only as the mid-save fallback. */
 check('the practice banner is one helper, carrying an "End practice copy" exit',
   /data-act="end-practice"/.test(fnBody('practiceBanner')) && /End practice copy/.test(fnBody('practiceBanner')));
 check('both banner sites (the page head, the Witness page) render the helper',
   /practiceBanner\(\)/.test(fnBody('head')) && /practiceBanner\(\)/.test(viewBody('witness')));
-check('ending practice navigates to the same page (hash and view preserved) without the practice flag',
-  /'end-practice': function \(\) \{[^}]*searchParams\.delete\('practice'\)[^}]*location\.href/.test(ui));
+check('ending practice switches in place to the same page (hash and view preserved) without the practice flag',
+  /'end-practice': function \(\) \{ switchPractice\(false, true\); \}/.test(ui) &&
+  /searchParams\.delete\('practice'\)/.test(fnBody('switchPractice')) &&
+  /history\.pushState\(null, '', u\.toString\(\)\)/.test(fnBody('switchPractice')) &&
+  /location\.href = u\.toString\(\)/.test(fnBody('switchPractice')));
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');
 process.exit(failures ? 1 : 0);

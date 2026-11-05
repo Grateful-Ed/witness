@@ -398,6 +398,126 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     sHtml.indexOf('Shift type changed to Outbound loader') !== -1 &&
     sHtml.indexOf('the tasks it finished stay on the record') !== -1);
 
+  /* ---------- demo polish item 1: after a finished shift, the next
+     start names the REQUESTED shift (briefs/claude-brief-demo-polish.md).
+     A Cycle counter shift is worked to its end, then another type is
+     picked and begun — by the button and by voice. The start line,
+     META's context, the panel and the voice note all name the shift
+     that was asked for; where the building cannot deal it, the line
+     says so plainly, tells the player to reload the practice copy,
+     and reads "an Inbound dock worker". */
+
+  function primaryRole(html) { var m = /btn primary" data-act="game-role" data-role="(\w+)"/.exec(html); return m ? m[1] : null; }
+  async function workToEnd() {
+    for (var k = 0; k < 40; k++) {
+      var vc = G.voiceContext();
+      if (vc.done) return true;
+      if (vc.pending === 'count') await G.ui('confirm');
+      else { G.ui('doit'); await flush(); await flush(); }
+    }
+    return false;
+  }
+  function polishCtx(state, toasts, talk) {
+    return gameCtx(state, talk || null, function (fn) {
+      var r = fn(state);
+      if (r && r.ok === false) toasts.push(r.reason);
+      return Promise.resolve(r);
+    });
+  }
+  function echoMeta(c) { return Promise.resolve({ intent: 'start', say: 'Starting your ' + c.roleLabel + ' shift.' }); }
+
+  /* (a) the button path: a finished counter shift, then Outbound */
+  G.reset();
+  var nState = W.dressPractice(W.seed()), nToasts = [];
+  G.afterRender(polishCtx(nState, nToasts));
+  await G.ui('role', 'counter');
+  await G.ui('start');
+  var nDone = await workToEnd();
+  await G.ui('role', 'outbound');
+  var nPicked = G.panelHtml(panelStub, nState, true);
+  check('polish: once a shift is finished, picking another type selects it — the panel and META’s context name the picked shift, not the finished one',
+    nDone && primaryRole(nPicked) === 'outbound' && G.voiceContext().role === 'outbound' &&
+    G.voiceContext().roleLabel === 'Outbound loader' && G.voiceContext().done === true &&
+    nPicked.indexOf('Shift complete — 4 tasks') !== -1);
+  var nR = await G.ui('start');
+  var nLast = nState.records[nState.records.length - 1].text;
+  check('polish: begin() after a finished Cycle counter shift deals the REQUESTED Outbound shift — the start line names it',
+    nR && nR.ok === true && nR.chain.role === 'outbound' &&
+    nLast === 'Walk the shift started — Outbound loader, 5 tasks on a practice copy.' &&
+    !/Cycle counter/.test(nLast) && nToasts.length === 0);
+  check('polish: the panel then offers the Outbound shift’s first task',
+    G.voiceContext().role === 'outbound' && G.voiceContext().step === 1 &&
+    primaryRole(G.panelHtml(panelStub, nState, true)) === 'outbound');
+
+  /* (b) the voice path: META is told the picked shift, and the note
+     names the shift that really started */
+  G.reset();
+  var vState = W.dressPractice(W.seed()), vToasts = [];
+  G.afterRender(polishCtx(vState, vToasts, echoMeta));
+  await G.ui('role', 'counter');
+  await G.ui('start');
+  await workToEnd();
+  await G.ui('role', 'outbound');
+  G.hear('Start the shift.');
+  await flush(); await flush(); await flush();
+  var vHtml = G.panelHtml(panelStub, vState, true);
+  check('polish: by voice after a finished shift, META is told the picked shift and the note names it — never the finished one',
+    vHtml.indexOf('Outbound loader shift started — the first task is offered below.') !== -1 &&
+    vHtml.indexOf('META: &ldquo;Starting your Outbound loader shift.&rdquo;') !== -1 &&
+    vHtml.indexOf('Cycle counter shift') === -1 &&
+    vState.records[vState.records.length - 1].text === 'Walk the shift started — Outbound loader, 5 tasks on a practice copy.');
+
+  /* (c) the cannot-deal line: every bin stocked, so a counter shift
+     deals and an Inbound one cannot (no empty bins to put away to) */
+  function stockedState() {
+    var st = W.seed();
+    st.bins.forEach(function (b) { if (!b.contents.length) b.contents.push({ desc: 'Rice — bags', qty: 1 }); });
+    return st;
+  }
+  var CANNOT_INBOUND = 'This practice building cannot deal an Inbound dock worker shift — its work for that shift is spent. ' +
+    'Reload the practice copy for a fresh building, or try another shift type.';
+  G.reset();
+  var kState = stockedState(), kToasts = [];
+  G.afterRender(polishCtx(kState, kToasts));
+  await G.ui('role', 'counter');
+  await G.ui('start');
+  var kDone = await workToEnd();
+  var kRecs = kState.records.length;
+  await G.ui('role', 'inbound');
+  var kR = await G.ui('start');
+  var kHtml = G.panelHtml(panelStub, kState, true);
+  check('polish: begin() after a finished shift for a role this building cannot deal refuses with the requested role named, grammatical, and the reload told',
+    kDone && kR && kR.ok === false && kR.reason === CANNOT_INBOUND &&
+    kToasts.length === 1 && kToasts[0] === CANNOT_INBOUND && kState.records.length === kRecs);
+  check('polish: the refused start never names the finished shift as starting — the panel keeps its summary, with Inbound the picked type',
+    kHtml.indexOf('Shift complete') !== -1 && primaryRole(kHtml) === 'inbound' &&
+    !/Walk the shift started/.test(kState.records[kState.records.length - 1].text));
+
+  G.reset();
+  var kvState = stockedState();
+  G.afterRender(polishCtx(kvState, []));
+  await G.ui('role', 'counter');
+  await G.ui('start');
+  await workToEnd();
+  await G.ui('role', 'inbound');
+  G.hear('Start the shift.');
+  await flush(); await flush(); await flush();
+  var kvHtml = G.panelHtml(panelStub, kvState, true);
+  check('polish: by voice, the refused start says the cannot-deal line plainly — no "shift started", no finished shift named',
+    kvHtml.indexOf(CANNOT_INBOUND + ' Nothing was done.') !== -1 &&
+    kvHtml.indexOf('shift started') === -1 && kvHtml.indexOf('Cycle counter shift') === -1);
+
+  check('polish: the article agrees with every role label in the cannot-deal line',
+    G.begin(stockedState(), 'inbound').reason.indexOf('cannot deal an Inbound dock worker shift') !== -1 &&
+    G.begin(W.seed(), 'replenishment').reason.indexOf('cannot deal a Replenishment shift') !== -1);
+  G.reset();
+  G.afterRender(polishCtx(W.seed(), []));
+  await G.ui('role', 'outbound');
+  check('polish: the panel intro reads "An Outbound loader shift" (article agrees)',
+    G.panelHtml(panelStub, W.seed(), true).indexOf('<p>An Outbound loader shift on the map below.') !== -1);
+  check('polish: no line in the game module builds "a Inbound" / "a Outbound"',
+    !/\ba ' \+ roleLabel|\bA ' \+ esc\(roleLabel/.test(src));
+
   console.log('\n' + passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);
 })();

@@ -347,6 +347,61 @@ server.listen(0, async function () {
   await go('#/dashboard');
   await page.screenshot({ path: process.env.WMS_SHOT || path.join(require('os').tmpdir(), 'wms-dashboard.png'), fullPage: true });
 
+  /* Demo polish item 2: entering and leaving the practice copy is
+     ONE render — the switch happens in place (no page load, so the
+     static "Loading the desk record…" shell never paints), the URL
+     gains / loses the flag with the view kept, and the live record
+     is never written by the practice copy. */
+  async function watchRenders() {
+    await page.evaluate(function () {
+      var main = document.getElementById('main');
+      window.__sameDoc = true;
+      window.__renders = 0;
+      window.__sawShell = false;
+      if (window.__mo) window.__mo.disconnect();
+      window.__mo = new MutationObserver(function (ms) {
+        ms.forEach(function (m) {
+          if (m.target !== main) return;
+          if (m.addedNodes.length) window.__renders++;
+          if (main.querySelector('.loading')) window.__sawShell = true;
+        });
+      });
+      window.__mo.observe(main, { childList: true });
+    });
+  }
+  function renderStats() {
+    return page.evaluate(function () {
+      return { same: window.__sameDoc === true, renders: window.__renders, shell: window.__sawShell,
+        practice: new URLSearchParams(location.search).has('practice'), hash: location.hash,
+        banner: !!document.querySelector('#main .notice.practice'), start: !!document.querySelector('[data-act="game-start"]') };
+    });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await go('#/dashboard');
+  var pPosts = posts;
+  await watchRenders();
+  await page.click('[data-act="enter-practice"]');
+  await page.waitForFunction(function () { return !!document.querySelector('#main .notice.practice'); }, null, { timeout: 5000 }).catch(function () {});
+  await page.waitForTimeout(300);
+  var enter = await renderStats();
+  check('practice: entering switches in place — one render of the view, no page load, no loading shell',
+    enter.same && enter.renders === 1 && !enter.shell);
+  check('practice: the URL carries the flag, the view is kept, the banner shows and the game is playable',
+    enter.practice && enter.hash === '#/dashboard' && enter.banner && enter.start);
+  await page.click('[data-act="game-start"]');
+  await page.waitForTimeout(250);
+  check('practice: a shift started on the in-place copy writes nothing to the desk record', posts === pPosts);
+  await watchRenders();
+  await page.click('[data-act="end-practice"]');
+  await page.waitForFunction(function () { return !document.querySelector('#main .notice.practice'); }, null, { timeout: 5000 }).catch(function () {});
+  await page.waitForTimeout(300);
+  var leave = await renderStats();
+  check('practice: leaving switches in place — one render of the view, no page load, no loading shell',
+    leave.same && leave.renders === 1 && !leave.shell);
+  check('practice: back on the live record — no flag, same view, no banner, the shift forgotten, nothing saved',
+    !leave.practice && leave.hash === '#/dashboard' && !leave.banner &&
+    !(await page.$('[data-act="game-start"]')) && !(await page.$('.game-you')) && posts === pPosts);
+
   /* Mobile width: no horizontal scroll on the RF console */
   await page.setViewportSize({ width: 390, height: 800 });
   await go('#/rf');
