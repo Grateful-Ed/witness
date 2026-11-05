@@ -234,7 +234,7 @@
      created (at most one ever exists in a kitchen state). */
   function receiptRun(state) {
     var ships = state.inbound || [];
-    for (var i = 0; i < ships.length; i++) if (ships[i].intake === 'receipt-scan') return ships[i];
+    for (var i = 0; i < ships.length; i++) if (ships[i].intake === 'receipt-scan' || ships[i].intake === 'spoken-list') return ships[i];
     return null;
   }
 
@@ -639,7 +639,14 @@
       return;
     }
     var match = C.matchIntent(text);
-    if (match.intent === 'unknown') { askFree(text); return; } /* not a command: let META answer */
+    if (match.intent === 'unknown') {
+      /* Kitchen, no run yet: the words may be a TELL — the wearer
+         naming what they have — which is intake, not a question.
+         spokenIntake decides by META's read of the words; when they
+         hold no items it hands them to the free ask untouched. */
+      if (K && K.isKitchen(state) && K.isIntakeMode(state)) { spokenIntake(text); return; }
+      askFree(text); return; /* not a command: let META answer */
+    }
     state = Store.load(); /* fresh before acting */
     var turn = C.workerTurn(E, state, wearer(), match);
     if (turn.acted) Store.save(state);
@@ -744,6 +751,27 @@
   /* Kitchen, before any shipment exists: the capture is the receipt
      read, and the read creates the Grocery run and its tasks in one
      flow (js/kitchen.js, reading through js/bol.js). */
+  /* Kitchen, before any shipment exists: the wearer TOLD META what
+     they have instead of scanning a receipt. META reads the items out
+     of the words (js/kitchen.js's spoken read); items found create
+     the same Groceries putaway run the receipt scan creates, under
+     the same creation line. No items in the words — they were a
+     question, and the free ask answers them as it always did. */
+  function spokenIntake(text) {
+    if (!K || !B) { askFree(text); return; }
+    say(['Making your list…']);
+    K.readSpoken(B, fetch.bind(window), C.CHAT_URL, text).then(function (receipt) {
+      if (!receipt.ok) { askFree(text); return; }
+      state = Store.load(); /* fresh before acting */
+      var res = K.createRun(E, state, receipt, wearerId, 'spoken');
+      if (res.ok) Store.save(state);
+      say(K.intakeLines(res));
+      renderChips();
+    }, function (e) {
+      say([((e && e.userMessage) || 'No read — something went wrong.') + ' Nothing created.']);
+    });
+  }
+
   function receiptIntake(src) {
     if (!K || !B) { say(['Receipt reader not loaded — nothing created.']); return Promise.resolve(); }
     var bodies = [], body = null;
