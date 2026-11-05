@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Witness — Demos</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0e1420; color: #e8edf4; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 20px 56px; }
+  .kicker { color: #8fb4d9; font-size: 12.5px; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 8px; }
+  h1 { font-size: 34px; margin: 0 0 10px; letter-spacing: -.01em; }
+  .lede { color: #b9c6d6; max-width: 62ch; margin: 0 0 30px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: #16202f; border: 1px solid #26374d; border-top: 3px solid #4d7fb8; border-radius: 10px; padding: 18px 18px 16px; }
+  .card h2 { font-size: 19px; margin: 0 0 6px; }
+  .card h2 a { color: #fff; text-decoration: none; }
+  .card h2 a:hover { text-decoration: underline; }
+  .what { color: #c3d0df; margin: 0 0 8px; }
+  .do { color: #8fb4d9; font-size: 14px; margin: 0 0 14px; }
+  .open { display: inline-block; background: #24507e; color: #fff; text-decoration: none; font-weight: 600;
+          padding: 8px 16px; border-radius: 7px; font-size: 14.5px; }
+  .open:hover { background: #2d639c; }
+  footer { margin-top: 34px; color: #7e90a6; font-size: 13.5px; }
+  footer a { color: #8fb4d9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">Witness — live demos</p>
+  <h1>Every demo, one link each</h1>
+  <p class="lede">Witness is a warehouse run by voice and vision: the worker talks to Meta AI and the WMS updates itself. Each demo below opens on its own — pick one and just start. Nothing here can break the real record; the practice copy and the kitchen reset themselves.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2><a href="index.html">Receiving cross-check</a></h2>
+      <p class="what">Module one: every load gets two independent reads — a spoken scan and a photo scan — compared into an OS&amp;D report.</p>
+      <p class="do">Start here if you have two minutes: speak a load, photograph it, watch the flags.</p>
+      <a class="open" href="index.html">Open the cross-check</a>
+    </div>
+
+    <div class="card">
+      <h2><a href="wms.html?practice=1#/receiving">Walk the Shift</a></h2>
+      <p class="what">The game: work a real shift on the warehouse map — inbound dock worker, outbound loader, replenishment, cycle counter — by talking to META.</p>
+      <p class="do">Opens a practice copy of the warehouse on the Receiving view. Pick a shift type and say "Complete task."</p>
+      <a class="open" href="wms.html?practice=1#/receiving">Walk the shift</a>
+    </div>
+
+    <div class="card">
+      <h2><a href="wms.html">WMS console</a></h2>
+      <p class="what">The whole warehouse, live: the map, receiving, putaway, orders, labor — and the Ontology page, where the building's dynamic digest and the slang it has learned live.</p>
+      <p class="do">Look around freely. Ask the building a question from the Witness page.</p>
+      <a class="open" href="wms.html">Open the console</a>
+    </div>
+
+    <div class="card">
+      <h2><a href="glasses.html">Warehouse glasses</a></h2>
+      <p class="what">The receiving dock through the wearer's eyes: you speak what you see on the pallet, and META checks it against the camera.</p>
+      <p class="do">Hold anywhere to talk. Double-tap to capture a photo.</p>
+      <a class="open" href="glasses.html">Open the warehouse glasses</a>
+    </div>
+
+    <div class="card">
+      <h2><a href="glasses.html?world=kitchen">Kitchen glasses</a></h2>
+      <p class="what">The home-scale demo: scan a grocery receipt and META reads it, creates the putaway job, and walks you item by item to its spot.</p>
+      <p class="do">Double-tap to scan any grocery receipt — not just ours. Then hold to talk and say "Start Groceries putaway."</p>
+      <a class="open" href="glasses.html?world=kitchen">Open the kitchen glasses</a>
+    </div>
+
+    <div class="card">
+      <h2><a href="warehouse.html">The desk record</a></h2>
+      <p class="what">The warehouse's own record — bills of lading, staged freight, flags, and the full event history the glasses and the console write to.</p>
+      <p class="do">Open it beside the glasses: scan on the glasses, watch the record move here.</p>
+      <a class="open" href="warehouse.html">Open the desk record</a>
+    </div>
+  </div>
+
+  <footer>
+    <a href="index.html">← Witness home</a> · Built for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026), and still building.
+    Directed by E. William Harris IV (domain: software implementation, Six Sigma, and continuous improvement — his passion). Project management and records by Faye (AI), William's Muse assistant; code by Claude (AI).
+  </footer>
+</div>
+</body>
+</html>
