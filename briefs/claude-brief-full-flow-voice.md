@@ -108,3 +108,12 @@ Open the PR and stop; William merges. In the PR description, name: the
 intent vocabulary as built, any task type lacking a correction path,
 anything you had to leave click-only and why, and the suite/smoke
 counts.
+
+
+## Amendment (2026-11-05): the confirmation law
+
+Every state-changing voice act this build generalizes inherits the
+completion-confirmation law from `briefs/claude-brief-completion-confirm.md`:
+an act word stages the act and asks; only the next turn's confirmation
+runs it. Design the generalized envelope with the stage built in from
+the start rather than bolting it on.
