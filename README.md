@@ -4,8 +4,6 @@
 
 A receiver's hands are busy. A warehouse's paperwork lies. Witness starts from those two facts: the people doing the work should be able to talk to the system, the system should check what it's told against what it can see, and no machine should ever sign off on freight — a human decides.
 
-Built for the **Meta Global AI Developer Hackathon** (build window Oct 26 – Nov 4, 2026). Live app: https://grateful-ed.github.io/witness/
-
 > **This README is the project's definition of record.** The project grew on Oct 31, 2026 — from a receiving-dock cross-check into the whole warehouse. Module one (the cross-check) is built and live; the rest of the building is being built in the open, in this repo, until submissions close Nov 4, 9:00 PM ET. If anything anywhere describes Witness as only a receiving app, this file supersedes it.
 
 > **One name note:** William and Ed are the same person — E. William Harris IV, this project's director. The Ship Safe repo's documents usually call him Ed; this repo calls him William. One person, one set of rulings — an approval under either name is his.
@@ -44,6 +42,8 @@ Scans and reports are stored by the project's own Cloudflare Worker (voice, stru
 Why two scans? Because each one fails differently. In our test corpus, a receiver's spoken scan of a badly damaged load reached the right verdict — reject it — while clearing the load's damaged right side and blaming its one clean side. The photo scan caught both. A single witness would have sent the crew to fix the wrong face.
 
 In the whole-warehouse picture, this module is how **inbound freight gets received** (area 2) — the dock door is where the system starts, not where it ends.
+
+Built for the **Meta Global AI Developer Hackathon** (build window Oct 26 – Nov 4, 2026). Live app: https://grateful-ed.github.io/witness/
 
 ## Status
 
