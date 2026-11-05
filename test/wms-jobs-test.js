@@ -23,6 +23,7 @@ var path = require('path');
 var E = require('../js/engine.js');
 var W = require('../js/wms.js');
 var V = require('../js/wms-voice.js');
+var O = require('../js/ontology.js');
 
 var failures = 0, passes = 0;
 function check(name, cond) { console.log((cond ? 'PASS' : 'FAIL') + '  ' + name); if (cond) passes++; else failures++; }
@@ -112,8 +113,11 @@ check('assignment by department: on the seed, every held job sits with a unit of
 check('assignment by department: no picking job is held by Marcus (Inbound only)',
   !s.wms.jobs.some(function (j) { return j.dept === 'picking' && j.owner === 'u-marcus'; }));
 var r = W.reassignJob(s, 'J-ORD-503', 'u-marcus', 'u-sam');
-check('assignment by department: a manager cannot land a picking job on an inbound-only unit either',
-  !r.ok && /does not work Picking/.test(r.reason) && !W.job(s, 'J-ORD-503').owner);
+check('assignment by department: DEALING never lands a picking job on an inbound-only unit — but a manager can (William\'s ruling, 2026-11-05): the move lands on Marcus, marked cross-department',
+  r.ok && W.job(s, 'J-ORD-503').owner === 'u-marcus' && (function () {
+    var xr = s.records.filter(function (x) { return x.kind === 'job-reassign' && x.jobId === 'J-ORD-503'; })[0];
+    return !!xr && xr.crossDept === true && xr.by === 'u-sam';
+  })());
 var shift = fresh();
 W.releaseWave(shift, ['ORD-601', 'ORD-602', 'ORD-603', 'ORD-604', 'ORD-605'], 'u-sam');
 W.checkIn(shift, 'APT-102', 'u-sam');
@@ -234,9 +238,19 @@ var before = JSON.stringify(s);
 r = W.reassignJob(s, 'J-ORD-501', 'u-grace', 'u-tommy');
 check('reassign: a worker cannot move a job — only a manager', !r.ok && /Only a manager/.test(r.reason) && JSON.stringify(s) === before);
 r = W.reassignJob(s, 'J-ORD-501', 'u-dee', 'u-sam');
-check('reassign: a worker outside the job\'s department is refused, nothing moves', !r.ok && /Dee Carter does not work Picking/.test(r.reason) && JSON.stringify(s) === before);
-r = W.reassignJob(s, 'J-ORD-501', 'u-priya', 'u-sam');
+check('reassign: a manager MAY move a job across departments (William\'s ruling, 2026-11-05) — it lands with Dee, marked cross-department on the record',
+  r.ok && W.job(s, 'J-ORD-501').owner === 'u-dee' && (function () {
+    var xr = s.records.filter(function (x) { return x.kind === 'job-reassign' && x.to === 'u-dee'; })[0];
+    return !!xr && xr.crossDept === true && /Cross-department: Dee Carter does not work Picking/.test(xr.text) && xr.by === 'u-sam' && xr.from === 'u-priya';
+  })());
+r = W.reassignJob(s, 'J-ORD-501', 'u-dee', 'u-sam');
 check('reassign: to the holder is refused', !r.ok && /already holds/.test(r.reason));
+r = W.reassignJob(s, 'J-ORD-501', 'u-priya', 'u-sam');
+check('reassign: the manager moves it back to Priya — a same-department move carries no cross-department mark',
+  r.ok && W.job(s, 'J-ORD-501').owner === 'u-priya' && (function () {
+    var xr = s.records.filter(function (x) { return x.kind === 'job-reassign' && x.to === 'u-priya'; })[0];
+    return !!xr && !xr.crossDept;
+  })());
 check('reassign: an unknown job is refused', !W.reassignJob(s, 'J-NOPE', 'u-grace', 'u-sam').ok);
 r = W.reassignJob(s, 'J-ORD-501', 'u-grace', 'u-sam');
 check('reassign: Sam moves ORD-501 from Priya to Grace', r.ok && r.from === 'u-priya' && r.to === 'u-grace' && r.moved === 1 && W.job(s, 'J-ORD-501').owner === 'u-grace');
@@ -244,7 +258,7 @@ check('reassign: the remaining task moves — out of Priya\'s hands, queued for 
   task(s, 't-pick-ORD-501-A-08').status === 'open' && !task(s, 't-pick-ORD-501-A-08').assignee &&
   task(s, 't-pick-ORD-501-A-08').queuedFor === 'u-grace' && unit(s, 'u-priya').currentTaskId !== 't-pick-ORD-501-A-08');
 check('reassign: the completed task keeps its doer (Priya)', task(s, 't-pick-ORD-501-B-04').status === 'done' && task(s, 't-pick-ORD-501-B-04').doneBy === 'u-priya');
-var rec = s.records.filter(function (x) { return x.kind === 'job-reassign'; })[0];
+var rec = s.records.filter(function (x) { return x.kind === 'job-reassign' && x.to === 'u-grace'; })[0];
 check('reassign: the record shows who moved it, when, and from whom',
   !!rec && rec.jobId === 'J-ORD-501' && rec.by === 'u-sam' && rec.from === 'u-priya' && rec.to === 'u-grace' && !!rec.ts &&
   /moved from Priya Shah to Grace Liu by Sam Whitaker/.test(rec.text));
@@ -256,6 +270,7 @@ check('reassign: Grace now holds two jobs, hers first — ORD-502, then ORD-501'
 check('reassign: Priya, freed, is dealt the next Picking job by the system — ORD-503',
   W.jobsOf(s, 'u-priya').map(function (j) { return j.id; }).join() === 'J-ORD-503');
 check('reassign: the law still holds after the move', lawHolds(s));
+check('reassign: the ontology knows the move\'s own record shape — no unknowns after the moves above', O.newUnknowns(s).length === 0);
 check('reassign: a finished job cannot be moved', (function () {
   var x = fresh(); W.nextFor(x, 'u-dee'); W.complete(x, 't-putaway-STG-1', { by: 'u-dee' });
   var rr = W.reassignJob(x, 'J-STG-1', 'u-tommy', 'u-sam'); return !rr.ok && /already finished/.test(rr.reason);
