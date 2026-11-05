@@ -20,6 +20,7 @@
   var WP = window.WitnessWmsWitness;
   var AG = window.WitnessWmsAgent;
   var G = window.WmsGame;
+  var V = window.WitnessWmsVoice;
 
   var params = new URLSearchParams(location.search);
   var state = null;
@@ -33,6 +34,10 @@
     recKind: '', rfUnit: null, rfReply: '', rfHeard: '', rfPhoto: null, rfPhotoRead: null,
     flagWords: '', ask: null, askBusy: false, camFor: null, pin: null,
     agent: { key: null, turns: [], busy: false, draft: '' },  /* the Witness page's agent: this page's talk only */
+    /* Work by voice (js/wms-voice.js): the worker spoken for, the ONE
+       staged act waiting for the next turn's yes (never saved — a
+       reload forgets it), and the last turn as shown. */
+    voice: { unit: null, stage: null, heard: '', line: '', note: '', guide: null, busy: false, refused: false },
     folded: {}   /* folded panels, by screen + panel title; this page only */
   };
 
@@ -491,6 +496,7 @@
   /* ---- Putaway ---- */
   VIEWS.putaway = function () {
     var html = head('Inbound › Putaway', 'Putaway', 'Every staged pallet is directed to a bin. The worker confirms by voice ("in A-03") or by a photo of the bin label on the RF console; a different bin is allowed and recorded as suggested vs. actual.');
+    html += voicePanel();
     var rows = state.tasks.filter(function (t) { return t.type === 'putaway' && t.status !== 'done'; }).map(function (t) {
       var p = null; state.staging.forEach(function (x) { if (x.id === t.stagingId) p = x; });
       return '<tr><td class="id">' + esc(t.stagingId) + '</td><td>' + esc(p ? p.desc : '') + '</td><td class="num">' + esc(p ? p.qty : '') + '</td><td>' + esc(p ? p.door : '') + '</td><td class="id">' +
@@ -577,6 +583,7 @@
     var d = W.dashboard(state);
     var html = head('Inventory › Cycle Counts', 'Cycle Counts', 'Small, ongoing blind counts. The counter never sees the system number; variances adjust the bin and are kept with the counter\'s words. A short pick queues a count on its own.',
       '<select class="cell" style="width:auto" id="ccZone">' + state.zones.map(function (z) { return opt(z, 'Zone ' + z); }).join('') + '</select> <button class="btn primary" data-act="count-zone">Count occupied bins in zone</button>');
+    html += voicePanel();
     var open = state.tasks.filter(function (t) { return t.type === 'count' && t.status !== 'done'; }).map(function (t) {
       var b = E.binById(state, t.binId);
       var inputs = (b.contents.length ? b.contents : [{ desc: '(nothing)' }]).map(function (c, i) {
@@ -599,6 +606,7 @@
   /* ---- Replenishment ---- */
   VIEWS.replen = function () {
     var html = head('Inventory › Replenishment', 'Replenishment', 'Min/max pick faces. A face below min gets a task to bring it toward max from reserve stock in another bin. No reserve, no task — the exception says so.');
+    html += voicePanel();
     var rows = W.slotStatus(state).map(function (s) {
       var pct = Math.min(100, Math.round(100 * s.onHand / s.max));
       var t = s.taskId ? E.taskById(state, s.taskId) : null;
@@ -655,6 +663,7 @@
   /* ---- Picking ---- */
   VIEWS.picking = function () {
     var html = head('Outbound › Picking', 'Picking', 'Pick tasks by zone. On the floor the picker confirms the quantity by voice ("picked 10"); fewer than asked is a short pick — reconciled on the order and a cycle count is queued for the bin.');
+    html += voicePanel();
     var bays = [];
     state.zones.forEach(function (z) {
       var rows = state.tasks.filter(function (t) { return t.type === 'pick' && t.zone === z && t.status !== 'done'; }).map(function (t) {
@@ -676,6 +685,7 @@
   /* ---- Pack & ship ---- */
   VIEWS.ship = function () {
     var html = head('Outbound › Pack & Ship', 'Pack, Stage, Load & Ship', 'Picked orders are packed and labeled at Pack 1, staged at their door, loaded on the trailer, and the outbound load is closed with a ship confirm — BOL number, seal, totals.');
+    html += voicePanel();
     var pack = state.tasks.filter(function (t) { return t.type === 'pack' && t.status !== 'done'; }).map(function (t) {
       var o = E.orderById(state, t.orderId);
       return '<tr><td class="id">' + esc(t.orderId) + '</td><td>' + esc(o.customer || '') + '</td><td>' + esc(o.lines.map(function (l) { return (l.pickedQty || 0) + ' × ' + l.desc; }).join('; ')) + '</td><td>' + taskChip(t) +
@@ -700,6 +710,7 @@
   /* ---- Task queues ---- */
   VIEWS.queues = function () {
     var html = head('Labor › Task Queues', 'Task Queues', 'Each worker\'s task in hand, what is queued for them, and what the system would hand them next. Reassign any open task; if the worker\'s hands are full it is queued ahead of everything else.');
+    html += voicePanel();
     html += '<div class="cards">' + workers().map(function (u) {
       var q = W.queueFor(state, u.id);
       return '<div class="wcard"><div class="w-h"><b>' + esc(u.name) + '</b>' + chip('Zone ' + u.zone, 'info') + '</div><div class="w-b">' +
@@ -898,6 +909,49 @@
   /* Bin law: a destination reads plainly "Stage: Bin #". */
   function dest(binId) { return 'Stage: Bin ' + (binId || '?'); }
 
+  /* ---- Work by voice (the full-flow voice brief) ----
+     Rides the task-queue screens. The worker's offer is their own
+     assigned list (the task in hand, else their first assigned task —
+     read only; voice never assigns or pulls). Hold to talk: every act is
+     staged and asked; only the next turn's yes runs it, through the
+     WMS layer's own paths (js/wms-voice.js). */
+  function voiceUnit() {
+    if (!isManager()) return me;
+    var ws = workers();
+    if (!ui.voice.unit || !ws.some(function (w) { return w.id === ui.voice.unit; })) ui.voice.unit = ws.length ? ws[0].id : null;
+    return ui.voice.unit;
+  }
+  function voiceOffer(uid) {
+    var cur = W.currentOf(state, uid);
+    if (cur) return 'In hand: <b>' + esc(V.offerLine(state, cur)) + '</b>';
+    var nx = V.nextAssigned(state, uid);
+    return nx ? 'Nothing in hand. First assigned: <b>' + esc(V.offerLine(state, nx)) + '</b>' : 'Nothing in hand, and nothing assigned.';
+  }
+  function voiceLines(uid) {
+    var v = ui.voice, out = '';
+    if (v.unit !== uid && isManager()) return '';
+    if (v.heard) out += '<p class="hint">Heard: &ldquo;' + esc(v.heard) + '&rdquo;</p>';
+    if (v.note) out += '<p class="hint">' + esc(v.note) + '</p>';
+    if (v.line) out += '<div class="notice ' + (v.refused ? 'bad' : 'info') + '">' + esc(v.line) + '</div>';
+    if (v.stage && v.stage.unitId === uid) out += '<p class="hint">Waiting for your yes — the next thing you say decides it.</p>';
+    if (v.guide) out += '<div class="form-actions"><a class="btn" href="' + esc(v.guide.href) + '"' +
+      (v.guide.shipmentId ? ' data-act="rf-goto-rcv" data-id="' + esc(v.guide.shipmentId) + '"' : '') + '>' + esc(v.guide.label) + '</a></div>';
+    return out;
+  }
+  function voicePanel() {
+    if (!V) return '';
+    var uid = voiceUnit();
+    if (!uid) return '';
+    var who = isManager()
+      ? '<div class="form"><div class="field"><label>Working as</label><select id="wvWho">' + workers().map(function (w) { return opt(w.id, w.name + ' (Zone ' + w.zone + ')', w.id === uid); }).join('') + '</select></div></div>'
+      : '';
+    var talk = '<div class="form-actions"><button class="btn talk" id="wvTalk" type="button"' + (ui.voice.busy ? ' disabled' : '') + '>🎙 Hold to talk</button>' +
+      '<span class="hint" id="wvStatus">' + (ui.voice.busy ? 'Working on it…' : '') + '</span></div>';
+    return panel('Work by voice', who + '<p>' + voiceOffer(uid) + '</p>' + talk +
+      '<p class="hint">Say &ldquo;what\'s next&rdquo;, &ldquo;done&rdquo;, &ldquo;picked 10&rdquo;, &ldquo;in A-03&rdquo;, a count, or what\'s wrong. Every change is read back and waits for your &ldquo;yes&rdquo;. Receiving and loading are signed on their own screens.</p>' +
+      voiceLines(uid), 'the live queue · nothing changes without your yes');
+  }
+
   /* ---------- render ------------------------------------------------ */
 
   function render() {
@@ -976,6 +1030,7 @@
     if (view === 'receiving' && $('rcvTalk')) Mic.attach($('rcvTalk'), micHandlers($('rcvTalk'), 'rcvStatus', receivingVoice));
     if (view === 'flags' && $('flTalk')) Mic.attach($('flTalk'), micHandlers($('flTalk'), 'flStatus', function (text) { ui.flagWords = text; fileFlag(text, 'voice'); }));
     if (view === 'rf' && $('rfTalk')) Mic.attach($('rfTalk'), micHandlers($('rfTalk'), 'rfStatus', rfVoice));
+    if ($('wvTalk')) Mic.attach($('wvTalk'), micHandlers($('wvTalk'), 'wvStatus', function (text) { workHear(voiceUnit(), text); }));
     if (/^witness\//.test(view) && $('agTalk')) Mic.attach($('agTalk'), micHandlers($('agTalk'), 'agStatus', function (text) { agentSay(text, 'voice'); }));
     if (view === 'labor' && $('askTalk')) Mic.attach($('askTalk'), micHandlers($('askTalk'), 'askQ', function (text) { askBuilding(text); }));
     /* Walk the shift: the game panel's hold-to-talk, same plumbing —
@@ -1014,26 +1069,60 @@
     }).then(function (r) { if (r && r.ok) ui.flagWords = ''; render(); return r; });
   }
 
+  /* The RF console's hold-to-talk rides the same staged envelope as
+     Work by voice: a spoken "done" asks first, the next "yes" closes. */
   function rfVoice(text) {
     var uid = ui.rfUnit;
     ui.rfHeard = text;
-    var plan = W.interpret(state, uid, text);
-    if (plan.intent === 'problem') {
-      ui.rfReply = 'Filing it as a flag…';
+    ui.rfReply = 'Working on it…';
+    render();
+    workHear(uid, text).then(function () {
+      var v = ui.voice;
+      ui.rfReply = (v.note ? v.note + ' ' : '') + v.line;
       render();
-      fileFlag(text, 'voice', uid).then(function (r) {
-        ui.rfReply = r && r.ok ? 'Flagged "' + r.flag.label + '" with your words. Nothing was closed.' : 'The flag was not filed.';
-        render();
+    });
+  }
+
+  /* One heard turn of Work by voice. The pending stage is taken out
+     first — whatever this turn is, it decides it (one turn, never
+     more). A plain yes / no to a pending stage is read from the
+     words alone; anything else goes to META (wms-ai.js workTurn) with
+     the live queue as context, and the local words decide when she
+     cannot be reached. A run goes through act() on the fresh desk
+     record; its words come only from the result. */
+  function workHear(uid, text) {
+    var v = ui.voice;
+    if (!V || v.busy) return Promise.resolve();
+    var pending = v.stage && v.stage.unitId === uid ? v.stage : null;
+    v.stage = null;
+    v.unit = uid; v.heard = text; v.line = ''; v.note = ''; v.guide = null; v.refused = false; v.busy = true;
+    render();
+    var cur = W.currentOf(state, uid);
+    var loc = V.localIntent(text, { pending: !!pending, pickInHand: !!cur && cur.type === 'pick' });
+    var envP = pending && (loc === 'confirm' || loc === 'deny')
+      ? Promise.resolve(null)
+      : AI.workTurn(window.fetch.bind(window), V.context(state, uid, pending), text).then(function (r) { return r; }, function () { return null; });
+    return envP.then(function (env) {
+      var d = V.decide(state, uid, text, env, pending);
+      v.note = d.note || '';
+      if (!d.run) {
+        v.stage = d.stage || null;
+        v.line = d.say;
+        v.guide = d.guide || null;
+        v.refused = false;
+        return;
+      }
+      var stage = d.run;
+      var labelP = stage.kind === 'flag'
+        ? AI.labelFlag(window.fetch.bind(window), stage.words).then(function (r) { return r.label; }, function () { return null; })
+        : Promise.resolve(null);
+      return labelP.then(function (label) {
+        return act(function (s) { return V.run(s, stage, { label: label }); }, null);
+      }).then(function (r) {
+        if (r && r.ok) { v.line = r.text; v.refused = false; }
+        else { v.line = (r && r.reason) || 'Nothing was saved — the desk record was busy or could not be reached. Nothing changed; say it again.'; v.refused = true; }
       });
-      return;
-    }
-    act(function (s) {
-      var p = W.interpret(s, uid, text); /* re-read against the fresh state */
-      var r = W.act(s, uid, p);
-      ui.rfReply = r.reply;
-      if (!r.ok) return { ok: false, reason: r.reply };
-      return r;
-    }, null).then(function () { render(); });
+    }).then(function () { v.busy = false; render(); }, function () { v.busy = false; v.line = 'Something went wrong. Nothing was done.'; v.refused = true; render(); });
   }
 
   function askBuilding(q) {
@@ -1327,6 +1416,7 @@
     if (el.id === 'tfStatus') { ui.taskStatus = el.value; render(); }
     if (el.id === 'rkFilter') { ui.recKind = el.value; render(); }
     if (el.id === 'rfWho') { ui.rfUnit = el.value; ui.rfReply = ''; ui.rfHeard = ''; render(); }
+    if (el.id === 'wvWho') { ui.voice.unit = el.value; ui.voice.stage = null; ui.voice.heard = ''; ui.voice.line = ''; ui.voice.note = ''; ui.voice.guide = null; render(); }
     if (el.id === 'whoSel') {
       me = el.value;
       if (!isManager()) ui.rfUnit = me;
@@ -1362,5 +1452,5 @@
   });
 
   /* For tests and the console. */
-  window.WitnessWmsPage = { getState: function () { return state; }, store: store, ui: ui };
+  window.WitnessWmsPage = { getState: function () { return state; }, store: store, ui: ui, workHear: workHear };
 })();
