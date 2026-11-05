@@ -1034,17 +1034,14 @@
     clearTimeout(hintTimer);
     hintTimer = setTimeout(function () { $('padHint').classList.add('gone'); }, 2500);
   }
-  function padState(gp) {
-    $('padLine').textContent = gp ? 'Controller: ' + padName(gp.id) + ' — connected.' : 'No controller connected (optional).';
-  }
-  window.addEventListener('gamepadconnected', function (e) { padIndex = e.gamepad.index; padState(e.gamepad); });
-  window.addEventListener('gamepaddisconnected', function () { padIndex = null; prevPad = null; padState(null); });
+  window.addEventListener('gamepadconnected', function (e) { padIndex = e.gamepad.index; });
+  window.addEventListener('gamepaddisconnected', function () { padIndex = null; prevPad = null; });
 
   function loop() {
     var pads = navigator.getGamepads ? navigator.getGamepads() : [];
     var gp = null;
     if (padIndex != null && pads[padIndex]) gp = pads[padIndex];
-    else for (var i = 0; i < pads.length; i++) if (pads[i]) { gp = pads[i]; padIndex = i; padState(gp); break; }
+    else for (var i = 0; i < pads.length; i++) if (pads[i]) { gp = pads[i]; padIndex = i; break; }
     if (gp) {
       var cur = readPad(gp);
       if (opened) {
@@ -1068,6 +1065,5 @@
 
   $('openBtn').addEventListener('click', openView);
   renderPick();
-  padState(null);
   requestAnimationFrame(loop);
 })(typeof window !== 'undefined' ? window : globalThis);

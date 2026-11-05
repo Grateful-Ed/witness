@@ -13,6 +13,14 @@
    break the demo it explains. The content names only flows that
    exist, in the world's own words, and picks warehouse or kitchen
    from the same ?world= the page itself uses.
+
+   William (2026-11-05): "The directions doesn't really give good
+   directions ... put them in the actual camera part with the
+   glasses." So the kitchen view also carries a small steps card over
+   the camera itself — the same four steps the help window shows. It
+   watches #view from outside (its hidden attribute), sits in its own
+   small box above the view, and never sits inside it: the rest of
+   the view keeps hold-to-talk and double-tap while the card is up.
    ===================================================================== */
 (function () {
   'use strict';
@@ -36,21 +44,23 @@
     '</ul>'
   ].join('');
 
+  /* The kitchen's four steps, verbatim from William (2026-11-05).
+     One list, used by both the steps card and the help window. */
+  var KITCHEN_STEPS = [
+    'Take pic of receipt (double tap)',
+    'Wait for tasks to be created',
+    'Ask for tasks',
+    'Say \u201cdone\u201d when a task is complete'
+  ];
+  function stepsList() {
+    return '<ol class="gh-steps">' + KITCHEN_STEPS.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ol>';
+  }
+
   var KITCHEN = [
     '<h3>The kitchen glasses</h3>',
     '<p class="gh-sub">Putting groceries away, hands-free.</p>',
-    '<h4>First, give it the groceries \u2014 either way</h4>',
-    '<ul>',
-    '<li><b>Double-tap</b> with a grocery receipt in view. META reads it and creates the putaway job.</li>',
-    '<li>Or just <b>say what you have</b>: \u201cI have milk, eggs, and bread.\u201d That creates the job too.</li>',
-    '</ul>',
-    '<h4>Then put them away</h4>',
-    '<ul>',
-    '<li>Say <b>\u201cStart Groceries putaway\u201d</b>. META walks you item by item: \u201cNext: milk.\u201d</li>',
-    '<li>Put each item in its spot and say <b>\u201cdone\u201d</b>.</li>',
-    '<li>Wrong spot? Correct it out loud: <b>\u201cCoffee goes in Cabinet B.\u201d</b></li>',
-    '<li>The kitchen starts fresh every time it opens \u2014 every visit is a new run.</li>',
-    '</ul>'
+    '<h4>Steps</h4>',
+    stepsList()
   ].join('');
 
   var SHARED = [
@@ -62,7 +72,6 @@
     '<ul>',
     '<li>The view needs camera and microphone permission.</li>',
     '<li>Say <b>\u201chide\u201d</b> to clear the words off the glass.</li>',
-    '<li>With a PlayStation controller: hold <b>R2</b> to talk, <b>X</b> to take a photo.</li>',
     '</ul>'
   ].join('');
 
@@ -72,10 +81,18 @@
     '.gh-panel h3{margin:0 30px 2px 0;font-size:21px;}',
     '.gh-sub{color:#8fb4d9;margin:0 0 14px;}',
     '.gh-panel h4{margin:16px 0 6px;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:#8fb4d9;}',
-    '.gh-panel ul{margin:0 0 6px;padding-left:19px;}',
+    '.gh-panel ul,.gh-panel ol{margin:0 0 6px;padding-left:19px;}',
     '.gh-panel li{margin:0 0 7px;}',
     '.gh-x{position:absolute;top:10px;right:10px;width:36px;height:36px;border-radius:50%;border:1px solid #3d5a7a;background:#1a2637;color:#fff;font-size:17px;cursor:pointer;}',
     '.gh-start-btn{display:block;margin:12px auto 2px;background:#24507e;color:#fff;border:0;border-radius:8px;padding:11px 22px;font:600 15px system-ui,sans-serif;cursor:pointer;}',
+    /* The steps card: its own small box over the camera, above the view
+       (z-index 1) and below the info button, Record and the window. */
+    '.gh-card{position:fixed;top:64px;left:12px;z-index:50;width:min(280px,calc(100vw - 24px));box-sizing:border-box;background:rgba(10,16,26,.78);color:#fff;font:14px/1.45 system-ui,sans-serif;border:1px solid rgba(255,255,255,.35);border-radius:12px;padding:10px 40px 8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.45);}',
+    '.gh-card[hidden]{display:none;}',
+    '.gh-card h4{margin:0 0 4px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:#8fb4d9;}',
+    '.gh-card ol{margin:0;padding-left:20px;}',
+    '.gh-card li{margin:0 0 3px;}',
+    '.gh-card .gh-x{top:6px;right:6px;width:30px;height:30px;font-size:14px;}',
     '.gh-info{position:fixed;top:12px;left:12px;z-index:60;width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.45);background:rgba(10,16,26,.55);color:#fff;font-size:19px;cursor:pointer;}'
   ].join('');
 
@@ -119,8 +136,30 @@
     info.className = 'gh-info';
     info.textContent = 'ⓘ';
     info.setAttribute('aria-label', 'How the glasses work');
-    info.addEventListener('click', open);
+    info.addEventListener('click', function () { reopenCard(); open(); });
     document.body.appendChild(info);
+
+    /* In the kitchen view, the steps sit over the camera itself. The
+       card lives on body, not inside #view, so its taps never reach
+       the view's hold / double-tap listeners — and the view's own
+       touches outside the card's box are untouched. It shows while the
+       view is open, until its X; the (i) brings it back. */
+    var view = document.getElementById('view');
+    var card = null, dismissed = false;
+    function syncCard() { if (card) card.hidden = dismissed || !view || view.hidden; }
+    function reopenCard() { dismissed = false; syncCard(); }
+    if (isKitchen) {
+      card = document.createElement('div');
+      card.className = 'gh-card';
+      card.id = 'ghSteps';
+      card.setAttribute('role', 'note');
+      card.setAttribute('aria-label', 'Steps');
+      card.innerHTML = '<button type="button" class="gh-x" aria-label="Close steps">✕</button><h4>Steps</h4>' + stepsList();
+      card.querySelector('.gh-x').addEventListener('click', function () { dismissed = true; syncCard(); });
+      document.body.appendChild(card);
+      if (view && window.MutationObserver) new MutationObserver(syncCard).observe(view, { attributes: true, attributeFilter: ['hidden'] });
+      syncCard();
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build);
