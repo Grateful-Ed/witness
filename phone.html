@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Witness — Phone</title>
+<link rel="stylesheet" href="css/phone.css">
+</head>
+<body>
+<main class="ph">
+
+  <!-- The phone is a communicator to the AI: it talks, captures,
+       and (later) summons. It hosts no WMS workflow. The full record
+       lives on the desk. -->
+
+  <p id="phMsg" class="ph-msg" role="status" aria-live="polite">Loading the shared warehouse…</p>
+
+  <!-- Who am I: one tap, remembered for this page session only. -->
+  <section id="phWho" class="ph-who" hidden>
+    <p class="ph-ask">Who are you?</p>
+    <div id="phNames" class="ph-names"></div>
+  </section>
+
+  <!-- Everything below shows once you've picked who you are. -->
+  <section id="phLive" hidden>
+
+    <!-- Glance header: the task in hand as a chip — Task # and Bin #. Nothing else persistent. -->
+    <header class="ph-glance">
+      <span id="chipTask" class="ph-chip" hidden></span>
+      <span id="chipBin" class="ph-chip" hidden></span>
+      <button type="button" id="phMe" class="ph-me" aria-label="Change who you are"></button>
+    </header>
+
+    <!-- Talk -->
+    <button type="button" id="phTalk" class="ph-talk" aria-pressed="false"><span id="phTalkLabel">Hold to talk</span></button>
+    <form id="phTypeForm" class="ph-type" autocomplete="off">
+      <input id="phTypeInput" type="text" enterkeyhint="send" aria-label="Or type it">
+      <button type="submit" id="phTypeBtn">Send</button>
+    </form>
+
+    <!-- The moment, not the archive: what was heard, what came back. Clipped. -->
+    <div id="phTurn" class="ph-turn" hidden>
+      <p id="phHeard" class="ph-heard"></p>
+      <p id="phReply" class="ph-reply"></p>
+      <div id="phAskMore" hidden>
+        <p id="phCheck" class="ph-small"></p>
+        <p class="ph-law">A proposal, not a decision. Nothing was moved.</p>
+        <details class="ph-more">
+          <summary>The numbers behind it</summary>
+          <div id="phZones"></div>
+        </details>
+      </div>
+    </div>
+
+    <!-- Capture -->
+    <input id="phCam" class="ph-file" type="file" accept="image/*" capture="environment">
+    <label for="phCam" class="ph-cam">Capture</label>
+    <figure id="phShot" class="ph-shot" hidden>
+      <img id="phShotImg" alt="The photo just captured">
+    </figure>
+    <ul id="phFlags" class="ph-flags" hidden></ul>
+    <button type="button" id="phSave" class="ph-save" hidden>Save</button>
+
+  </section>
+
+</main>
+<script src="data/world.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/converse.js"></script>
+<script src="js/state.js"></script>
+<script src="js/warehouse-mic.js"></script>
+<script src="js/phone.js"></script>
+</body>
+</html>
