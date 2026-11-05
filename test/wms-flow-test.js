@@ -42,9 +42,9 @@ check('the flow names its direction for screen readers', /data-flow="in"[^>]*ari
   /data-flow="out"[^>]*aria-label="Outbound flow, top to bottom: Bay Locations, then Staging, then Outbound Docks"/.test(outH));
 
 /* 2. a slice, never the whole building */
-check('inbound slice: four inbound docks, no outbound dock, no Staging band', count(inH, /data-place="dock" data-side="in"/g) === 4 &&
+check('inbound slice: six inbound docks, no outbound dock, no Staging band', count(inH, /data-place="dock" data-side="in"/g) === 6 &&
   count(inH, /data-side="out"/g) === 0 && inH.indexOf('>Staging<') === -1 && count(inH, /data-place="staging"/g) === 0);
-check('outbound slice: four outbound docks, no inbound dock, no Receiving Bay', count(outH, /data-place="dock" data-side="out"/g) === 4 &&
+check('outbound slice: six outbound docks, no inbound dock, no Receiving Bay', count(outH, /data-place="dock" data-side="out"/g) === 6 &&
   count(outH, /data-side="in"/g) === 0 && outH.indexOf('>Receiving Bay<') === -1 && count(outH, /data-place="receiving"/g) === 0);
 check('the full map is not inside a slice', inH.indexOf('class="wmap"') === -1 && outH.indexOf('class="wmap"') === -1);
 
@@ -57,11 +57,12 @@ check('Outbound Dock 4 (the loading door) reads Loading', outS.stages[2].docks[3
 check('nothing staged to ship yet → staging lanes are empty, not invented', count(outH, /data-place="order"/g) === 0);
 
 /* 4. bins: only those with a reason to be there */
-check('inbound bays: putaway destinations + held bin only (A-03, A-05, C-03)', binIds(inS).join() === 'A-03,A-05,C-03');
+check('inbound bays: putaway destinations + held bin only (A-03, A-05, B-03, C-03)', binIds(inS).join() === 'A-03,A-05,B-03,C-03');
 check('outbound bays: pick sources + held bin only', binIds(outS).join() === 'A-05,A-08,B-02,B-04,C-02,C-08');
 check('each bin says why it is there', /data-id="A-03"[^>]*>.*?<small>Put away here<\/small>/.test(inH) && /data-id="B-04"[^>]*>.*?<small>Pick from here<\/small>/.test(outH) &&
   /data-id="A-05"[^>]*>.*?<small>On hold<\/small>/.test(inH));
-check('a zone with no reason bin is left out (inbound has no Zone B)', inS.stages[2].zones.map(function (z) { return z.zone; }).join() === 'A,C');
+var noB = W.seed(); noB.tasks = noB.tasks.filter(function (t) { return t.toBinId !== 'B-03'; });
+check('a zone with no reason bin is left out (inbound without the B-03 putaway has no Zone B)', M.slice(noB, W, 'in').stages[2].zones.map(function (z) { return z.zone; }).join() === 'A,C');
 var quiet = W.seed(); quiet.tasks = quiet.tasks.filter(function (t) { return t.type !== 'putaway'; }); quiet.bins.forEach(function (b) { if (b.status === 'hold') b.status = 'ok'; });
 check('no reason → says so plainly, draws no bin', /No bin has a reason to be here right now/.test(M.sliceHtml(quiet, W, 'in')) && count(M.sliceHtml(quiet, W, 'in'), /data-place="bin"/g) === 0);
 var doneOne = W.seed(); doneOne.tasks.forEach(function (t) { if (t.id === 't-putaway-STG-4') t.status = 'done'; });

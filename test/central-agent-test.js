@@ -106,17 +106,17 @@ var r = responses;
 check('locator: A-05 holds 25 × Dog food — bags, and says it is on hold',
   deepEq(r[0].facts, [{ place: 'bin', id: 'A-05', desc: 'Dog food — bags', qty: 25 }]) &&
   /Bin A-05 holds 25 × Dog food — bags/.test(r[0].answer) && /on hold/.test(r[0].answer));
-check('locator: the peaches are in A-01 (40), B-01 (12), C-01 (9) and on pallet STG-3 (15)', (function () {
+check('locator: the peaches are in A-01 (40), B-01 (12), B-09 (16), C-01 (9) and on pallet STG-3 (15)', (function () {
   var got = r[1].facts.map(function (f) { return f.id + ':' + f.qty; }).sort();
-  return deepEq(got, ['A-01:40', 'B-01:12', 'C-01:9', 'STG-3:15']) && /pallet STG-3 at Inbound Door 1/.test(r[1].answer);
+  return deepEq(got, ['A-01:40', 'B-01:12', 'B-09:16', 'C-01:9', 'STG-3:15']) && /pallet STG-3 at Inbound Door 1/.test(r[1].answer);
 })());
 check('status: the needs-eyes list is exactly the held bin A-05',
   r[2].facts.length === 1 && r[2].facts[0].id === 'A-05' && /1 thing needs eyes: Bin A-05 on hold/.test(r[2].answer));
 check('status: the peaches putaway is open, going to A-03, unassigned',
   r[3].facts[0].task === 't-putaway-STG-3' && r[3].facts[0].destination === 'A-03' &&
   /to A-03 is open, unassigned/.test(r[3].answer));
-check('planner: Tommy (zone B) gets the consolidation into B-01',
-  r[4].facts[0].task === 't-consolidate-Canned peaches — cases' && r[4].facts[0].destination === 'B-01' &&
+check('planner: Tommy (zone B) gets the STG-5 putaway into B-03',
+  r[4].facts[0].task === 't-putaway-STG-5' && r[4].facts[0].destination === 'B-03' &&
   /zone B/.test(r[4].answer));
 check('recorder: Priya\'s tell comes back as a record entry { from, text, at }',
   deepEq(r[5].record, { from: PRIYA, text: 'Pallet STG-4 has a torn wrap on the north side', at: dispatches[5].at }) &&

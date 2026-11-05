@@ -126,8 +126,8 @@ var sum = C.buildStateSummary(E, p);
     line.indexOf(stats[z].pending + ' tasks waiting') !== -1);
   check('summary zone ' + z + ' line has its real labor count (' + stats[z].workersPresent + ')',
     line.indexOf(stats[z].workersPresent + ' labor units') !== -1);
-  check('summary zone ' + z + ' line has its real bins in use (' + stats[z].binsOccupied + ' of 8)',
-    line.indexOf(stats[z].binsOccupied + ' of 8 bins in use') !== -1);
+  check('summary zone ' + z + ' line has its real bins in use (' + stats[z].binsOccupied + ' of 10)',
+    line.indexOf(stats[z].binsOccupied + ' of 10 bins in use') !== -1);
 });
 var bn = E.bottleneck(p);
 check('summary carries the engine\'s bottleneck call',

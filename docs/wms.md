@@ -54,8 +54,10 @@ on one wall, Outbound Docks 1–4 on the other, the pink Receiving Bay
 and Staging bands inside them, the yellow Bay Locations block in the
 centre with every zone and bin from state. No tables; read-only.
 
-- Eight doors, for real (data/world.js): `Inbound Door 1–4`
-  (`direction: 'in'`) and `Outbound Door 1–4` (`direction: 'out'`).
+- Twelve doors, for real (data/world.js; expanded from eight on
+  2026-11-04 at William's word — "I know 4 limits it"): `Inbound
+  Door 1–6` (`direction: 'in'`) and `Outbound Door 1–6`
+  (`direction: 'out'`).
   The map renders doors straight from state: Inbound Dock N is
   Inbound Door N, Outbound Dock N is Outbound Door N. Outbound Door 4
   is the loading door (engine `DEFAULT_OUTBOUND_DOOR`).

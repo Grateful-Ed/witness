@@ -51,9 +51,9 @@ var stateBefore = JSON.stringify(s);
 var d = O.buildDigest(s);
 check('deriving a digest changes nothing in state', JSON.stringify(s) === stateBefore);
 check('asOf comes from the state itself (rev 0, no saved stamp yet)', d.asOf.rev === 0 && d.asOf.savedAt === null);
-check('places: 8 doors, 3 zones, 24 bins, 4 pallets = 39', d.places.length === 39 &&
-  byKind(d.places, 'door').length === 8 && byKind(d.places, 'zone').length === 3 &&
-  byKind(d.places, 'bin').length === 24 && byKind(d.places, 'pallet').length === 4);
+check('places: 12 doors, 3 zones, 30 bins, 8 pallets = 53', d.places.length === 53 &&
+  byKind(d.places, 'door').length === 12 && byKind(d.places, 'zone').length === 3 &&
+  byKind(d.places, 'bin').length === 30 && byKind(d.places, 'pallet').length === 8);
 check('the held bin A-05 reads as held, with its stock and its hold', (function () {
   var b = place(d, 'bin', 'A-05');
   return !!b && b.status === 'hold' && deepEq(b.contents, [{ desc: 'Dog food — bags', qty: 25 }]) && /^on hold/.test(b.holds[0] || '');
