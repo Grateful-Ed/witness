@@ -19,7 +19,12 @@
 
    Practice mode (?practice=1, or the page's explicit button after a
    failure) runs on an in-memory copy and says so on every screen. It
-   is never written anywhere.
+   is never written anywhere, and it makes no network call at all.
+   Its fresh state comes from opts.practiceSeed when one is given —
+   on the WMS page that is Walk the Shift's own building
+   (data/game-world.js), never the live seed. One structural guard
+   the other way: the live path refuses to POST a game state
+   (world: 'game'), so the game's building can never reach /state.
 
    Pure of the DOM: fetch is handed in, so node tests stub it.
    Loads in the browser (window.WitnessWmsStore) and in node.
@@ -49,10 +54,9 @@
     return text;
   }
 
-  /* opts: { fetch, url, seed(): state, prepare(state): state, check(state): string|null, practice: bool,
-       dressPractice(state): void — optional; applied to a freshly seeded state in practice mode ONLY,
-       so a practice copy can be dressed (stocked fuller) without the seed — or the desk record —
-       ever changing. Never applied on the live path, reset included. } */
+  /* opts: { fetch, url, seed(): state, prepare(state): state, check(state, practice): string|null, practice: bool,
+       practiceSeed(): state — optional; the fresh state for practice mode ONLY (the game's own
+       building). Never used on the live path, reset included; the live path always seeds seed(). } */
   function create(opts) {
     var doFetch = opts.fetch;
     var url = opts.url || STATE_URL;
@@ -62,15 +66,14 @@
 
     function prepare(s) { return opts.prepare ? opts.prepare(s) : s; }
 
-    /* The one place fresh states come from. Dressing hangs off the
+    /* The one place fresh states come from. The choice hangs off the
        store's own practice flag — not the URL — so entering practice
-       from the page's fallback button dresses too, and a live seed
-       (first open, reset) is always the raw seed. */
+       from the page's fallback button gets the practice world too,
+       and a live seed (first open, reset) is always the live seed. */
     function seedState() {
-      var s = opts.seed();
-      if (practice && opts.dressPractice) opts.dressPractice(s);
-      return s;
+      return practice && opts.practiceSeed ? opts.practiceSeed() : opts.seed();
     }
+    function check(s) { return opts.check ? opts.check(s, practice) : null; }
 
     function get() {
       if (practice) return Promise.resolve(mem ? copy(mem) : null);
@@ -96,6 +99,9 @@
       state.wmsSavedAt = new Date().toISOString();
       var text = fit(state);
       if (practice) { mem = JSON.parse(text); lastSaved = copy(mem); return Promise.resolve(state); }
+      if (state.world === 'game') {
+        return Promise.reject(fail('game-world', 'This is the practice game\'s own building. It never goes to the desk record. Nothing was saved.'));
+      }
       return Promise.resolve().then(function () {
         return doFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
       }).then(function (r) {
@@ -122,7 +128,7 @@
       load: function () {
         return get().then(function (s) {
           if (!s) return seedAndSave();
-          var why = opts.check ? opts.check(s) : null;
+          var why = check(s);
           if (why) throw fail('other-world', why);
           return { state: prepare(s), seeded: false };
         });
@@ -133,7 +139,7 @@
       mutate: function (fn) {
         return get().then(function (s) {
           if (!s) s = seedState();
-          var why = opts.check ? opts.check(s) : null;
+          var why = check(s);
           if (why) throw fail('other-world', why);
           s = prepare(s);
           var result = fn(s);

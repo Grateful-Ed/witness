@@ -20,14 +20,17 @@
    the controller both check the practice flag before any mutation
    can be offered).
    Added with the conversation build: the widened fallback
-   vocabulary; the practice dressing (the seed untouched, fourteen
-   bins stocked, four left empty); the four shift types, each dealt
-   from a dressed practice state and worked end to end through the
-   real tasks (replenishment included — and its honest refusal on
-   the raw seed); and hear() driven with a stubbed talk path —
+   vocabulary; the four shift types, each dealt and worked end to
+   end through the real tasks (replenishment included — and its
+   honest refusal on a building with no reserve); and hear() driven
+   with a stubbed talk path —
    META's intents work steps, her answers change nothing, a failed
    call falls back to the matcher, a refused act discards her words,
    and switching shift type mid-shift re-deals.
+   Since the game-data split (job build step 1) every fixture here is
+   the game's OWN building (W.seedGame(), data/game-world.js) — the
+   practice dressing of the live seed is gone; the game's world
+   carries its own stock.
    Run: node test/wms-game-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -45,7 +48,7 @@ function task(state, id) { return E.taskById(state, id); }
 
 /* ---------- the chain, dealt from a fresh seed -------------------- */
 
-var s = W.seed();
+var s = W.seedGame();
 var chain = G.buildChain(s);
 check('a chain is dealt from the seeded building', !!chain);
 check('the chain has five steps', !!chain && chain.steps.length === 5 && G.TOTAL === 5);
@@ -72,7 +75,7 @@ check('the putaway offers name their pallet and their Stage bin; the count offer
   !!chain && chain.steps[2].offer.indexOf(chain.palletA) !== -1 && chain.steps[2].offer.indexOf('Stage: Bin ' + chain.binA) !== -1 &&
   chain.steps[3].offer.indexOf(chain.palletB) !== -1 && chain.steps[3].offer.indexOf('Stage: Bin ' + chain.binB) !== -1 &&
   chain.steps[4].offer.indexOf(chain.binA) !== -1);
-var board = M.html(W.seed(), W);
+var board = M.html(W.seedGame(), W);
 check('every step target is a cell the warehouse map itself renders (place + id)',
   !!chain && chain.steps.every(function (x) {
     var re = new RegExp('data-place="' + x.target.place + '"[^>]*data-id="' + x.target.id.replace(/\//g, '\\/') + '"');
@@ -104,7 +107,7 @@ check('dealing the chain changes nothing in the state',
 
 /* ---------- directing + beginning ---------------------------------- */
 
-var s2 = W.seed();
+var s2 = W.seedGame();
 var begun = G.begin(s2);
 check('begin deals and reports ok', begun.ok === true && !!begun.chain);
 var c2 = begun.chain;
@@ -161,10 +164,10 @@ check('a second chain is dealt from the worked state, with fresh pallets and bin
 
 /* ---------- buildings that cannot deal a shift ---------------------- */
 
-var s3 = W.seed();
+var s3 = W.seedGame();
 s3.staging.splice(1); /* one pallet left */
 check('fewer than two workable pallets deals no chain', G.buildChain(s3) === null);
-var s4 = W.seed();
+var s4 = W.seedGame();
 s4.bins.forEach(function (b) { if (!b.contents.length) b.contents.push({ desc: 'Rice — bags', qty: 1 }); });
 check('fewer than two empty bins deals no chain', G.buildChain(s4) === null);
 check('begin on an undealable building refuses with a reason',
@@ -194,38 +197,46 @@ check('voice: questions are still no command (META answers those — the matcher
   G.voiceCommand('can you tell me what tasks I need to do') === null &&
   G.voiceCommand('what are the scores of the game') === null);
 
-/* ---------- the practice dressing (js/wms.js dressPractice) ---------- */
-/* Practice copies are stocked fuller; the seed — the live
-   building's truth — is never dressed. */
+/* ---------- the game's own building (data/game-world.js) ------------ */
+/* Job build step 1 (briefs/claude-brief-game-data-split.md): the game
+   plays on its OWN world, never the live seed. */
 
 function qtyIn(state, id, desc) {
   var q = 0;
   bin(state, id).contents.forEach(function (c) { if (c.desc === desc) q += c.qty; });
   return q;
 }
-var rawSeed = W.seed();
-var dressed = W.dressPractice(W.seed());
-check('dressing: the raw seed is untouched — bins the dressing fills are empty in W.seed()',
-  bin(rawSeed, 'A-03').contents.length === 0 && bin(rawSeed, 'B-03').contents.length === 0 &&
-  bin(rawSeed, 'A-02').contents.length === 1);
-check('dressing: fourteen bins gain goods on the practice copy',
-  dressed.bins.filter(function (b) { return b.contents.length > bin(rawSeed, b.id).contents.length; }).length === 14);
-check('dressing: exactly seven bins stay empty — A-07, A-10, B-06, B-10, C-03, C-06, C-10 (one or more per zone)',
-  dressed.bins.filter(function (b) { return !b.contents.length; }).map(function (b) { return b.id; }).join(',') === 'A-07,A-10,B-06,B-10,C-03,C-06,C-10');
-check('dressing: staging is untouched, and no hold or flag is added',
-  JSON.stringify(dressed.staging) === JSON.stringify(rawSeed.staging) &&
-  dressed.bins.every(function (b) { return b.status === bin(rawSeed, b.id).status; }) &&
-  dressed.wms.flags.length === rawSeed.wms.flags.length);
-check('dressing: the fixture bins keep exactly their seed contents (A-01, A-05, B-01, C-01)',
-  ['A-01', 'A-05', 'B-01', 'C-01'].every(function (id) {
-    return JSON.stringify(bin(dressed, id).contents) === JSON.stringify(bin(rawSeed, id).contents);
-  }));
-check('dressing: every line is well-formed for the engine (a description and a positive count)',
-  dressed.bins.every(function (b) {
+var GW = require('../data/game-world.js');
+var gameSeed = W.seedGame();
+var liveSeed = W.seed();
+check('game world: a fresh game state is tagged world: "game"; the live seed is not',
+  gameSeed.world === 'game' && W.isGame(gameSeed) && !W.isGame(liveSeed) && liveSeed.world !== 'game');
+check('game world: its own trucks, orders and crew — no id shared with the live seed',
+  gameSeed.inbound.every(function (x) { return !liveSeed.inbound.some(function (y) { return y.id === x.id; }); }) &&
+  gameSeed.outbound.every(function (x) { return !liveSeed.outbound.some(function (y) { return y.id === x.id; }); }) &&
+  gameSeed.wms.orders.every(function (x) { return !liveSeed.wms.orders.some(function (y) { return y.id === x.id; }); }) &&
+  gameSeed.labor.every(function (x) { return !liveSeed.labor.some(function (y) { return y.id === x.id || y.name === x.name; }); }) &&
+  gameSeed.wms.appointments.every(function (x) { return !liveSeed.wms.appointments.some(function (y) { return y.id === x.id; }); }));
+check('game world: no live shipment, order or BOL leaks into the game state (the engine back-fill skips it)',
+  gameSeed.inbound.length === GW.building.inbound.length &&
+  !/IN-100\d|ORD-50\d|ORD-60\d|BRFL-|Witness Demo Warehouse|u-sam|u-marcus/.test(JSON.stringify(gameSeed)));
+check('game world: its tasks are its own work, generated from its own building',
+  gameSeed.tasks.length > 0 && gameSeed.tasks.some(function (t) { return t.id === 't-pick-ORD-701-B-04'; }) &&
+  !gameSeed.tasks.some(function (t) { return /ORD-50\d/.test(t.id); }));
+check('game world: seven bins stay empty for the putaways — A-07, A-10, B-06, B-10, C-03, C-06, C-10',
+  gameSeed.bins.filter(function (b) { return !b.contents.length; }).map(function (b) { return b.id; }).join(',') === 'A-07,A-10,B-06,B-10,C-03,C-06,C-10');
+check('game world: every bin line is well-formed for the engine (a description and a positive count)',
+  gameSeed.bins.every(function (b) {
     return b.contents.every(function (c) { return typeof c.desc === 'string' && c.desc.length > 0 && typeof c.qty === 'number' && c.qty > 0; });
   }));
-check('dressing: idempotent — dressing a dressed copy stocks nothing twice',
-  W.dressPractice(dressed) === dressed && bin(dressed, 'A-02').contents.length === 2);
+check('game world: seeding is a deep copy — playing never changes the game data module',
+  (function () {
+    var before = JSON.stringify(GW);
+    var g = W.seedGame(); g.bins[0].contents[0].qty = 1; g.labor[0].name = 'x';
+    return JSON.stringify(GW) === before;
+  })());
+check('game world: the practice dressing is gone from the WMS layer (no live-seed derivation left)',
+  typeof W.dressPractice === 'undefined');
 
 /* ---------- shift types: every role deals and works ------------------ */
 
@@ -243,17 +254,17 @@ function workAll(st, chain) {
 
 check('the shift types are the four roles', G.ROLES.map(function (r) { return r.id; }).join(',') === 'inbound,outbound,replenishment,counter');
 
-var dIn = G.buildShift(W.dressPractice(W.seed()), 'inbound');
-check('dressed building: the inbound chain deals into two of the bins the dressing left empty',
+var dIn = G.buildShift(W.seedGame(), 'inbound');
+check('game building: the inbound chain deals into two of the bins the game world leaves empty',
   !!dIn && ['A-07', 'A-10', 'B-06', 'B-10', 'C-03', 'C-06', 'C-10'].indexOf(dIn.binA) !== -1 &&
   ['A-07', 'A-10', 'B-06', 'B-10', 'C-03', 'C-06', 'C-10'].indexOf(dIn.binB) !== -1 && dIn.binA !== dIn.binB);
 
-var oState = W.dressPractice(W.seed());
+var oState = W.seedGame();
 var oBegin = G.begin(oState, 'outbound');
-check('outbound: deals pick, pick, pack, load, count for the first allocated order (ORD-501)',
-  oBegin.ok === true && oBegin.chain.role === 'outbound' && oBegin.chain.orderId === 'ORD-501' &&
+check('outbound: deals pick, pick, pack, load, count for the first allocated order (ORD-701)',
+  oBegin.ok === true && oBegin.chain.role === 'outbound' && oBegin.chain.orderId === 'ORD-701' &&
   oBegin.chain.steps.map(function (x) { return x.kind; }).join(',') === 'pick,pick,pack,load,count');
-var oBoard = M.html(W.dressPractice(W.seed()), W);
+var oBoard = M.html(W.seedGame(), W);
 check('outbound: every step target is a cell the warehouse map itself renders',
   oBegin.chain.steps.every(function (x) {
     var re = new RegExp('data-place="' + x.target.place + '"[^>]*data-id="' + x.target.id.replace(/\//g, '\\/') + '"');
@@ -261,21 +272,21 @@ check('outbound: every step target is a cell the warehouse map itself renders',
   }));
 check('outbound: every step performs through the real tasks, and the order ships',
   workAll(oState, oBegin.chain) &&
-  oState.outbound.filter(function (o) { return o.id === 'ORD-501'; })[0].status === 'shipped');
+  oState.outbound.filter(function (o) { return o.id === 'ORD-701'; })[0].status === 'shipped');
 
-var rState = W.dressPractice(W.seed());
+var rState = W.seedGame();
 var rBegin = G.begin(rState, 'replenishment');
-check('replenishment: deals pick, replenish, count, count (face A-08, reserve A-02, on dressed stock)',
+check('replenishment: deals pick, replenish, count, count (face A-08, reserve A-02, on the game building)',
   rBegin.ok === true && rBegin.chain.faceBin === 'A-08' && rBegin.chain.reserveBin === 'A-02' &&
   rBegin.chain.steps.map(function (x) { return x.kind; }).join(',') === 'pick,replen,count,count');
 check('replenishment: every step performs — the system deals the replenishment after the pick, and the face is refilled from reserve',
   workAll(rState, rBegin.chain) && qtyIn(rState, 'A-08', 'Bottled water — cases') === 41 &&
   qtyIn(rState, 'A-02', 'Bottled water — cases') === 0 &&
   rState.tasks.some(function (t) { return t.type === 'replen' && t.status === 'done'; }));
-check('replenishment: the raw seed cannot deal it (it holds no reserve anywhere) — the role refuses honestly',
-  G.buildShift(W.seed(), 'replenishment') === null);
+check('replenishment: a game building with no reserve cannot deal it — the role refuses honestly',
+  (function () { var nr = W.seedGame(); nr.bins.forEach(function (b) { if (b.id === 'A-02' || b.id === 'B-08' || b.id === 'C-07') b.contents = []; }); return G.buildShift(nr, 'replenishment') === null; })());
 
-var cState = W.dressPractice(W.seed());
+var cState = W.seedGame();
 var cBegin = G.begin(cState, 'counter');
 check('cycle counter: deals four spot counts, fullest bins first',
   cBegin.ok === true && cBegin.chain.steps.length === 4 &&
@@ -305,7 +316,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
 
 (async function () {
   /* the context META is given */
-  var xState = W.seed();
+  var xState = W.seedGame();
   G.afterRender(gameCtx(xState, null));
   await G.ui('start');
   var vc = G.voiceContext();
@@ -314,7 +325,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     vc.remaining.length === 4 && vc.pending === 'step' && vc.at === 'Inbound Dock 1' && vc.role === 'inbound');
 
   /* a complete intent works the step; her words are the response */
-  var hState = W.seed();
+  var hState = W.seedGame();
   G.afterRender(gameCtx(hState, function () {
     return Promise.resolve({ intent: 'complete', say: 'Done — that pallet is away.' });
   }));
@@ -329,7 +340,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     hHtml.indexOf('META: &ldquo;Done — that pallet is away.&rdquo;') !== -1);
 
   /* an answer changes nothing */
-  var aState = W.seed();
+  var aState = W.seedGame();
   G.afterRender(gameCtx(aState, function () {
     return Promise.resolve({ intent: 'answer', say: 'Right now: check in at Inbound Dock 1. Then the pallet move, both putaways, and the spot count.' });
   }));
@@ -343,7 +354,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     aHtml.indexOf('Right now: check in at Inbound Dock 1.') !== -1 && aHtml.indexOf('Task 1 of 5') !== -1);
 
   /* a problem report changes nothing */
-  var pState = W.seed();
+  var pState = W.seedGame();
   G.afterRender(gameCtx(pState, function () {
     return Promise.resolve({ intent: 'answer', say: 'Set that one aside and flag it for the lead — I am not marking it done.' });
   }));
@@ -357,7 +368,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     pHtml.indexOf('flag it for the lead') !== -1 && pHtml.indexOf('Task 1 of 5') !== -1);
 
   /* the /chat call fails → the matcher fallback hears "Complete task." */
-  var fState = W.seed();
+  var fState = W.seedGame();
   G.afterRender(gameCtx(fState, function () { return Promise.reject(new Error('network')); }));
   await G.ui('start');
   G.hear('Complete task.');
@@ -368,7 +379,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     fHtml.indexOf('task 1 of 5 worked') !== -1 && fHtml.indexOf('META:') === -1);
 
   /* the act refuses → her words are discarded for the honest note */
-  var dState = W.seed();
+  var dState = W.seedGame();
   var dCalls = 0;
   G.afterRender(gameCtx(dState, function () {
     return Promise.resolve({ intent: 'complete', say: 'All wrapped up here.' });
@@ -386,7 +397,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     dHtml.indexOf('All wrapped up here.') === -1 && dHtml.indexOf('Task 1 of 5') !== -1);
 
   /* switching shift type mid-shift re-deals and says so */
-  var sState = W.dressPractice(W.seed());
+  var sState = W.seedGame();
   G.afterRender(gameCtx(sState, null));
   await G.ui('start');
   await G.ui('doit');   /* work the inbound check-in for real */
@@ -428,7 +439,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
 
   /* (a) the button path: a finished counter shift, then Outbound */
   G.reset();
-  var nState = W.dressPractice(W.seed()), nToasts = [];
+  var nState = W.seedGame(), nToasts = [];
   G.afterRender(polishCtx(nState, nToasts));
   await G.ui('role', 'counter');
   await G.ui('start');
@@ -452,7 +463,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
   /* (b) the voice path: META is told the picked shift, and the note
      names the shift that really started */
   G.reset();
-  var vState = W.dressPractice(W.seed()), vToasts = [];
+  var vState = W.seedGame(), vToasts = [];
   G.afterRender(polishCtx(vState, vToasts, echoMeta));
   await G.ui('role', 'counter');
   await G.ui('start');
@@ -470,7 +481,7 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
   /* (c) the cannot-deal line: every bin stocked, so a counter shift
      deals and an Inbound one cannot (no empty bins to put away to) */
   function stockedState() {
-    var st = W.seed();
+    var st = W.seedGame();
     st.bins.forEach(function (b) { if (!b.contents.length) b.contents.push({ desc: 'Rice — bags', qty: 1 }); });
     return st;
   }
@@ -509,12 +520,12 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
 
   check('polish: the article agrees with every role label in the cannot-deal line',
     G.begin(stockedState(), 'inbound').reason.indexOf('cannot deal an Inbound dock worker shift') !== -1 &&
-    G.begin(W.seed(), 'replenishment').reason.indexOf('cannot deal a Replenishment shift') !== -1);
+    G.begin((function () { var nr = W.seedGame(); nr.bins.forEach(function (b) { if (b.id === 'A-02' || b.id === 'B-08' || b.id === 'C-07') b.contents = []; }); return nr; })(), 'replenishment').reason.indexOf('cannot deal a Replenishment shift') !== -1);
   G.reset();
-  G.afterRender(polishCtx(W.seed(), []));
+  G.afterRender(polishCtx(W.seedGame(), []));
   await G.ui('role', 'outbound');
   check('polish: the panel intro reads "An Outbound loader shift" (article agrees)',
-    G.panelHtml(panelStub, W.seed(), true).indexOf('<p>An Outbound loader shift on the map below.') !== -1);
+    G.panelHtml(panelStub, W.seedGame(), true).indexOf('<p>An Outbound loader shift on the map below.') !== -1);
   check('polish: no line in the game module builds "a Inbound" / "a Outbound"',
     !/\ba ' \+ roleLabel|\bA ' \+ esc\(roleLabel/.test(src));
 

@@ -117,21 +117,40 @@ function make(f, extra) {
   r = await pr.load();
   check('practice mode: works in memory, zero network calls', calls === 0 && r.state.inbound[1].status === 'staged at door' && pr.practice());
 
-  /* Dressing: a practice copy is stocked fuller; the seed that
-     reaches the desk record is always the raw seed. The hook hangs
-     off the store's own practice flag. */
+  /* The practice world: a practice copy seeds from practiceSeed (on
+     the WMS page, the game's own building); the live path always
+     seeds the live seed. The choice hangs off the store's own
+     practice flag. */
   var df = kvFetch();
-  var dLive = make(df, { dressPractice: function (s) { W.dressPractice(s); } });
+  var dLive = make(df, { practiceSeed: W.seedGame });
   r = await dLive.load();
-  check('dressing: the live path is never dressed (the desk record is seeded with the raw seed)',
-    JSON.parse(df.doc()).bins.filter(function (b) { return b.id === 'A-03'; })[0].contents.length === 0);
-  var dPr = S.create({ fetch: function () { return Promise.reject(new Error('no')); }, seed: W.seed, practice: true,
-    dressPractice: function (s) { W.dressPractice(s); },
+  check('practice world: the live path never seeds the game world (the desk record is seeded with the live seed)',
+    JSON.parse(df.doc()).world !== 'game' && JSON.parse(df.doc()).inbound[0].id === 'IN-1001');
+  var pCalls = 0;
+  var dPr = S.create({ fetch: function () { pCalls++; return Promise.reject(new Error('no')); }, seed: W.seed, practice: true,
+    practiceSeed: W.seedGame,
     prepare: function (s) { W.install(s); W.refresh(s); return s; } });
   r = await dPr.load();
-  check('dressing: a practice copy is dressed (bare seed bins stocked, seven left empty)',
-    r.state.bins.filter(function (b) { return b.id === 'A-03'; })[0].contents.length === 1 &&
-    r.state.bins.filter(function (b) { return !b.contents.length; }).length === 7);
+  check('practice world: a practice copy is the game\'s own building (world "game", its own trucks), with zero network calls',
+    r.state.world === 'game' && r.state.inbound[0].id === 'IN-2001' && pCalls === 0);
+  var dEnter = make(kvFetch(), { practiceSeed: W.seedGame });
+  dEnter.enterPractice();
+  r = await dEnter.load();
+  check('practice world: entering practice from the fallback button also gets the game\'s building', r.state.world === 'game');
+
+  /* The other direction: the live path refuses to POST a game state. */
+  var gf = kvFetch({ doc: JSON.stringify(W.seed()) });
+  var gLive = make(gf);
+  var gErr = null;
+  try { await gLive.mutate(function (s) { s.world = 'game'; return { ok: true }; }); } catch (e) { gErr = e; }
+  check('live path: a game state is never POSTed to the desk record', !!gErr && gErr.code === 'game-world' && gf.log.indexOf('POST') === -1);
+
+  /* check() is told which mode it is judging. */
+  var seen = [];
+  var cPr = S.create({ fetch: function () { return Promise.reject(new Error('no')); }, seed: W.seed, practice: true, practiceSeed: W.seedGame,
+    check: function (s, inPractice) { seen.push(inPractice); return null; } });
+  await cPr.mutate(function () { return { ok: true }; });
+  check('check(state, practice): the store passes its practice flag', seen.length === 1 && seen[0] === true);
 
   console.log('\n' + passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);

@@ -429,9 +429,23 @@ server.listen(0, async function () {
     enter.same && enter.renders === 1 && !enter.shell);
   check('practice: the URL carries the flag, the view is kept, the banner shows and the game is playable',
     enter.practice && enter.hash === '#/dashboard' && enter.banner && enter.start);
+  var pGets = gets, kvBefore = kv;
+  /* Game-data split (job build step 1): the practice copy is the
+     game's OWN building — not a copy of the live record. */
+  var gw = await page.evaluate(function () {
+    var x = window.WitnessWmsPage.getState();
+    return { world: x.world, first: x.inbound[0].id, crew: x.labor.map(function (u) { return u.id; }).join(','),
+      banner: (document.querySelector('#main .notice.practice') || {}).textContent || '' };
+  });
+  check('game data: the practice copy is the game\'s own building (world "game", its own trucks and crew), and the banner says so',
+    gw.world === 'game' && gw.first === 'IN-2001' && /^g-/.test(gw.crew) && !/u-sam/.test(gw.crew) && /game's own building/.test(gw.banner));
   await page.click('[data-act="game-start"]');
   await page.waitForTimeout(250);
+  await page.click('[data-act="game-doit"]');
+  await page.waitForTimeout(400);
   check('practice: a shift started on the in-place copy writes nothing to the desk record', posts === pPosts);
+  check('game data: starting and working a game step never reads or writes /state; the desk record is byte-identical',
+    gets === pGets && posts === pPosts && kv === kvBefore);
   await watchRenders();
   await page.click('[data-act="end-practice"]');
   await page.waitForFunction(function () { return !document.querySelector('#main .notice.practice'); }, null, { timeout: 5000 }).catch(function () {});
