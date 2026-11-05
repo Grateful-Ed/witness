@@ -2,7 +2,7 @@
 
 **Live:** [WMS console](https://grateful-ed.github.io/witness/wms.html) · [Warehouse glasses](https://grateful-ed.github.io/witness/glasses.html) · [Kitchen glasses](https://grateful-ed.github.io/witness/glasses.html?world=kitchen) · [Receiving cross-check](https://grateful-ed.github.io/witness/)
 
-*Directed by E. William Harris IV (domain: air-export freight operations). Project management and records by Faye (AI), William's Muse assistant; code by Claude (AI). Authorship is stated the way it happened: directed by William, built with AI.*
+*Directed by E. William Harris IV (domain: software implementation, Six Sigma, and continuous improvement — his passion). Project management and records by Faye (AI), William's Muse assistant; code by Claude (AI). Authorship is stated the way it happened: directed by William, built with AI.*
 
 **Witness is a warehouse run by voice and vision — and one day soon, through a pair of glasses.**
 
@@ -85,4 +85,4 @@ The photo test corpus is **generated test data**: two photo-realistic pallet loa
 
 ## Team
 
-Directed by E. William Harris IV (domain: air-export freight operations). Project management and records by Faye (AI); code by Claude (AI). Authorship is stated the way it happened: directed by William, built with AI.
+Directed by E. William Harris IV (domain: software implementation, Six Sigma, and continuous improvement — his passion). Project management and records by Faye (AI); code by Claude (AI). Authorship is stated the way it happened: directed by William, built with AI.
