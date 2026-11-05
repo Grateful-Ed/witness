@@ -51,6 +51,8 @@ Built for the **Meta Global AI Developer Hackathon** (build window Oct 26 – No
 
 ## Status
 
+- **A spoken completion takes a confirmation (PR #38, 2026-11-05):** saying "done" (or finished, complete, all set…) no longer closes a task on the spot. It stages the close and asks "Mark it complete?" — a "yes" on the next turn runs it, a "no" or any change of subject leaves the task open. The stage lives in session memory only and is never saved, so the record shows confirmed completions and nothing else. Only completions are gated; pulls, starts, problems, and questions still act at once, on the glasses and the phone alike.
+
 - **One warehouse, on the desk record and the phone (PR #37, 2026-11-05):** the desk record (warehouse.html) now reads and writes the shared /state document — opening the page never saves; every action re-reads, applies, and saves. The phone (phone.html) joins as a communicator only: pick who you are, see your task and bin, hold to talk or type (a spoken "done" still closes the task), ask the building, and capture a photo whose flags save to the record — the photo itself is never stored. The kitchen world is untouched and keeps its own fresh-every-open state.
 
 - **SAM 3.1 evidence toggle (PR #36, 2026-11-05):** Step 2's photo scan gains an opt-in switch (default off; off is exactly the previous flow). On, SAM 3.1 segments the sheet in parallel for cartons, labels, damage and torn wrap: boxes are drawn over the sheet, counts and located damage ride into the comparison as photo evidence (never verdicts), and the saved record carries the boxes. The image travels to the model as a data URL — the upstream will not fetch this site's URLs. Verified live in production on Load B (102 cartons outlined).
