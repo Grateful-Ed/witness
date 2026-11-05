@@ -362,11 +362,42 @@ server.listen(0, async function () {
   grown.wmsRev = (grown.wmsRev || 0) + 1;
   kv = JSON.stringify(grown);
   await go('#/flags');
+  /* The announcement is a TRANSIENT prep note, by design: only the
+     applyChange that first sees the concept described carries it, and
+     the next digest rebuild drops it (never re-announced). So it is
+     read where it is guaranteed — from the digests this refresh
+     itself produces, captured as the page makes them — not later on
+     the Ontology page, where a rebuild may already have replaced it.
+     The capture only observes: each call returns the product's own
+     digest unchanged. */
+  await page.evaluate(function () {
+    var O = window.WitnessOntology, orig = O.applyChange;
+    window.__ann = [];
+    window.__annRestore = function () { O.applyChange = orig; };
+    O.applyChange = function (st, prev) {
+      var d = orig.apply(this, arguments);
+      var c = st && st.concepts && st.concepts.returns;
+      window.__ann.push({ described: !!(c && c.status === 'described'),
+        notes: (d.prep || []).filter(function (n) { return /^New concept in the building: 'Customer returns'/.test(n.note); }).length });
+      return d;
+    };
+  });
   await click('[data-act="refresh"]');
   await page.waitForFunction(function () {
     var x = window.WitnessWmsPage.getState(); return !!(x.concepts && x.concepts.returns && x.concepts.returns.status === 'described');
   }, null, { timeout: 5000 }).catch(function () {});
+  await page.waitForFunction(function () {
+    return window.__ann.some(function (a) { return a.described; });
+  }, null, { timeout: 5000 }).catch(function () {});
   await page.waitForTimeout(300);
+  var ann = await page.evaluate(function () { window.__annRestore(); return window.__ann; });
+  var firstDescribed = -1;
+  ann.forEach(function (a, i) { if (firstDescribed === -1 && a.described) firstDescribed = i; });
+  var announcedAt = [];
+  ann.forEach(function (a, i) { if (a.notes) announcedAt.push(i); });
+  check('self-extension: the digest announces it at the refresh that described it — once, on the digest that first saw it described',
+    firstDescribed !== -1 && announcedAt.length >= 1 && announcedAt[0] === firstDescribed &&
+    ann[firstDescribed].notes === 1 && ann.slice(0, firstDescribed).every(function (a) { return a.notes === 0; }));
   await go('#/ontology');
   s = await st();
   check('self-extension: the new section is detected and described by the AI (one call), AI-inferred, not settled',
@@ -375,10 +406,9 @@ server.listen(0, async function () {
   var onto = await page.evaluate(function () {
     var m = document.querySelector('#main');
     return { row: /Customer returns/.test(m.textContent) && /Described · AI-inferred/.test(m.textContent),
-      settle: !!m.querySelector('[data-act="concept-settle"][data-key="returns"]'),
-      announced: /New concept in the building: 'Customer returns'/.test(m.textContent) };
+      settle: !!m.querySelector('[data-act="concept-settle"][data-key="returns"]') };
   });
-  check('self-extension: the Ontology page lists it with its status and a Settle button, and the digest announces it', onto.row && onto.settle && onto.announced);
+  check('self-extension: the Ontology page lists it with its status and a Settle button', onto.row && onto.settle);
   await click('[data-act="concept-settle"][data-key="returns"]');
   await page.waitForTimeout(300);
   s = await st();
