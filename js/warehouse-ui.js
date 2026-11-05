@@ -2,8 +2,10 @@
    warehouse-ui.js — the Warehouse page: role pick, the worker's
    task card, the manager's building view. All state moves go
    through engine.js; this file only renders and forwards taps.
-   State persists in localStorage (engine's key) so a refresh
-   mid-shift loses nothing.
+   State lives on the shared desk record (js/state.js, the Worker's
+   /state) so the desk and the phone hold one world: loading is
+   read-only, and every change fetches fresh, applies, then saves.
+   The kitchen world keeps the browser store it always had.
    ===================================================================== */
 (function () {
   'use strict';
@@ -11,30 +13,59 @@
   var E = window.WitnessEngine;
   var C = window.WitnessConverse; /* the conversational layer */
 
-  /* Which world this page runs (js/world-select.js): a state saved
-     by the other world is not used — the page reseeds and says so. */
+  /* Which world this page runs (js/world-select.js). */
   var W = window.WitnessWorlds;
-  var state = E.loadState();
-  if (W) {
-    var ws = W.checkWorld(state, W.current);
-    state = ws.state;
-    if (ws.notice) W.announce(ws.notice);
-  }
-  if (!state) {
-    state = E.seedWorld();
-    E.generateTasks(state);
-    E.saveState(state);
-  } else {
-    E.upgradeState(state);  /* saves from before bills of lading / outbound doors */
-    E.generateTasks(state); /* pick up anything newly derivable */
-    E.saveState(state);
+
+  /* Where the state lives (desk-phone brief, Step 2). The warehouse
+     world is the shared desk record — the Worker's /state, through
+     js/state.js. Loading never saves; every change fetches fresh,
+     applies the engine, then saves. A network failure is said
+     plainly and nothing is acted on.
+     The kitchen world keeps the browser store it always used: it
+     starts fresh on every open (William, 2026-11-04), and a kitchen
+     must never overwrite the shared warehouse record. */
+  var KITCHEN = !!(W && W.current === 'kitchen');
+  var store = KITCHEN ? null : window.WitnessState.create({
+    fetch: window.fetch.bind(window),
+    seed: function () { var s = E.seedWorld(); E.generateTasks(s); return s; },
+    prepare: function (s) {
+      E.upgradeState(s);  /* saves from before bills of lading / outbound doors */
+      E.generateTasks(s); /* pick up anything newly derivable */
+      return s;
+    }
+  });
+  var state = null;   /* this page's copy, for rendering between actions */
+  var busy = false;   /* one change in flight at a time */
+
+  /* The kitchen's open, exactly as before the state move: a state
+     saved by the other world is not used — reseeded, and said so. */
+  function bootKitchen() {
+    var s = E.loadState();
+    if (W) {
+      var ws = W.checkWorld(s, W.current);
+      s = ws.state;
+      if (ws.notice) W.announce(ws.notice);
+    }
+    if (!s) {
+      s = E.seedWorld();
+      E.generateTasks(s);
+      E.saveState(s);
+    } else {
+      E.upgradeState(s);
+      E.generateTasks(s);
+      E.saveState(s);
+    }
+    return s;
   }
 
   var role = 'worker';
   var selectedUnitId = null;
-  state.labor.forEach(function (u) {
-    if (!selectedUnitId && u.role === 'worker') selectedUnitId = u.id;
-  });
+  function pickFirstWorker() {
+    selectedUnitId = null;
+    state.labor.forEach(function (u) {
+      if (!selectedUnitId && u.role === 'worker') selectedUnitId = u.id;
+    });
+  }
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -42,12 +73,49 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  function persist() { E.saveState(state); }
-  /* After anything changes: derive the work it made possible, then save. */
-  function commit() { E.generateTasks(state); persist(); }
-  function managerId() {
+  /* The plain line under the masthead: loading, saving, failures. */
+  function stateMsg(text, isError) {
+    var el = $('stateMsg');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = isError ? 'error' : 'status';
+    el.hidden = !text;
+  }
+
+  /* Every change goes through here. fn(s) applies the engine to a
+     state and returns its result; a result with ok === false saves
+     nothing. after(result) runs once the change has landed (or was
+     refused) — `state` is then the fresh copy.
+     Warehouse: GET fresh → fn → derive the work it made possible →
+     POST. Kitchen: the page's copy → fn → derive → browser store. */
+  function act(fn, after) {
+    if (!state) return;
+    if (KITCHEN) {
+      var r = fn(state);
+      if (!(r && r.ok === false)) { E.generateTasks(state); E.saveState(state); }
+      after(r);
+      return;
+    }
+    if (busy) { stateMsg('Still saving the last change — try again in a moment.'); return; }
+    busy = true;
+    stateMsg('Saving…');
+    store.mutate(function (s) {
+      var res = fn(s);
+      if (!(res && res.ok === false)) E.generateTasks(s);
+      return res;
+    }).then(function (out) {
+      state = out.state;
+      stateMsg('');
+      after(out.result);
+    }, function (e) {
+      stateMsg((e && e.userMessage) || 'The change did not save. Nothing was done.', true);
+      render();
+    }).then(function () { busy = false; });
+  }
+
+  function managerId(s) {
     var m = null;
-    state.labor.forEach(function (u) { if (!m && u.role === 'manager') m = u.id; });
+    (s || state).labor.forEach(function (u) { if (!m && u.role === 'manager') m = u.id; });
     return m;
   }
 
@@ -84,9 +152,10 @@
     }
   }
 
-  function currentTaskOf(unit) {
+  function currentTaskOf(unit, s) {
+    s = s || state;
     if (!unit || !unit.currentTaskId) return null;
-    var t = E.taskById(state, unit.currentTaskId);
+    var t = E.taskById(s, unit.currentTaskId);
     return t && t.status === 'assigned' ? t : null;
   }
 
@@ -152,14 +221,25 @@
   function onNext() {
     var unit = selectedUnit();
     if (!unit) return;
-    var current = currentTaskOf(unit);
-    if (current) {
-      E.completeTask(state, current.id);
-    }
-    E.generateTasks(state);
-    E.nextTaskFor(state, unit);
-    commit();
-    render();
+    var unitId = unit.id;
+    var seen = currentTaskOf(unit);
+    var seenId = seen ? seen.id : null;
+    act(function (s) {
+      var u = E.unitById(s, unitId);
+      if (!u) return { ok: false };
+      var current = currentTaskOf(u, s);
+      /* The fresh state is the truth: close only the task this
+         screen showed. If another device moved it on, show that. */
+      if (current && current.id !== seenId) return { ok: false, changed: true };
+      if (current) {
+        E.completeTask(s, current.id);
+      }
+      E.generateTasks(s);
+      E.nextTaskFor(s, u);
+    }, function (r) {
+      if (r && r.changed) $('workerTalkStatus').textContent = 'That task changed on another device. This is where it stands now.';
+      render();
+    });
   }
 
   /* ---------- worker voice: "done — what's next?" ------------------- */
@@ -182,11 +262,14 @@
   }
 
   function onWorkerHeard(text) {
-    var unit = selectedUnit();
+    var unitId = selectedUnitId;
     var match = C.matchIntent(text);
-    var turn = C.workerTurn(E, state, unit, match);
-    if (turn.acted) commit();
-    showWorkerTurn('“' + text + '”', turn);
+    act(function (s) {
+      var turn = C.workerTurn(E, s, E.unitById(s, unitId), match);
+      return { ok: !!turn.acted, turn: turn };
+    }, function (r) {
+      showWorkerTurn('“' + text + '”', r.turn);
+    });
   }
 
   function showWorkerTurn(heardText, turn) {
@@ -302,12 +385,15 @@
   $('problemBtn').addEventListener('click', function () {
     var text = $('problemInput').value.trim();
     if (!text) return;
-    var unit = selectedUnit();
-    var turn = C.workerTurn(E, state, unit, { intent: 'problem', heard: text });
-    if (turn.acted) commit();
-    $('problemInput').value = '';
-    $('workerTalkError').hidden = true;
-    showWorkerTurn('“' + text + '” (typed)', turn);
+    var unitId = selectedUnitId;
+    act(function (s) {
+      var turn = C.workerTurn(E, s, E.unitById(s, unitId), { intent: 'problem', heard: text });
+      return { ok: !!turn.acted, turn: turn };
+    }, function (r) {
+      $('problemInput').value = '';
+      $('workerTalkError').hidden = true;
+      showWorkerTurn('“' + text + '” (typed)', r.turn);
+    });
   });
 
   /* ---------- manager: inbound, outbound, holds, updates, summary ----- */
@@ -328,11 +414,14 @@
     var btns = $('inboundList').querySelectorAll('[data-arrive]');
     for (var i = 0; i < btns.length; i++) {
       btns[i].addEventListener('click', function () {
-        var r = E.arriveShipment(state, this.getAttribute('data-arrive'), managerId());
-        $('inboundMsg').hidden = r.ok;
-        $('inboundMsg').textContent = r.ok ? '' : r.reason;
-        if (r.ok) commit();
-        render();
+        var shipId = this.getAttribute('data-arrive');
+        act(function (s) {
+          return E.arriveShipment(s, shipId, managerId(s));
+        }, function (r) {
+          $('inboundMsg').hidden = r.ok;
+          $('inboundMsg').textContent = r.ok ? '' : r.reason;
+          render();
+        });
       });
     }
   }
@@ -364,10 +453,12 @@
     for (var j = 0; j < btns.length; j++) {
       btns[j].addEventListener('click', function () {
         var h = holds[Number(this.getAttribute('data-release'))];
-        var r = E.releaseHold(state, h.target, managerId());
-        $('holdMsg').textContent = r.ok ? h.label + ' released.' : r.reason;
-        if (r.ok) commit();
-        render();
+        act(function (s) {
+          return E.releaseHold(s, h.target, managerId(s));
+        }, function (r) {
+          $('holdMsg').textContent = r.ok ? h.label + ' released.' : r.reason;
+          render();
+        });
       });
     }
     var opts = '';
@@ -386,12 +477,16 @@
     var v = $('holdTarget').value;
     if (!v) return;
     var target = v.indexOf('bin:') === 0 ? { binId: v.slice(4) } : { stagingId: v.slice(4) };
-    var r = E.placeHold(state, target, managerId(), $('holdReason').value);
-    $('holdMsg').textContent = r.ok
-      ? 'On hold.' + (r.freed.length ? ' Back to the queue from ' + r.freed.join(', ') + '.' : '')
-      : r.reason;
-    if (r.ok) { $('holdReason').value = ''; commit(); }
-    render();
+    var reason = $('holdReason').value;
+    act(function (s) {
+      return E.placeHold(s, target, managerId(s), reason);
+    }, function (r) {
+      $('holdMsg').textContent = r.ok
+        ? 'On hold.' + (r.freed.length ? ' Back to the queue from ' + r.freed.join(', ') + '.' : '')
+        : r.reason;
+      if (r.ok) $('holdReason').value = '';
+      render();
+    });
   });
 
   function renderUpdateTasks() {
@@ -410,10 +505,14 @@
   }
 
   $('updateBtn').addEventListener('click', function () {
-    var r = E.addTaskUpdate(state, $('updateTask').value, $('updateText').value, managerId());
-    $('updateMsg').textContent = r ? 'Update added to the task and the records.' : 'Pick a task and say what happened.';
-    if (r) { $('updateText').value = ''; commit(); }
-    render();
+    var taskId = $('updateTask').value, text = $('updateText').value;
+    act(function (s) {
+      return { ok: !!E.addTaskUpdate(s, taskId, text, managerId(s)) };
+    }, function (r) {
+      $('updateMsg').textContent = r.ok ? 'Update added to the task and the records.' : 'Pick a task and say what happened.';
+      if (r.ok) $('updateText').value = '';
+      render();
+    });
   });
 
   function countLine(obj) {
@@ -557,6 +656,7 @@
   /* ---------- wire-up ------------------------------------------------ */
 
   function render() {
+    if (!state) return;
     renderRole();
     renderNames();
     renderTaskCard();
@@ -576,18 +676,53 @@
   $('roleWorker').addEventListener('click', function () { role = 'worker'; render(); });
   $('roleManager').addEventListener('click', function () { role = 'manager'; render(); });
   $('nextBtn').addEventListener('click', onNext);
-  $('resetBtn').addEventListener('click', function () {
-    state = E.resetState();
-    var first = null;
-    state.labor.forEach(function (u) { if (!first && u.role === 'worker') first = u; });
-    selectedUnitId = first ? first.id : null;
+  function afterReset() {
+    pickFirstWorker();
     clearWorkerTalk();
     clearAnswer();
     $('holdMsg').textContent = '';
     $('updateMsg').textContent = '';
     $('inboundMsg').hidden = true;
     render();
+  }
+
+  $('resetBtn').addEventListener('click', function () {
+    if (KITCHEN) { state = E.resetState(); afterReset(); return; }
+    if (busy) { stateMsg('Still saving the last change — try again in a moment.'); return; }
+    busy = true;
+    stateMsg('Resetting the shared warehouse…');
+    store.resetState().then(function (s) {
+      state = s;
+      stateMsg('');
+      afterReset();
+    }, function (e) {
+      stateMsg((e && e.userMessage) || 'The reset did not save. Nothing was changed.', true);
+    }).then(function () { busy = false; });
   });
 
-  render();
+  /* ---------- open ---------------------------------------------------- */
+  /* Kitchen: the browser store, as always. Warehouse: read the shared
+     record before the first render — never saving, except the very
+     first open anywhere (nothing stored yet), which seeds it once. */
+
+  if (KITCHEN) {
+    state = bootKitchen();
+    pickFirstWorker();
+    render();
+  } else {
+    stateMsg('Loading the shared warehouse…');
+    store.start().then(function (res) {
+      if (res.state.world && res.state.world !== 'warehouse') {
+        stateMsg('The shared record holds the ' + res.state.world + ' world, not the warehouse. Nothing was loaded. ' +
+          'Reset the demo warehouse below to replace it.', true);
+        return;
+      }
+      state = res.state;
+      stateMsg(res.seeded ? 'First open: the demo warehouse was set up on the shared record.' : '');
+      pickFirstWorker();
+      render();
+    }, function (e) {
+      stateMsg((e && e.userMessage) || 'The shared warehouse could not be loaded. Nothing was loaded.', true);
+    });
+  }
 })();

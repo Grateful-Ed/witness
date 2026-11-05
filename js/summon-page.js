@@ -4,8 +4,9 @@
 
    Rules kept here:
    - The photo is shown first; nothing is sent until "Find this BOL".
-   - Fresh state before the lookup (re-read from the store, not the
-     page's copy). The lookup is read-only: this file never saves.
+   - Fresh state before the lookup (re-read from the shared desk
+     record, js/state.js — not the page's copy). The lookup is
+     read-only: this file never saves.
    - Warehouse world only. In the kitchen the panel stays hidden — the
      kitchen's scan creates, and it lives in the glasses view. */
 (function () {
@@ -24,6 +25,12 @@
 
   var dataUrl = null;
   var busy = false;
+
+  /* The shared desk record (desk-phone Step 2). Read only. */
+  var store = window.WitnessState && window.WitnessState.create({
+    fetch: window.fetch.bind(window),
+    seed: function () { var x = E.seedWorld(); E.generateTasks(x); return x; }
+  });
 
   function setStatus(text, mode) {
     var s = $('summonStatus');
@@ -80,14 +87,16 @@
     $('summonResult').hidden = true;
     setStatus('Reading the bill of lading…', 'busy');
     B.readBol(window.fetch.bind(window), dataUrl).then(function (res) {
-      var fresh = E.loadState();  /* fresh before the lookup; read-only */
-      if (!fresh) {
-        setStatus('');
-        showError('The warehouse state could not be loaded, so nothing was looked up. Reload the page and try again.');
-        return;
-      }
-      setStatus('Read.' + (res.attempts > 1 ? ' (It took a second try.)' : ''), 'done');
-      render(S.summon(fresh, res.bol), res.bol);
+      /* fresh before the lookup; read-only */
+      return (store ? store.loadState() : Promise.resolve(null)).catch(function () { return null; }).then(function (fresh) {
+        if (!fresh) {
+          setStatus('');
+          showError('The warehouse state could not be loaded, so nothing was looked up. Reload the page and try again.');
+          return;
+        }
+        setStatus('Read.' + (res.attempts > 1 ? ' (It took a second try.)' : ''), 'done');
+        render(S.summon(fresh, res.bol), res.bol);
+      });
     }, function (err) {
       setStatus('');
       showError(err.userMessage || 'No read — something went wrong. Your photo is still on screen.');
