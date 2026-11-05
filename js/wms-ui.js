@@ -45,13 +45,17 @@
   function makeStore(practice) { return S.create({
     fetch: window.fetch.bind(window),
     seed: W.seed,
-    /* Practice copies are dressed — stocked fuller than the live
-       seed, so the demo building looks worked-in. Practice only:
-       the store applies this solely when it seeds a practice state;
-       the seed and the desk record never see it. */
-    dressPractice: function (s) { W.dressPractice(s); },
+    /* The practice copy is Walk the Shift's OWN building
+       (data/game-world.js) — its own trucks, orders and crew, never
+       a copy of the live warehouse. Practice only: the live path
+       always seeds the live seed, and the store never POSTs a game
+       state. */
+    practiceSeed: W.seedGame,
     prepare: function (s) { W.install(s); W.refresh(s); return s; },
-    check: function (s) {
+    check: function (s, inPractice) {
+      if (inPractice) {
+        return W.isGame(s) ? null : 'The practice copy holds something other than the game\'s own building. Reload the practice copy.';
+      }
       if (s.world && s.world !== 'warehouse') {
         return 'The desk record holds the ' + s.world + ' world, not the warehouse. The WMS will not act on it. ' +
           'Use practice mode, or reset the desk record to the warehouse (that replaces the ' + s.world + ' state).';
@@ -239,7 +243,7 @@
      no practice flag, so the live record loads. */
   function practiceBanner() {
     if (!store.practice()) return '';
-    return '<div class="notice practice"><b>Practice copy.</b> Nothing on this page is saved to the desk record. ' +
+    return '<div class="notice practice"><b>Practice copy</b> — the game\'s own building: its own trucks, orders and crew, not the live warehouse. Nothing on this page is saved to the desk record. ' +
       '<button class="btn small" type="button" data-act="end-practice" title="Back to the live record">End practice copy</button> ' +
       '<span class="hint">— back to the live record; the practice copy is discarded.</span></div>';
   }

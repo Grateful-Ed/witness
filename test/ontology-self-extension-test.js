@@ -63,7 +63,7 @@ function applier(state, log) {
   /* ---------- 1. the shipped building: ZERO unknowns ------------- */
   check('the raw shipped seed yields zero unknowns', O.detectUnknowns(W.seed()).length === 0);
   check('the installed seed (what the console loads) yields zero unknowns', O.detectUnknowns(installed()).length === 0);
-  check('a practice-dressed seed yields zero unknowns', (function () { var p = W.seed(); W.dressPractice(p); W.install(p); W.refresh(p); return O.detectUnknowns(p).length === 0; })());
+  check('the game\'s own building yields zero unknowns', (function () { var p = W.seedGame(); W.install(p); W.refresh(p); return O.detectUnknowns(p).length === 0; })());
 
   /* A worked shift: real WMS operations, every writer the console
      uses. The registry must know every shape they write. */

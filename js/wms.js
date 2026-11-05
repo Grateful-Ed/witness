@@ -30,11 +30,20 @@
   var E = root.WitnessEngine;
   var C = root.WitnessConverse;
   var SEED = root.WitnessWmsSeed;
+  /* Walk the Shift's own building (data/game-world.js). Read ONLY
+     for a state tagged world: 'game' — never for the live record. */
+  var GAME = root.WitnessGameWorld;
   if (typeof require === 'function') {
     try { if (!E) E = require('./engine.js'); } catch (e) { /* browser */ }
     try { if (!C) C = require('./converse.js'); } catch (e) { /* optional */ }
     try { if (!SEED) SEED = require('../data/wms-seed.js'); } catch (e) { /* browser */ }
+    try { if (!GAME) GAME = require('../data/game-world.js'); } catch (e) { /* browser */ }
   }
+
+  /* The game's world tag. A state carrying it is the game's own
+     building: its WMS layer comes from the game data, the live
+     desk record refuses it, and the live seed never fills it. */
+  var GAME_WORLD = 'game';
 
   var WMS_VERSION = 1;
 
@@ -143,10 +152,19 @@
   /* Idempotent. Run on a fresh seed and on every state loaded from
      the desk record, so a state saved before a field existed gets
      it — nothing that happened is changed. */
+  var EMPTY_LAYER = { items: {}, appointments: [], bols: {}, slots: [], orders: [], customers: {} };
+  var LIVE_SEQ = { apt: 106, rcv: 1, osd: 1, wave: 1, ord: 606, load: 1, flag: 1, count: 1, move: 1, replen: 1, trk: 100231, bol: 1, cnt: 1 };
+  /* Which WMS layer a state draws on: the game's own for a game
+     state (never the live seed — an empty layer if the game data is
+     missing), the live seed for everything else. */
+  function layerFor(state) {
+    if (state.world === GAME_WORLD) return (GAME && GAME.wms) || EMPTY_LAYER;
+    return SEED || EMPTY_LAYER;
+  }
   function install(state) {
     if (!state || !state.bins) return state;
     E.upgradeState(state);
-    var S = SEED || { items: {}, appointments: [], bols: {}, slots: [], orders: [], customers: {} };
+    var S = layerFor(state);
     var fresh = !state.wms;
     if (fresh) {
       state.wms = {
@@ -157,7 +175,7 @@
         orders: copy(S.orders).map(function (o) { o.status = 'new'; return o; }),
         waves: [{ id: 'W-000', orderIds: state.outbound.map(function (o) { return o.id; }), releasedAt: null, by: null, note: 'Released before this shift' }],
         receipts: [], osd: [], loads: [], flags: [], counts: [], decisions: [],
-        seq: { apt: 106, rcv: 1, osd: 1, wave: 1, ord: 606, load: 1, flag: 1, count: 1, move: 1, replen: 1, trk: 100231, bol: 1, cnt: 1 }
+        seq: copy(S.seq || LIVE_SEQ)
       };
       /* The seed's standing flags (data/wms-seed.js): filed earlier
          in the shift, still open. Ids come from the flag sequence so
@@ -200,55 +218,22 @@
     return s;
   };
 
-  /* ---------- practice dressing (practice copies only) -------------- */
-  /* The seed above is the live building's truth and never changes.
-     A PRACTICE copy, though, is a demo building, and the seed's
-     building reads bare — most bins hold a single line and six hold
-     nothing. dressPractice stocks a practice state fuller, the way
-     a worked-in building looks: extra lines in bins the seed already
-     stocks, plus two of the seed's empty bins filled. Deterministic
-     (the same table every load), and applied ONLY by the store when
-     it seeds a practice copy (js/wms-store.js) — never to the seed,
-     never to the desk record.
-     Deliberately untouched: staging (no pallet moves, nothing new
-     staged), holds and flags (none added), the bins the demo's
-     fixtures lean on (A-01, A-05, B-01, C-01 keep exactly their seed
-     contents), and four empty bins — A-07, B-06, C-03, C-06, at
-     least one per zone — so directed work (the game's putaways)
-     always has somewhere to go. The bottled water in A-02 and the
-     rice in B-08 are reserve stock for the pick faces in A-08 and
-     B-04: the live seed holds no reserve anywhere, so its
-     replenishment generator can never fire there; a practice
-     building can show that loop honestly.
-     Idempotent: a line already in a bin is not added twice. */
-  var PRACTICE_STOCK = {
-    'A-03': [{ desc: 'Canned tomatoes — cases', qty: 24 }],
-    'B-03': [{ desc: 'Canned beans — cases', qty: 28 }],
-    'A-02': [{ desc: 'Bottled water — cases', qty: 18 }],
-    'A-04': [{ desc: 'Paper towels — cases', qty: 12 }],
-    'A-06': [{ desc: 'Cereal — cases', qty: 10 }],
-    'A-08': [{ desc: 'Canned tomatoes — cases', qty: 14 }],
-    'B-02': [{ desc: 'Pasta — cases', qty: 16 }],
-    'B-04': [{ desc: 'Canned beans — cases', qty: 20 }],
-    'B-05': [{ desc: 'Cooking oil — cases', qty: 9 }],
-    'B-07': [{ desc: 'Coffee — cases', qty: 12 }],
-    'B-08': [{ desc: 'Rice — bags', qty: 12 }],
-    'C-02': [{ desc: 'Canned tomatoes — cases', qty: 18 }],
-    'C-04': [{ desc: 'Laundry detergent — cases', qty: 8 }],
-    'C-05': [{ desc: 'Cereal — cases', qty: 14 }]
-  };
-  api.dressPractice = function (state) {
-    if (!state || !state.bins) return state;
-    state.bins.forEach(function (b) {
-      var lines = PRACTICE_STOCK[b.id];
-      if (!lines || b.status === 'hold') return;
-      lines.forEach(function (l) {
-        var there = false;
-        b.contents.forEach(function (c) { if (c.desc === l.desc) there = true; });
-        if (!there) b.contents.push({ desc: l.desc, qty: l.qty });
-      });
-    });
-    return state;
+  /* ---------- the game's own building ------------------------------- */
+  /* Walk the Shift plays on its OWN world (data/game-world.js; job
+     build step 1, briefs/claude-brief-game-data-split.md). A fresh
+     game state is a deep copy of the game building, tagged
+     world: 'game', with the game's WMS layer installed and its work
+     generated. It never reads, copies or derives from the live seed
+     above, and the live seed never sees it. */
+  api.GAME_WORLD = GAME_WORLD;
+  api.isGame = function (state) { return !!state && state.world === GAME_WORLD; };
+  api.seedGame = function () {
+    if (!GAME || !GAME.building) throw new Error('wms: game world not loaded');
+    var s = copy(GAME.building);
+    s.world = GAME_WORLD;
+    install(s);
+    refresh(s);
+    return s;
   };
 
   /* ---------- derived work -------------------------------------------- */

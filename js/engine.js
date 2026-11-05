@@ -856,14 +856,16 @@
      Nothing that happened is changed. */
   function upgradeState(state) {
     if (!state || !SEED) return state;
-    state.inbound.forEach(function (s) {
+    /* Back-fill from the seed only within the same world — a game
+       state (world: 'game') never takes anything from the live seed. */
+    var sameWorld = (state.world || 'warehouse') === (SEED.world || 'warehouse');
+    if (sameWorld) state.inbound.forEach(function (s) {
       if (s.lines) return;
       SEED.inbound.forEach(function (x) { if (x.id === s.id && x.lines) s.lines = deepCopy(x.lines); });
     });
     /* The file copy of each BOL (for the dock scan), filled by id; a
        seed shipment the saved state has never heard of joins as it
        is in the seed. Only within the same world. */
-    var sameWorld = (state.world || 'warehouse') === (SEED.world || 'warehouse');
     (sameWorld ? SEED.inbound || [] : []).forEach(function (x) {
       var have = null;
       state.inbound.forEach(function (s) { if (s.id === x.id) have = s; });

@@ -61,6 +61,13 @@
    the in-memory state that is never saved). On the live desk record
    the panel just says so and links to a practice copy — the dummy
    tasks can never touch the real record.
+   Since the game-data split (2026-11-05, job build step 1) the
+   practice copy is the game's OWN building — data/game-world.js,
+   its own trucks, orders, tasks and crew, seeded by W.seedGame()
+   and tagged world: 'game'. The separation is structural: begin,
+   performStep, armCount and confirmCount refuse any state without
+   that tag, the live store refuses to POST one, and the engine's
+   live-seed back-fill skips it.
 
    Shape of the module:
      - Pure logic (node-tested): buildChain deals the inbound five;
@@ -362,7 +369,16 @@
      one is named), direct (the inbound chain's aim), and write the
      start onto the record. Returns { ok, chain } or
      { ok:false, reason }. */
+  /* The game's own building, or nothing (job build step 1,
+     briefs/claude-brief-game-data-split.md). Every mutation below
+     refuses a state that is not tagged world: 'game' — so even a
+     caller that reaches around the practice flag cannot work a shift
+     on the live warehouse. */
+  var NOT_GAME = 'Walk the shift plays only on the game\'s own building (a practice copy). Nothing was done.';
+  function isGame(state) { return !!state && state.world === 'game'; }
+
   function begin(state, role) {
+    if (!isGame(state)) return no(NOT_GAME);
     role = role || 'inbound';
     var chain = buildShift(state, role);
     if (!chain) return no(cannotDeal(role));
@@ -376,6 +392,7 @@
   /* ---------- performing the steps (pure mutations) ----------------- */
 
   function performStep(state, chain, i) {
+    if (!isGame(state)) return no(NOT_GAME);
     var step = chain && chain.steps[i];
     if (!step) return no('No such step.');
     if (step.kind === 'checkin') {
@@ -438,6 +455,7 @@
 
   /* Count step, first half: queue the real cycle count for the bin. */
   function armCount(state, chain, idx) {
+    if (!isGame(state)) return no(NOT_GAME);
     if (!W) return no('The WMS layer is not loaded.');
     var step = countStep(chain, idx);
     if (!step) return no('This step is not a count.');
@@ -461,6 +479,7 @@
      Counted honestly — the player counted what is in the bin — so
      a clean count lands as "matches", a real CC record either way. */
   function confirmCount(state, chain, idx) {
+    if (!isGame(state)) return no(NOT_GAME);
     if (!W) return no('The WMS layer is not loaded.');
     var step = countStep(chain, idx);
     if (!step || !step.countTaskId) return no('The count has not been queued yet.');
@@ -994,7 +1013,7 @@
   function panelHtml(panel, state, practice) {
     if (!practice) {
       return panel('Walk the shift',
-        '<p>The game runs on a practice copy, so the real record stays clean. ' +
+        '<p>The game runs on its own practice building — its own trucks, orders and crew — so the live warehouse is never touched. ' +
         'Open one and work a five-task receiving shift on the warehouse map below — tasks are offered one at a time and confirmed by voice, and every move lands on the practice record as it happens.</p>' +
         '<div class="form-actions"><a class="btn primary" href="wms.html?practice=1#/dashboard" data-act="enter-practice">Open a practice copy</a></div>');
     }
