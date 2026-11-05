@@ -181,10 +181,12 @@ var code = src('js/summon.js').replace(/\/\*[\s\S]*?\*\//g, '');
 check('no save: summon.js never saves, posts or fetches',
   !/saveState|setItem|fetch\(|saveBol|SAVE_URL|\/save/.test(code));
 var page = src('js/summon-page.js').replace(/\/\*[\s\S]*?\*\//g, '');
+/* Desk-phone Step 2: the fresh read is the shared desk record
+   (js/state.js store.loadState), no longer the engine's localStorage. */
 check('no save: the page reads fresh (loadState) and never saves',
-  /E\.loadState\(\)/.test(page) && !/saveState|saveBol|setItem|resetState/.test(page));
+  /store\.loadState\(\)/.test(page) && !/saveState|saveBol|setItem|resetState|mutate\(/.test(page));
 check('no save: the page reads the fresh state inside the read, before summon',
-  page.indexOf('E.loadState()') < page.indexOf('S.summon('));
+  page.indexOf('store.loadState()') !== -1 && page.indexOf('store.loadState()') < page.indexOf('S.summon('));
 
 /* ---------- the flow through bol.js, fetch stubbed ---------- */
 function reply(obj) {
