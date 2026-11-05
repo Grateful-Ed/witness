@@ -187,6 +187,12 @@
        the model answering under its prompt) speaks the building's
        language instead of guessing at it. */
     base.vocabulary = digest.vocabulary || [];
+    /* And the concepts the ontology learned on its own (self-
+       extension): features of the building's system it detected,
+       each labeled with its rung — detected, described (AI-
+       inferred) or settled (a human confirmed it). The delegator
+       only receives them in the digest; it writes none. */
+    base.concepts = digest.concepts || [];
 
     if (job.intent === 'contents' || job.intent === 'place') {
       var p = find(digest.places, function (x) { return x.kind === job.subject.kind && x.id === job.subject.id; });
@@ -246,6 +252,7 @@
   var ASK_RULES =
     '\nThe building\'s vocabulary is in your context (context.vocabulary): words the workers here use, with the meanings they taught. ' +
     'If the user uses a word you don\'t know and it isn\'t in the vocabulary or the record, ask them what it means — never guess a meaning. If they teach you a word, use it.' +
+    '\nThe concepts the building learned on its own are in your context too (context.concepts), each with a status: "detected" means seen but not understood — say so, never guess its meaning; "described" is the AI\'s inferred reading, not yet confirmed — say it is inferred when you rely on it; "settled" was confirmed by a person.' +
     '\nYou are a warehouse-work assistant. If a request isn\'t related to the warehouse or its work, decline in your own voice — "Sorry, this request isn\'t related to warehouse process." — and leave it there. That judgment is yours, made from the request itself.';
 
   function composePrompt(job, from, rev) {

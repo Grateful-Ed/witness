@@ -322,6 +322,55 @@
     return digestCache.digest;
   }
 
+  /* Self-extension (brief 2026-11-05): on every refresh the console
+     asks the ontology for shapes it has no concept for. Each one is
+     recorded as detected, then described by Spark — the orchestration
+     is js/wms-ai.js refreshConcepts; every write is the ontology's
+     pure learnConcept, applied through act(). One round at a time;
+     each key is tried at most twice per page so a failing save can
+     never loop. Nothing settles here: settling is the Ontology page's
+     human button. */
+  var conceptRun = false, conceptTries = {};
+  function learnNewConcepts() {
+    var O = window.WitnessOntology;
+    if (conceptRun || busy || micActive || !O || !AI || !AI.refreshConcepts || !state) return;
+    var fresh = O.newUnknowns(state).filter(function (u) { return (conceptTries[u.key] || 0) < 2; });
+    if (!fresh.length) return;
+    fresh.forEach(function (u) { conceptTries[u.key] = (conceptTries[u.key] || 0) + 1; });
+    conceptRun = true;
+    AI.refreshConcepts({ state: state, fetch: window.fetch.bind(window), apply: function (fn) { return act(fn, null); } })
+      .then(function (out) {
+        conceptRun = false;
+        var told = out.filter(function (o) { return o.saved; });
+        if (told.length) toast('The ontology learned ' + told.length + ' new concept' + (told.length === 1 ? '' : 's') + ' — see Ontology.');
+      }, function () { conceptRun = false; });
+  }
+
+  var LADDER_CHIP = { detected: ['Detected', 'warn'], described: ['Described · AI-inferred', 'info'], settled: ['Settled', 'ok'] };
+  function conceptsPanel(d) {
+    var list = d.concepts || [];
+    var rows = list.map(function (c, i) {
+      var ch = LADDER_CHIP[c.status] || LADDER_CHIP.detected;
+      var reading, action = '';
+      if (c.status === 'detected') {
+        reading = esc(c.note || 'Seen, not understood yet. The AI has not described it.');
+        action = '<button class="btn small" data-act="concept-describe" data-key="' + esc(c.key) + '">Ask the AI again</button>';
+      } else if (c.status === 'described') {
+        reading = '<textarea class="cell" rows="2" style="width:100%;text-align:left" id="cx-' + i + '" aria-label="Summary of ' + esc(c.name) + '">' + esc(c.summary) + '</textarea>' +
+          '<div class="hint">AI-inferred from real samples — not yet confirmed. Edit it if it is wrong, then settle.</div>';
+        action = '<button class="btn small primary" data-act="concept-settle" data-key="' + esc(c.key) + '" data-i="' + i + '">Settle</button>';
+      } else {
+        reading = esc(c.summary || '') + '<div class="hint">Settled by ' + esc(c.settledBy || 'a person') + '.</div>';
+      }
+      return '<tr><td><b>' + esc(c.name) + '</b><div class="hint">' + esc(c.kind || '') + ' · ' + esc(c.key) + '</div></td><td>' + chip(ch[0], ch[1]) +
+        '</td><td>' + reading + '</td><td>' + esc((c.connectsTo || []).join(', ') || '—') + '</td><td class="actions">' + action + '</td></tr>';
+    });
+    var n = list.filter(function (c) { return c.status !== 'settled'; }).length;
+    return panel('Concepts learned', table(['Concept', 'Status', 'What it seems to be', 'Connects to', ''], rows,
+      'No new concepts. When the system grows a section, task type, record kind or field the ontology has no concept for, it shows here: detected, then described by the AI, then settled by a person.'),
+      list.length + ' learned' + (n ? ' · ' + n + ' not settled' : ''));
+  }
+
   VIEWS.ontology = function () {
     var d = digestNow();
     function contentsText(p) {
@@ -357,7 +406,7 @@
       }), 'No labor units.'), d.people.length + ' on the floor');
     return '<div class="crumbs">DC-01 › Control › Ontology</div><div class="page-head"><div><h1>Ontology</h1>' +
       '<p>The building\'s standing summary for the AI — re-derived from the desk record on every change, at no API cost. Prep notes are composed here and held; nothing is sent anywhere.</p></div></div>' +
-      eyes + prep + places + tasks + people;
+      eyes + prep + conceptsPanel(d) + places + tasks + people;
   };
 
   /* The Witness page: one item's record (js/wms-witness.js). Routed
@@ -978,6 +1027,11 @@
        through the same /chat plumbing as every other console read. */
     if (G) G.afterRender({ act: act, state: state, practice: store.practice(), base: base, render: render,
       talk: function (context, text) { return AI.gameTurn(window.fetch.bind(window), context, text); } });
+    /* The digest follows every state change through the incremental
+       path, so growth is announced in its prep queue once, whichever
+       screen is open when it happens. */
+    if (window.WitnessOntology) digestNow();
+    learnNewConcepts();
   }
 
   /* ---------- folding panels (design 2026-11-03) --------------------
@@ -1354,6 +1408,25 @@
     approve: function (el) { var p = W.proposals(state)[+el.dataset.i]; act(function (s) { return W.decide(s, p, true, me); }, 'Approved — the worker\'s zone changed.'); },
     decline: function (el) { var p = W.proposals(state)[+el.dataset.i]; act(function (s) { return W.decide(s, p, false, me); }, 'Declined — recorded.'); },
     ask: function () { askBuilding(val('askQ')); },
+    /* Settle: a human's act. The (possibly edited) summary and the
+       signed-in person's name go through the ontology's learnConcept. */
+    'concept-settle': function (el) {
+      var key = el.dataset.key, summary = val('cx-' + el.dataset.i), by = uname(me);
+      act(AI.conceptStep({ key: key, status: 'settled', by: by, summary: summary, at: new Date().toISOString() }),
+        'Settled by ' + by + '. The concept is confirmed.');
+    },
+    'concept-describe': function (el) {
+      if (conceptRun) return;
+      conceptRun = true;
+      toast('Asking the AI to read the samples again…');
+      AI.redescribe({ state: state, fetch: window.fetch.bind(window), apply: function (fn) { return act(fn, null); } }, el.dataset.key)
+        .then(function (o) {
+          conceptRun = false;
+          toast(o.gone ? 'That shape is no longer in the desk record, so there is nothing to read.'
+            : o.status === 'described' ? 'Described — AI-inferred. Check it, then settle it.'
+            : 'Still not inferable from the samples. It stays detected.', o.status !== 'described');
+        }, function () { conceptRun = false; });
+    },
     flag: function () { fileFlag(val('flWords'), 'typed'); },
     'flag-close': function (el) {
       var n = promptNote('Close ' + el.dataset.id + ' — what was done:');
