@@ -36,10 +36,13 @@ function sha(p) { return crypto.createHash('sha256').update(fs.readFileSync(root
 function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
 
 /* ---------- the live seed files: byte-identical ---------------------- */
-/* Hashes taken from main before this build. The job engine (step 2)
-   is what changes the live data; this step must not. */
-check('live seed: data/world.js is byte-identical',
-  sha('data/world.js') === 'be6d1a807b7645d2e4483a4b697aad12c363db025d74ec8834042c9f67045ee6');
+/* Hashes pinned so the live seed only changes on purpose. Step 1
+   (the game split) left both files byte-identical. Step 2 (job
+   assignment, briefs/claude-brief-job-assignment.md) changed
+   data/world.js once, on purpose: each labor unit gained its
+   departments (depts). data/wms-seed.js is still step 1's bytes. */
+check('live seed: data/world.js is byte-identical (pinned at job assignment: labor depts)',
+  sha('data/world.js') === '6bb48d6a0e125a1db0ce6bba3ab9940c19eff8542e683a7f2d524d779e8497c1');
 check('live seed: data/wms-seed.js is byte-identical',
   sha('data/wms-seed.js') === 'bbec2537fa4b8952ca4524208f21b594bb06819c70f9182dee83d14644a33ed2');
 

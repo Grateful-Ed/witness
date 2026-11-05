@@ -247,29 +247,28 @@ d = W.dashboard(s);
 check('dashboard: fill rate counts the short pick (22 of 24 = 91.7%)', d.fillRate === 91.7 && d.shortPicks === 1);
 check('dashboard: shipments out counted from closed loads', d.outbound.loadsClosed === 1 && d.outbound.shipped === 2 && d.outbound.unitsOut === 22);
 
-/* ---------- queues, reassignment, priorities ---------- */
+/* ---------- queues, reassignment, priorities ----------
+   Job assignment (briefs/claude-brief-job-assignment.md): on the live
+   building a worker's queue is their own job's tasks. A task never
+   changes hands alone; a manager moves the whole job. The job model's
+   full acceptance list is test/wms-jobs-test.js. */
 s = fresh();
 var n = W.nextFor(s, 'u-marcus');
-check('next: zone A worker gets zone A receiving first', n.task && n.task.id === 't-receive-IN-1001' && n.task.status === 'assigned');
+check('next: Marcus (Inbound) takes his own job\'s task — the IN-1001 receive', n.task && n.task.id === 't-receive-IN-1001' && n.task.status === 'assigned');
 check('next: asking again returns the same task in hand', W.nextFor(s, 'u-marcus').already === true);
 r = W.reassign(s, 't-receive-IN-1001', 'u-dee', 'u-sam');
-check('reassign: free hands → straight into Dee\'s hands', r.ok && r.how === 'now in hand' && task(s, 't-receive-IN-1001').assignee === 'u-dee' && !E.unitById(s, 'u-marcus').currentTaskId);
-r = W.reassign(s, 't-pick-ORD-502-C-02', 'u-dee', 'u-sam');
-check('reassign: busy hands → queued for Dee', r.ok && r.how === 'queued next' && task(s, 't-pick-ORD-502-C-02').queuedFor === 'u-dee');
-check('queue: Dee\'s queue shows current + queued', (function () { var q = W.queueFor(s, 'u-dee'); return q.current.id === 't-receive-IN-1001' && q.queued[0].id === 't-pick-ORD-502-C-02'; })());
-check('queue: a task queued for Dee is not handed to anyone else', W.nextFor(s, 'u-jay').task.id !== 't-pick-ORD-502-C-02');
-check('reassign: a done task is refused', (function () { var x = fresh(); W.complete(x, 't-pick-ORD-502-C-02', {}); return !W.reassign(x, 't-pick-ORD-502-C-02', 'u-dee').ok; })());
-check('priority: High-priority order picks come first within the same type', (function () {
-  var x = fresh(); W.releaseWave(x, ['ORD-601', 'ORD-602'], 'u-sam');
-  var u = E.unitById(x, 'u-marcus');
-  x.tasks.forEach(function (t) { if (t.type !== 'pick') t.status = 'done'; });
-  return W.nextFor(x, u.id).task.orderId !== 'ORD-602';
+check('reassign: a single task is refused on the live building (jobs move whole)', !r.ok && /job/i.test(r.reason) && task(s, 't-receive-IN-1001').assignee === 'u-marcus');
+check('queue: Dee\'s queue is her own job (STG-1), nothing suggested from elsewhere', (function () {
+  var q = W.queueFor(s, 'u-dee'); return !q.current && q.queued.length === 1 && q.queued[0].id === 't-putaway-STG-1' && q.suggested.length === 0 && q.jobs[0].id === 'J-STG-1';
 })());
+check('queue: Jay (Pack & Ship, nothing in his pool) is handed nothing — no pull from other pools', W.nextFor(s, 'u-jay').task === null);
+check('reassign: a done task is refused', (function () { var x = fresh(); W.complete(x, 't-pick-ORD-502-C-02', {}); return !W.reassign(x, 't-pick-ORD-502-C-02', 'u-dee').ok; })());
 
 /* ---------- labor proposals ---------- */
 s = fresh();
 var props = W.proposals(s);
-check('proposals: zone B backing up (9 waiting) → move someone from a lighter zone', props.length >= 1 && props[0].toZone === 'B' && /Zone B has 9 tasks waiting/.test(props[0].why));
+check('proposals: zone B backing up (9 jobs waiting, job load) → Jay Patel C → B', props.length >= 1 && props[0].toZone === 'B' &&
+  /Zone B has 9 jobs waiting for 2 workers/.test(props[0].why) && props[0].unitName === 'Jay Patel' && props[0].fromZone === 'C');
 var u0 = E.unitById(s, props[0].unitId), z0 = u0.zone;
 check('proposals change nothing on their own', u0.zone === z0 && s.wms.decisions.length === 0);
 r = W.decide(s, props[0], false, 'u-sam');
@@ -331,31 +330,28 @@ check('parseBin: "A-03", "bin b 7", "charlie two", "a03"', W.parseBin('put it in
 check('parseBin: nothing that looks like a bin → null', W.parseBin('done') === null);
 
 s = fresh();
-W.nextFor(s, 'u-tommy'); /* zone B: first B task */
-var tk = W.currentOf(s, 'u-tommy');
-check('voice setup: Tommy has a zone B pick in hand', tk && tk.type === 'pick');
-var plan = W.interpret(s, 'u-tommy', 'picked ' + tk.qty);
+W.nextFor(s, 'u-priya'); /* Picking: her job ORD-501, first pick at B-04 */
+var tk = W.currentOf(s, 'u-priya');
+check('voice setup: Priya has her job\'s first pick in hand', tk && tk.type === 'pick' && tk.id === 't-pick-ORD-501-B-04');
+var plan = W.interpret(s, 'u-priya', 'picked ' + tk.qty);
 check('interpret: "picked N" confirms the pick with N', plan.intent === 'confirm' && plan.qty === tk.qty);
-plan = W.interpret(s, 'u-tommy', 'picked two, four short');
+plan = W.interpret(s, 'u-priya', 'picked two, four short');
 check('interpret: "picked two, four short" is a short pick, not a problem', plan.intent === 'confirm' && plan.qty === 2);
-plan = W.interpret(s, 'u-tommy', 'done');
+plan = W.interpret(s, 'u-priya', 'done');
 check('interpret: a bare "done" on a pick asks for the count', plan.intent === 'need');
-plan = W.interpret(s, 'u-tommy', 'the case is crushed and leaking');
+plan = W.interpret(s, 'u-priya', 'the case is crushed and leaking');
 check('interpret: problem words → problem (nothing completes)', plan.intent === 'problem');
-var out = W.act(s, 'u-tommy', W.interpret(s, 'u-tommy', 'picked ' + tk.qty));
+var out = W.act(s, 'u-priya', W.interpret(s, 'u-priya', 'picked ' + tk.qty));
 check('act: confirm completes the pick and pulls the next task', out.ok && task(s, tk.id).status === 'done' && /Next:|Nothing else/.test(out.reply));
 s = fresh();
-W.nextFor(s, 'u-marcus');
-W.complete; /* Marcus holds the receive; give him a putaway instead */
-W.reassign(s, 't-receive-IN-1001', 'u-dee', 'u-sam');
-W.reassign(s, 't-putaway-STG-1', 'u-marcus', 'u-sam');
-plan = W.interpret(s, 'u-marcus', 'put it in alpha seven');
+W.nextFor(s, 'u-dee'); /* Putaway: her job STG-1 (18 × Paper towels) */
+plan = W.interpret(s, 'u-dee', 'put it in alpha seven');
 check('interpret: putaway "in alpha seven" → confirm to A-07', plan.intent === 'confirm' && plan.binId === 'A-07');
-out = W.act(s, 'u-marcus', plan);
+out = W.act(s, 'u-dee', plan);
 check('act: putaway lands in the bin that was said', out.ok && binQty(s, 'A-07', 'Paper towels — cases') === 18);
-out = W.act(s, 'u-marcus', W.interpret(s, 'u-marcus', 'what\'s next'));
-check('act: "what\'s next" pulls a task', out.ok && !!W.currentOf(s, 'u-marcus'));
-out = W.act(s, 'u-marcus', { intent: 'problem', heard: 'Pallet is leaning badly', label: 'Leaning pallet' });
+out = W.act(s, 'u-dee', W.interpret(s, 'u-dee', 'what\'s next'));
+check('act: "what\'s next" takes up her next job (dealt on finishing STG-1: STG-3, oldest in the Putaway pool)', out.ok && !!W.currentOf(s, 'u-dee') && W.currentOf(s, 'u-dee').id === 't-putaway-STG-3');
+out = W.act(s, 'u-dee', { intent: 'problem', heard: 'Pallet is leaning badly', label: 'Leaning pallet' });
 check('act: a problem plan files a flag with the words', out.ok && s.wms.flags[s.wms.flags.length - 1].words === 'Pallet is leaning badly');
 
 /* ---------- conservation across a whole shift ---------- */

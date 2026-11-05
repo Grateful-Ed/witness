@@ -107,9 +107,11 @@ var paTask = sc.tasks.filter(function (t) {
   return t.type === 'putaway' && t.status === 'open' && p && p.shipmentId === 'IN-1002' && !p.hold;
 })[0];
 check('setup: a good IN-1002 pallet has an open putaway task', !!paTask);
-var ra = W.reassign(sc, paTask.id, 'u-tommy', 'u-sam');
-check('setup: the putaway was reassigned to Tommy', ra.ok === true);
-step('reassigning a putaway to Tommy');
+/* Job assignment: a task never moves alone on the live building —
+   its whole job does, by a manager. IN-1002's job is Inbound work. */
+var ra = W.reassignJob(sc, paTask.jobId, 'u-marcus', 'u-sam');
+check('setup: the IN-1002 job (with its putaway) was reassigned to Marcus', ra.ok === true && paTask.queuedFor === 'u-marcus');
+step('reassigning the IN-1002 job to Marcus');
 W.hold(sc, { binId: 'B-04' }, 'u-sam', 'recount needed');
 step('holding bin B-04');
 check('the running digest picked up the B-04 prep note', dc.prep.some(function (n) { return n.about === 'B-04'; }));
@@ -125,7 +127,7 @@ var d3 = O.buildDigest(s3);
 W.hold(s3, { binId: 'B-04' }, 'u-sam', 'recount needed');
 d3 = O.applyChange(s3, d3);
 check('holding B-04 mints exactly one prep note', d3.prep.length === 1);
-check('the note is for the manager (the pick task it blocks is unassigned)', d3.prep.length === 1 && d3.prep[0]['for'] === 'Sam Whitaker');
+check('the note is for the job holder whose pick it blocks (ORD-501 is dealt to Priya)', d3.prep.length === 1 && d3.prep[0]['for'] === 'Priya Shah');
 check('the note is about the bin, says what changed, and names the blocked task', d3.prep.length === 1 &&
   d3.prep[0].about === 'B-04' && d3.prep[0].fromChange === 'Bin B-04 put on hold' &&
   /on hold/.test(d3.prep[0].note) && d3.prep[0].note.indexOf('ORD-501') !== -1);
@@ -150,13 +152,13 @@ var pa4 = s4.tasks.filter(function (t) {
   var p = s4.staging.filter(function (x) { return x.id === t.stagingId; })[0];
   return t.type === 'putaway' && t.status === 'open' && p && p.shipmentId === 'IN-1002' && !p.hold;
 })[0];
-W.reassign(s4, pa4.id, 'u-tommy', 'u-sam');
+W.reassignJob(s4, pa4.jobId, 'u-marcus', 'u-sam');
 var d4 = O.buildDigest(s4);
 check('the open findings prep the worker putting that shipment away', d4.prep.some(function (n) {
-  return n.about === 'IN-1002' && n['for'] === 'Tommy Nguyen' && /OS&D/.test(n.note) && /awaiting a human decision/.test(n.note);
+  return n.about === 'IN-1002' && n['for'] === 'Marcus Reed' && /OS&D/.test(n.note) && /awaiting a human decision/.test(n.note);
 }));
 check('the reassignment itself preps him too', d4.prep.some(function (n) {
-  return n.about === pa4.id && n['for'] === 'Tommy Nguyen' && /reassigned/.test(n.fromChange);
+  return n.about === pa4.jobId && n['for'] === 'Marcus Reed' && /reassigned/.test(n.fromChange);
 }));
 s4.wms.osd.forEach(function (f) { if (f.status === 'open') W.resolveOsd(s4, f.id, 'u-sam', 'carrier credit agreed'); });
 check('closing the findings clears the OS&D prep note', !O.buildDigest(s4).prep.some(function (n) { return n.about === 'IN-1002'; }));

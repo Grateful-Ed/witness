@@ -298,31 +298,58 @@ server.listen(0, async function () {
   }
   await go('#/queues');
   check('Work by voice rides the Task Queues screen', !!(await page.$('#wvTalk')) && !!(await page.$('#wvWho')));
-  await page.selectOption('#wvWho', 'u-tommy');
+  /* Job assignment (briefs/claude-brief-job-assignment.md): the
+     queues are jobs. Jay (Pack & Ship, Cycle Count) holds none — his
+     pools are empty — so "what's next" says so. */
+  await page.selectOption('#wvWho', 'u-jay');
   await page.waitForTimeout(150);
   s = await st();
-  var tommyBefore = s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId;
+  var jayBefore = s.labor.find(function (u) { return u.id === 'u-jay'; }).currentTaskId;
   var vp = posts;
   var v1 = await say("what's next");
   check('voice: "what\'s next" with nothing assigned says so plainly — nothing staged, nothing saved',
-    v1.line === 'Nothing is assigned to you right now.' && !v1.staged && posts === vp && !tommyBefore && v1.shown === v1.line);
-  /* The desk assigns Tommy two tasks (Reassign): one in hand, one queued behind it. */
-  var picksB = s.tasks.filter(function (t) { return t.type === 'pick' && t.zone === 'B' && t.status === 'open' && !t.queuedFor; });
-  for (var pi = 0; pi < 2; pi++) {
-    await page.selectOption('#raTask', picksB[pi].id);
-    await page.selectOption('#raUnit', 'u-tommy');
-    await click('[data-act="reassign"]');
-  }
-  await page.selectOption('#wvWho', 'u-tommy');
+    v1.line === 'Nothing is assigned to you right now.' && !v1.staged && posts === vp && !jayBefore && v1.shown === v1.line);
+  var qv = await page.evaluate(function () {
+    var m = document.querySelector('#main');
+    return { cards: m.querySelectorAll('[data-jobs="cards"] .wcard').length, pools: m.querySelectorAll('[data-pool]').length,
+      jobMove: !!m.querySelector('#rjJob') && !!m.querySelector('[data-act="reassign-job"]'), taskMove: !!m.querySelector('#raTask'),
+      dept: (m.querySelector('[data-unit="u-marcus"] .w-h') || {}).textContent || '' };
+  });
+  check('jobs: the queues show each worker with their department, the six department pools, and the manager\'s Reassign job (no task-level reassign)',
+    qv.cards === 8 && qv.pools === 6 && qv.jobMove && !qv.taskMove && /Inbound/.test(qv.dept));
+  /* The desk moves a whole job by hand: ORD-601 from the Picking pool
+     to Grace, who already holds ORD-503. */
+  s = await st();
+  var mv = s.wms.jobs.find(function (j) { return j.id === 'J-ORD-601'; });
+  var meId = await page.evaluate(function () { return document.querySelector('#whoSel').value; });
+  vp = posts;
+  await page.selectOption('#rjJob', mv.id);
+  await page.selectOption('#rjUnit', 'u-grace');
+  await click('[data-act="reassign-job"]');
+  s = await st();
+  var jr = s.records.filter(function (r) { return r.kind === 'job-reassign'; }).pop();
+  check('jobs: "Move job" moves ORD-601 to Grace — saved once, recorded with who moved it, when, and from whom',
+    posts === vp + 1 && !!jr && jr.jobId === 'J-ORD-601' && jr.to === 'u-grace' && jr.by === meId && jr.from === mv.owner && !!jr.ts &&
+    s.tasks.filter(function (t) { return t.jobId === 'J-ORD-601'; }).every(function (t) { return t.queuedFor === 'u-grace'; }) &&
+    /J-ORD-601/.test(await page.textContent('#main')));
+  /* Grace takes the first task of her list on the RF console (the WMS
+     hands it over; voice never does). */
+  await go('#/rf');
+  await page.selectOption('#rfWho', 'u-grace');
+  await page.waitForTimeout(150);
+  await click('[data-act="rf-next"]');
+  await go('#/queues');
+  await page.selectOption('#wvWho', 'u-grace');
   await page.waitForTimeout(150);
   s = await st();
-  var tCur = s.tasks.find(function (t) { return t.id === s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId; });
+  var tCur = s.tasks.find(function (t) { return t.id === s.labor.find(function (u) { return u.id === 'u-grace'; }).currentTaskId; });
+  var graceList = s.tasks.filter(function (t) { return t.status === 'open' && t.queuedFor === 'u-grace'; });
   vp = posts;
   var v2 = await say("what's next");
   s = await st();
-  check('voice: "what\'s next" names the next task on his assigned list — nothing staged, nothing saved, nothing pulled',
-    /^After this one: Pick /.test(v2.line) && !v2.staged && posts === vp && !!tCur && tCur.id === picksB[0].id &&
-    s.tasks.find(function (t) { return t.id === picksB[1].id; }).queuedFor === 'u-tommy');
+  check('voice: "what\'s next" names the next task on her assigned list — nothing staged, nothing saved, nothing pulled',
+    /^After this one: Pick /.test(v2.line) && !v2.staged && posts === vp && !!tCur && tCur.jobId === 'J-ORD-503' &&
+    graceList.length === 3 && s.tasks.find(function (t) { return t.id === graceList[0].id; }).queuedFor === 'u-grace');
   vp = posts;
   var doneWords = tCur.type === 'pick' ? 'picked ' + tCur.qty : 'done';
   var v3 = await say(doneWords);
@@ -331,8 +358,20 @@ server.listen(0, async function () {
   s = await st();
   var closed = s.tasks.find(function (t) { return t.id === tCur.id; });
   check('voice: the next "yes" closes it through the WMS path, attributed by voice, words after the act — and pulls nothing', closed.status === 'done' && closed.via === 'voice' &&
-    closed.doneBy === 'u-tommy' && posts === vp + 1 && !v4.refused && /Next on your list: Pick /.test(v4.line) &&
-    !s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId);
+    closed.doneBy === 'u-grace' && posts === vp + 1 && !v4.refused && /Next on your list: Pick /.test(v4.line) &&
+    !s.labor.find(function (u) { return u.id === 'u-grace'; }).currentTaskId);
+  /* The map marks job ownership; the job's Witness page names the owner. */
+  await go('#/dashboard');
+  var marks = await page.evaluate(function () {
+    var m = document.querySelector('#main');
+    var stg2 = m.querySelector('[data-place="pallet"][data-id="STG-2"] .wm-owner');
+    return { n: m.querySelectorAll('.wm-owner').length, stg2: stg2 ? stg2.textContent : null };
+  });
+  check('jobs: the map carries the holders\' marks — STG-2 shows Tommy\'s initials, nothing more', marks.n > 0 && marks.stg2 === 'TN');
+  await click('[data-place="pallet"][data-id="STG-2"]');
+  var wj = await page.evaluate(function () { var e = document.querySelector('.wp-page .wp-job'); return e ? e.textContent : ''; });
+  check('jobs: the pallet\'s Witness page shows its job and the owner', /Job J-STG-2 · Putaway · held by Tommy Nguyen/.test(wj));
+  await go('#/queues');
   vp = posts;
   var v5 = await say('oil leaking by B-03');
   var v6 = await say('no');

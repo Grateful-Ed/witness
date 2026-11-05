@@ -229,10 +229,10 @@
       'wmsRev', 'wmsSavedAt', 'world', 'destinationRules', 'vocabulary', 'concepts'],
     /* Sections of the WMS layer (state.wms). */
     wmsSections: ['version', 'items', 'appointments', 'slots', 'orders', 'waves', 'receipts', 'osd', 'loads',
-      'flags', 'counts', 'decisions', 'seq'],
+      'flags', 'counts', 'decisions', 'seq', 'jobs'],
     /* Every task carries these; each type adds its own. */
     taskCommon: ['id', 'type', 'zone', 'title', 'detail', 'status', 'assignee', 'queuedFor', 'createdAt',
-      'startedAt', 'doneBy', 'doneAt', 'notes', 'note', 'via', 'heard'],
+      'startedAt', 'doneBy', 'doneAt', 'notes', 'note', 'via', 'heard', 'jobId'],
     taskTypes: {
       putaway: ['stagingId', 'toBinId', 'suggestedBinId', 'item'],
       consolidate: ['desc', 'fromBinId', 'toBinId'],
@@ -268,6 +268,7 @@
       reallocate: [],
       ship: ['loadId'],
       'labor-move': ['approved'],
+      'job-reassign': ['jobId', 'from', 'to', 'crossDept'],
       desk: ['words', 'source', 'decision', 'on'],
       game: []
     }
@@ -572,6 +573,26 @@
           ' — its destination was corrected after the task was made. Follow the task, not the original plan.',
           'Destination corrected on ' + t.id);
       }
+    });
+
+    /* 4. A job moved by a manager (job assignment): its new holder
+       is told the whole job is theirs now. The newest move per job
+       is the live one, and only while the job is open and still
+       theirs. */
+    var lastMove = {};
+    (state.records || []).forEach(function (r) {
+      if (r && r.kind === 'job-reassign' && r.jobId) lastMove[r.jobId] = r;
+    });
+    var jobs = ((state.wms || {}).jobs) || [];
+    Object.keys(lastMove).forEach(function (id) {
+      var r = lastMove[id];
+      var j = find(jobs, function (x) { return x.id === id; });
+      if (!j || j.status !== 'open' || j.owner !== r.to) return;
+      var open = tasks.filter(function (t) { return t.jobId === id; }).length;
+      push(unitName(state, r.to), id,
+        'Job ' + id + ' (' + j.title + ') was reassigned to you' + (r.from ? ' from ' + unitName(state, r.from) : '') +
+        ' — its ' + open + ' open task' + (open === 1 ? ' is' : 's are') + ' on your list now.',
+        'Job ' + id + ' reassigned');
     });
 
     return notes;
