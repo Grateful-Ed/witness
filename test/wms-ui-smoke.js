@@ -368,6 +368,12 @@ server.listen(0, async function () {
   }, null, { timeout: 5000 }).catch(function () {});
   await page.waitForTimeout(300);
   await go('#/ontology');
+  /* The page renders the concepts list a beat after navigation;
+     wait for the Settle button itself before reading the DOM
+     (a fixed sleep raced this render — the check flaked on main). */
+  await page.waitForFunction(function () {
+    return !!document.querySelector('[data-act="concept-settle"][data-key="returns"]');
+  }, null, { timeout: 5000 }).catch(function () {});
   s = await st();
   check('self-extension: the new section is detected and described by the AI (one call), AI-inferred, not settled',
     describes === 1 && !!(s.concepts && s.concepts.returns) && s.concepts.returns.status === 'described' &&
