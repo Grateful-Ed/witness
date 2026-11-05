@@ -210,8 +210,8 @@ check('dressing: the raw seed is untouched — bins the dressing fills are empty
   bin(rawSeed, 'A-02').contents.length === 1);
 check('dressing: fourteen bins gain goods on the practice copy',
   dressed.bins.filter(function (b) { return b.contents.length > bin(rawSeed, b.id).contents.length; }).length === 14);
-check('dressing: exactly four bins stay empty — A-07, B-06, C-03, C-06 (one or more per zone)',
-  dressed.bins.filter(function (b) { return !b.contents.length; }).map(function (b) { return b.id; }).join(',') === 'A-07,B-06,C-03,C-06');
+check('dressing: exactly seven bins stay empty — A-07, A-10, B-06, B-10, C-03, C-06, C-10 (one or more per zone)',
+  dressed.bins.filter(function (b) { return !b.contents.length; }).map(function (b) { return b.id; }).join(',') === 'A-07,A-10,B-06,B-10,C-03,C-06,C-10');
 check('dressing: staging is untouched, and no hold or flag is added',
   JSON.stringify(dressed.staging) === JSON.stringify(rawSeed.staging) &&
   dressed.bins.every(function (b) { return b.status === bin(rawSeed, b.id).status; }) &&
@@ -245,8 +245,8 @@ check('the shift types are the four roles', G.ROLES.map(function (r) { return r.
 
 var dIn = G.buildShift(W.dressPractice(W.seed()), 'inbound');
 check('dressed building: the inbound chain deals into two of the bins the dressing left empty',
-  !!dIn && ['A-07', 'B-06', 'C-03', 'C-06'].indexOf(dIn.binA) !== -1 &&
-  ['A-07', 'B-06', 'C-03', 'C-06'].indexOf(dIn.binB) !== -1 && dIn.binA !== dIn.binB);
+  !!dIn && ['A-07', 'A-10', 'B-06', 'B-10', 'C-03', 'C-06', 'C-10'].indexOf(dIn.binA) !== -1 &&
+  ['A-07', 'A-10', 'B-06', 'B-10', 'C-03', 'C-06', 'C-10'].indexOf(dIn.binB) !== -1 && dIn.binA !== dIn.binB);
 
 var oState = W.dressPractice(W.seed());
 var oBegin = G.begin(oState, 'outbound');

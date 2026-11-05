@@ -21,18 +21,18 @@ var m = M.model(s, W);
 var h = M.html(s, W);
 
 /* 1. the building: eight doors, two walls, straight from state */
-check('state has eight doors: four in, four out', s.doors.length === 8 &&
-  s.doors.filter(function (d) { return d.direction === 'in'; }).length === 4 && s.doors.filter(function (d) { return d.direction === 'out'; }).length === 4);
-check('four dock rows', m.rows === 4);
-check('Inbound Docks 1–4 named on the inbound wall', [1, 2, 3, 4].every(function (n) { return h.indexOf('>Inbound Dock ' + n + '<') !== -1; }) &&
-  count(h, /data-place="dock" data-side="in"/g) === 4);
-check('Outbound Docks 1–4 named on the outbound wall', [1, 2, 3, 4].every(function (n) { return h.indexOf('>Outbound Dock ' + n + '<') !== -1; }) &&
-  count(h, /data-place="dock" data-side="out"/g) === 4);
+check('state has twelve doors: six in, six out', s.doors.length === 12 &&
+  s.doors.filter(function (d) { return d.direction === 'in'; }).length === 6 && s.doors.filter(function (d) { return d.direction === 'out'; }).length === 6);
+check('six dock rows', m.rows === 6);
+check('Inbound Docks 1–6 named on the inbound wall', [1, 2, 3, 4, 5, 6].every(function (n) { return h.indexOf('>Inbound Dock ' + n + '<') !== -1; }) &&
+  count(h, /data-place="dock" data-side="in"/g) === 6);
+check('Outbound Docks 1–6 named on the outbound wall', [1, 2, 3, 4, 5, 6].every(function (n) { return h.indexOf('>Outbound Dock ' + n + '<') !== -1; }) &&
+  count(h, /data-place="dock" data-side="out"/g) === 6);
 check('Inbound Dock N is Inbound Door N; Outbound Dock N is Outbound Door N', m.inbound.every(function (d, i) { return d.doorId === 'Inbound Door ' + (i + 1); }) &&
   m.outbound.every(function (d, i) { return d.doorId === 'Outbound Door ' + (i + 1); }));
-check('no door is two docks (eight distinct places)', (function () {
+check('no door is two docks (twelve distinct places)', (function () {
   var ids = m.inbound.concat(m.outbound).map(function (d) { return d.doorId; });
-  return ids.filter(function (x, i) { return ids.indexOf(x) === i; }).length === 8;
+  return ids.filter(function (x, i) { return ids.indexOf(x) === i; }).length === 12;
 })());
 check('no "Door N" sublabel on a dock', !/class="wm-door"/.test(h));
 check('inbound side: Receiving Bay band (pink)', /class="wm-band wm-col-rcv"[^>]*><span class="wm-band-label">Receiving Bay</.test(h));

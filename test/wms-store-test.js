@@ -129,9 +129,9 @@ function make(f, extra) {
     dressPractice: function (s) { W.dressPractice(s); },
     prepare: function (s) { W.install(s); W.refresh(s); return s; } });
   r = await dPr.load();
-  check('dressing: a practice copy is dressed (bare seed bins stocked, four left empty)',
+  check('dressing: a practice copy is dressed (bare seed bins stocked, seven left empty)',
     r.state.bins.filter(function (b) { return b.id === 'A-03'; })[0].contents.length === 1 &&
-    r.state.bins.filter(function (b) { return !b.contents.length; }).length === 4);
+    r.state.bins.filter(function (b) { return !b.contents.length; }).length === 7);
 
   console.log('\n' + passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);

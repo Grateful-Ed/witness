@@ -124,8 +124,8 @@ E.placeHold(heldAlloc, { binId: 'A-01' }, 'u-sam', 'water damage');
 heldAlloc.outbound.push({ id: 'ORD-903', status: 'open', door: 'Outbound Door 4', lines: [{ binId: 'A-01', desc: PEACH, qty: 30 }] });
 E.generateTasks(heldAlloc);
 var o903 = E.orderById(heldAlloc, 'ORD-903').lines[0];
-check('outbound: held stock is never allocated (A-01 held → best free bin is B-01, 12)',
-  !o903.allocated && o903.short.want === 30 && o903.short.free === 12);
+check('outbound: held stock is never allocated (A-01 held → best free bin is B-09, 16)',
+  !o903.allocated && o903.short.want === 30 && o903.short.free === 16);
 
 /* Held-bin confession: a line allocated from B-04, then B-04 held. */
 var conf = fresh();
@@ -186,9 +186,13 @@ check('holds: releasing what isn\'t held is refused', E.releaseHold(h, { binId: 
 
 var hc = E.seedWorld();
 E.placeHold(hc, { binId: 'B-01' }, 'u-sam', 'recount');
+E.placeHold(hc, { binId: 'B-09' }, 'u-sam', 'recount');
 E.placeHold(hc, { binId: 'A-06' }, 'u-sam', 'recount');
 E.generateTasks(hc);
-check('holds: held bin is not a consolidation candidate', !hc.tasks.some(function (t) { return t.type === 'consolidate'; }));
+check('holds: held bin is not a consolidation candidate', hc.tasks.some(function (t) { return t.type === 'consolidate'; }) &&
+  hc.tasks.filter(function (t) { return t.type === 'consolidate'; }).every(function (t) {
+    return ['B-01', 'B-09', 'A-06'].indexOf(t.fromBinId) === -1 && ['B-01', 'B-09', 'A-06'].indexOf(t.toBinId) === -1;
+  }));
 check('holds: held bin is not a breakdown candidate', !hc.tasks.some(function (t) { return t.type === 'breakdown'; }));
 
 var hp = E.seedWorld();

@@ -44,7 +44,7 @@ W.install(s);
 check('install is idempotent (a second install changes nothing)', snapshot(s) === before);
 var raw = E.seedWorld(); E.generateTasks(raw);
 W.install(raw);
-check('install upgrades a plain engine state without touching its tasks', raw.tasks.length === 12 && !!raw.wms);
+check('install upgrades a plain engine state without touching its tasks', raw.tasks.length === 17 && !!raw.wms);
 
 /* ---------- dock & yard ---------- */
 s = fresh();
@@ -269,13 +269,13 @@ check('priority: High-priority order picks come first within the same type', (fu
 /* ---------- labor proposals ---------- */
 s = fresh();
 var props = W.proposals(s);
-check('proposals: zone A backing up (6 waiting) → move someone from a lighter zone', props.length >= 1 && props[0].toZone === 'A' && /Zone A has 6 tasks waiting/.test(props[0].why));
+check('proposals: zone B backing up (8 waiting) → move someone from a lighter zone', props.length >= 1 && props[0].toZone === 'B' && /Zone B has 8 tasks waiting/.test(props[0].why));
 var u0 = E.unitById(s, props[0].unitId), z0 = u0.zone;
 check('proposals change nothing on their own', u0.zone === z0 && s.wms.decisions.length === 0);
 r = W.decide(s, props[0], false, 'u-sam');
 check('decline: recorded, worker stays', r.ok && u0.zone === z0 && s.wms.decisions[0].approved === false);
 r = W.decide(s, props[0], true, 'u-sam');
-check('approve: the worker\'s zone moves', r.ok && u0.zone === 'A');
+check('approve: the worker\'s zone moves', r.ok && u0.zone === 'B');
 check('approve: a stale proposal is refused', !W.decide(s, props[0], true, 'u-sam').ok);
 
 /* ---------- flags ---------- */

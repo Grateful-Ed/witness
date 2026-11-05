@@ -20,8 +20,9 @@
 
   var SEED = {
 
-    /* Dock doors: eight, on two walls (William's sketch, 2026-11-02).
-       Inbound Door 1–4 take trucks in; Outbound Door 1–4 send loads
+    /* Dock doors: twelve, on two walls (William's sketch, 2026-11-02;
+       expanded 4→6 per side 2026-11-04 — "I know 4 limits it").
+       Inbound Door 1–6 take trucks in; Outbound Door 1–6 send loads
        out. direction says which wall. Each door sits in a zone; state
        is what the door is doing right now. Outbound Door 4 is the
        loading door. */
@@ -30,17 +31,22 @@
       { id: 'Inbound Door 2', direction: 'in', zone: 'A', state: 'staged', shipmentId: null },
       { id: 'Inbound Door 3', direction: 'in', zone: 'B', state: 'empty', shipmentId: null },
       { id: 'Inbound Door 4', direction: 'in', zone: 'C', state: 'staged', shipmentId: null },
+      { id: 'Inbound Door 5', direction: 'in', zone: 'B', state: 'staged', shipmentId: null },
+      { id: 'Inbound Door 6', direction: 'in', zone: 'B', state: 'staged', shipmentId: null },
       { id: 'Outbound Door 1', direction: 'out', zone: 'A', state: 'empty', shipmentId: null },
       { id: 'Outbound Door 2', direction: 'out', zone: 'A', state: 'empty', shipmentId: null },
       { id: 'Outbound Door 3', direction: 'out', zone: 'B', state: 'empty', shipmentId: null },
-      { id: 'Outbound Door 4', direction: 'out', zone: 'C', state: 'loading', shipmentId: null }
+      { id: 'Outbound Door 4', direction: 'out', zone: 'C', state: 'loading', shipmentId: null },
+      { id: 'Outbound Door 5', direction: 'out', zone: 'B', state: 'empty', shipmentId: null },
+      { id: 'Outbound Door 6', direction: 'out', zone: 'C', state: 'empty', shipmentId: null }
     ],
 
     zones: ['A', 'B', 'C'],
 
-    /* Bins: 8 per zone. contents is a list of {desc, qty}; an empty
-       list means an empty bin. needsBreakdown marks a stored pallet
-       that has to come apart into cartons. */
+    /* Bins: 10 per zone (8 until the 2026-11-04 expansion). contents
+       is a list of {desc, qty}; an empty list means an empty bin.
+       needsBreakdown marks a stored pallet that has to come apart
+       into cartons. */
     bins: [
       /* Zone A */
       { id: 'A-01', zone: 'A', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 40 }] },
@@ -51,6 +57,8 @@
       { id: 'A-06', zone: 'A', status: 'ok', needsBreakdown: true, contents: [{ desc: 'Mixed grocery', qty: 24 }] },
       { id: 'A-07', zone: 'A', status: 'ok', contents: [] },
       { id: 'A-08', zone: 'A', status: 'ok', contents: [{ desc: 'Bottled water — cases', qty: 35 }] },
+      { id: 'A-09', zone: 'A', status: 'ok', contents: [{ desc: 'Tomato sauce — cases', qty: 21 }] },
+      { id: 'A-10', zone: 'A', status: 'ok', contents: [] },
       /* Zone B */
       { id: 'B-01', zone: 'B', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 12 }] },
       { id: 'B-02', zone: 'B', status: 'ok', contents: [{ desc: 'Tomato sauce — cases', qty: 28 }] },
@@ -60,6 +68,8 @@
       { id: 'B-06', zone: 'B', status: 'ok', contents: [] },
       { id: 'B-07', zone: 'B', status: 'ok', contents: [{ desc: 'Cooking oil — cases', qty: 20 }] },
       { id: 'B-08', zone: 'B', status: 'ok', contents: [{ desc: 'Flour — bags', qty: 14 }] },
+      { id: 'B-09', zone: 'B', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 16 }] },
+      { id: 'B-10', zone: 'B', status: 'ok', contents: [] },
       /* Zone C */
       { id: 'C-01', zone: 'C', status: 'ok', contents: [{ desc: 'Canned peaches — cases', qty: 9 }] },
       { id: 'C-02', zone: 'C', status: 'ok', contents: [{ desc: 'Green beans — cases', qty: 26 }] },
@@ -68,7 +78,9 @@
       { id: 'C-05', zone: 'C', status: 'ok', contents: [{ desc: 'Coffee — cases', qty: 11 }] },
       { id: 'C-06', zone: 'C', status: 'ok', contents: [] },
       { id: 'C-07', zone: 'C', status: 'ok', contents: [{ desc: 'Tea — cases', qty: 15 }] },
-      { id: 'C-08', zone: 'C', status: 'ok', contents: [{ desc: 'Cereal — cases', qty: 33 }] }
+      { id: 'C-08', zone: 'C', status: 'ok', contents: [{ desc: 'Cereal — cases', qty: 33 }] },
+      { id: 'C-09', zone: 'C', status: 'ok', contents: [{ desc: 'Canned tomatoes — cases', qty: 19 }] },
+      { id: 'C-10', zone: 'C', status: 'ok', contents: [] }
     ],
 
     /* Pallets sitting at the doors, waiting to be put away. */
@@ -76,7 +88,11 @@
       { id: 'STG-1', door: 'Inbound Door 2', desc: 'Paper towels — cases', qty: 18 },
       { id: 'STG-2', door: 'Inbound Door 2', desc: 'Laundry detergent — cases', qty: 24 },
       { id: 'STG-3', door: 'Inbound Door 1', desc: 'Canned peaches — cases', qty: 15 },
-      { id: 'STG-4', door: 'Inbound Door 4', desc: 'Bottled water — cases', qty: 30 }
+      { id: 'STG-4', door: 'Inbound Door 4', desc: 'Bottled water — cases', qty: 30 },
+      { id: 'STG-5', door: 'Inbound Door 5', desc: 'Canned tomatoes — cases', qty: 22 },
+      { id: 'STG-6', door: 'Inbound Door 5', desc: 'Cooking oil — cases', qty: 16 },
+      { id: 'STG-7', door: 'Inbound Door 6', desc: 'Rice — bags', qty: 26 },
+      { id: 'STG-8', door: 'Inbound Door 6', desc: 'Flour — bags', qty: 20 }
     ],
 
     /* Labor units — a labor unit is an employee. Six workers spread
