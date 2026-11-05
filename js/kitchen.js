@@ -159,6 +159,61 @@
     });
   }
 
+  /* ---------- the spoken intake: the wearer TELLS META what they have --
+     William's live test (2026-11-04): "create tasks for what I told
+     it I had" — the glasses' free ask answered as a camera ("I don't
+     see any milk in view... I can't create"), because creation only
+     existed on the receipt scan. But a tell is intake too: the worker
+     says what they have, META reads the items out of the words, and
+     the same createRun below makes the same job. The extraction is
+     META's judgment, not a code-side filter: words that are not a
+     statement of goods come back with no items, and the caller falls
+     through to the free ask, so questions still just get answered. */
+
+  var SPOKEN_PROMPT = [
+    'The wearer of kitchen glasses is telling you, out loud, what groceries they have. Extract the grocery items they say they HAVE, or ask to create tasks for.',
+    '',
+    'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
+    '{\"items\":[{\"name\":\"...\",\"qty\":1,\"type\":\"...\"}]}',
+    '',
+    '- \"name\": the plain product name in everyday words.',
+    '- \"qty\": the amount they state for that item (\"50 gallons of milk\" is qty 50 of milk; \"a dozen eggs\" is qty 12). If no amount is stated, 1.',
+    '- \"type\": one of ' + META_TYPES.map(function (x) { return '\"' + x + '\"'; }).join(', ') + ', or \"unknown\", decided from the product name the same way a receipt read decides it.',
+    '',
+    'If the words are NOT a statement of groceries on hand or a request to make tasks from named groceries — a question, a command about existing work, anything else — return {\"items\":[]}.'
+  ].join('\n');
+
+  /* A /chat body with words only — readBody's envelope minus the photo. */
+  function spokenBody(text) {
+    return JSON.stringify({
+      messages: [
+        { role: 'system', content: SPOKEN_PROMPT },
+        { role: 'user', content: [{ type: 'text', text: String(text || '') }] }
+      ],
+      temperature: 0.1,
+      max_tokens: 2000
+    });
+  }
+
+  function acceptSpoken(parsed) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return Array.isArray(parsed.items) ? parsed : null;
+  }
+
+  /* The spoken read: resolves to the same receipt shape parseReceipt
+     returns, so createRun cannot tell (and does not care) whether the
+     items arrived by camera or by voice. */
+  function readSpoken(B, doFetch, url, text) {
+    return B.sendRead(doFetch, url, spokenBody(text), acceptSpoken).then(function (res) {
+      var v = res ? res.value : null;
+      var items = (v && Array.isArray(v.items) ? v.items : []).map(function (it) {
+        var name = it && typeof it.name === 'string' ? it.name : '';
+        return { printed: name, name: name, qty: it ? it.qty : 1, type: it ? it.type : 'unknown' };
+      });
+      return parseReceipt({ receipt: true, items: items, not_read: [] });
+    });
+  }
+
   /* ---------- the intake: the scan creates the work ------------------- */
 
   function isKitchen(state) { return !!state && state.world === 'kitchen'; }
@@ -192,7 +247,7 @@
      item. E is the engine. Returns { ok, reason, shipmentId, created,
      notRead } — created is item → spot, task by task. Creates nothing
      when the receipt has no items. */
-  function createRun(E, state, receipt, byUnit) {
+  function createRun(E, state, receipt, byUnit, origin) {
     if (!receipt || !receipt.ok || !receipt.items.length) {
       return { ok: false, reason: (receipt && receipt.reason) || 'Nothing read — nothing created.', created: [], notRead: (receipt && receipt.notRead) || [] };
     }
@@ -208,18 +263,19 @@
       lines.push({ desc: it.name, printed: it.printed, pallets: 1, perPallet: it.qty, home: spot, spotSource: spot ? s.source : null });
       staged.push({ id: 'STG-' + id + '-' + (k + 1), door: COUNTER, desc: it.name, qty: it.qty, shipmentId: id, home: spot, spotSource: spot ? s.source : null });
     });
+    var spoken = origin === 'spoken';
     state.inbound.push({
-      id: id, door: COUNTER, desc: JOB_NAME + ' — receipt scan', jobName: JOB_NAME, pallets: lines.length,
-      status: 'received', intake: 'receipt-scan', lines: lines, notRead: receipt.notRead.slice()
+      id: id, door: COUNTER, desc: JOB_NAME + (spoken ? ' — spoken list' : ' — receipt scan'), jobName: JOB_NAME, pallets: lines.length,
+      status: 'received', intake: spoken ? 'spoken-list' : 'receipt-scan', lines: lines, notRead: receipt.notRead.slice()
     });
     staged.forEach(function (p) { state.staging.push(p); });
     var door = null;
     state.doors.forEach(function (d) { if (d.id === COUNTER) door = d; });
     if (door) door.state = 'staged';
-    record(state, 'Receipt scanned by ' + unitName(state, byUnit) + ' — ' + JOB_NAME + ' (' + id + ') created at the ' + COUNTER +
+    record(state, (spoken ? 'List told by ' : 'Receipt scanned by ') + unitName(state, byUnit) + ' — ' + JOB_NAME + ' (' + id + ') created at the ' + COUNTER +
       ': ' + lines.length + ' item' + (lines.length === 1 ? '' : 's') + ' received' +
       (receipt.notRead.length ? '; not read: ' + receipt.notRead.join('; ') : '') + '.',
-      { kind: 'arrive', shipmentId: id, by: byUnit || null, intake: 'receipt-scan' });
+      { kind: 'arrive', shipmentId: id, by: byUnit || null, intake: spoken ? 'spoken-list' : 'receipt-scan' });
     E.generateTasks(state);
     var created = staged.map(function (p) {
       var t = E.taskById(state, 't-putaway-' + p.id);
@@ -316,6 +372,7 @@
     META_TYPES: META_TYPES, RECEIPT_PROMPT: RECEIPT_PROMPT,
     spotFor: spotFor, receiptBody: receiptBody, parseReceipt: parseReceipt, acceptReceipt: acceptReceipt, readReceipt: readReceipt,
     isKitchen: isKitchen, isIntakeMode: isIntakeMode, createRun: createRun, intakeLines: intakeLines,
+    SPOKEN_PROMPT: SPOKEN_PROMPT, spokenBody: spokenBody, readSpoken: readSpoken,
     parseCorrection: parseCorrection, applyCorrection: applyCorrection
   };
 

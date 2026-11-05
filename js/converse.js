@@ -113,14 +113,15 @@
     return t || null;
   }
 
-  /* The kitchen's receipt run — the one shipment a receipt scan
-     created; its item putaways are one job under it. A task belongs
+  /* The kitchen's intake run — the one shipment the kitchen intake
+     created (a receipt scan, or the wearer's spoken list); its item
+     putaways are one job under it. A task belongs
      to it through its staged pallet (the pallet carries the
      shipment's id) — so membership must be read before a close
      takes the pallet out of staging. */
   function receiptRun(state) {
     var ships = state.inbound || [];
-    for (var i = 0; i < ships.length; i++) if (ships[i].intake === 'receipt-scan') return ships[i];
+    for (var i = 0; i < ships.length; i++) if (ships[i].intake === 'receipt-scan' || ships[i].intake === 'spoken-list') return ships[i];
     return null;
   }
   function runOfTask(state, task) {

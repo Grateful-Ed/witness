@@ -11,6 +11,7 @@ var E = require('../js/engine.js');
 var C = require('../js/converse.js');
 var B = require('../js/bol.js');
 var K = require('../js/kitchen.js');
+var G = require('../js/glasses.js');
 var KSEED = require('../data/kitchen-world.js');
 var failures = 0, passes = 0;
 function check(name, cond) { if (cond) { passes++; console.log('PASS  ' + name); } else { failures++; console.log('FAIL  ' + name); } }
@@ -154,6 +155,39 @@ K.readReceipt(B, f9, 'https://w/chat', 'x').then(function (r9) {
   var s9 = kitchen();
   var res9 = K.createRun(E, s9, r9, 'u-william');
   check('chain: a fenced-JSON read of a foreign receipt creates the run', res9.ok && res9.created.length === 8 && everyTaskReal(s9, res9));
+}).then(function () {
+/* --- 10. the spoken intake: tasks from what the wearer TELLS it --------
+   William's live test (2026-11-04): "create tasks for what I told it
+   I had" got a camera's refusal. A tell is intake too. */
+  check('spoken: the prompt carries the fall-through contract (no items = not a goods statement)',
+    /NOT a statement of groceries/.test(K.SPOKEN_PROMPT) && /items/.test(K.SPOKEN_PROMPT));
+  var f10 = stubFetch([reply({ items: [
+    { name: 'milk', qty: 50, type: 'refrigerated' },
+    { name: 'eggs', qty: 12, type: 'refrigerated' },
+    { name: 'sourdough loaf', qty: 1, type: 'bakery-snacks-coffee' },
+    { name: 'quinoa', qty: 1, type: 'dry-goods' }
+  ] })]);
+  return K.readSpoken(B, f10, 'https://w/chat', 'Can you create tasks? I have 50 gallons of milk, a dozen eggs, a sourdough loaf and some quinoa').then(function (r10) {
+    check('spoken: the tell parses into items', r10.ok && r10.items.length === 4);
+    var s10 = kitchen();
+    var res10 = K.createRun(E, s10, r10, 'u-william', 'spoken');
+    check('spoken: the tell creates the same Groceries putaway job', res10.ok && res10.created.length === 4 && everyTaskReal(s10, res10));
+    var milkTask = E.taskById(s10, res10.created[0].taskId);
+    check('spoken: "50 gallons of milk" is one task of 50, in the Fridge', /Put away 50 × milk/.test(milkTask.title) && milkTask.toBinId === 'Fridge');
+    check('spoken: the record tells the truth about how the run was made',
+      s10.inbound[0].intake === 'spoken-list' && s10.records.some(function (rec) { return rec.intake === 'spoken-list' && /^List told by/.test(rec.text); }));
+    C.workerTurn(E, s10, E.unitById(s10, 'u-william'), C.matchIntent("what's next"));
+    var ch10 = G.chipsFor(E, s10, E.unitById(s10, 'u-william'));
+    check('spoken: the glance counts inside the told run too', ch10.task === 'Task 1 of 4' && ch10.item === 'milk');
+    var end10 = walkToEnd(s10, E.unitById(s10, 'u-william'), 4);
+    check('spoken: the told run walks to its finish by voice', JSON.stringify(end10) === JSON.stringify(['Groceries putaway complete.']));
+    var f10b = stubFetch([reply({ items: [] })]);
+    return K.readSpoken(B, f10b, 'https://w/chat', 'What is the weather like today?').then(function (r10b) {
+      check('spoken: words with no goods in them create nothing (the caller falls through to the ask)',
+        !r10b.ok && r10b.items.length === 0);
+    });
+  });
+}).then(function () {
   console.log('---');
   console.log(passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);
