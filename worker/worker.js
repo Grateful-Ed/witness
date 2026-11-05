@@ -30,8 +30,9 @@
      approved by William 2026-10-31).
      No key or secret value ever appears in this file; both live as
      Worker bindings/secrets set outside the repo.
-   - POST /segment — {imageUrl, concept}: one SAM 3.1 concept
-     segmentation of one public image, over Meta's Responses API.
+   - POST /segment — {imageData, concept}: one SAM 3.1 concept
+     segmentation of one image sent as a data URL, over Meta's
+     Responses API.
      Answers {concept, matches: [{box: {x1,y1,x2,y2}, score?}]} with
      boxes normalized 0–1000 in the image's own frame. Masks are parsed
      past and never forwarded (SAM toggle brief, William 2026-11-05).
@@ -70,13 +71,17 @@ const MAX_CHAT_IMAGE_BODY_CHARS = 1500000;
 const STATE_KEY = '__warehouse_state__';
 /* /segment: SAM 3.1, one concept per call (Meta's docs: one noun
    phrase per request; lists return nothing). The concept set is the
-   SAM toggle brief's, fixed server-side so the route cannot be used
-   as an open segmentation proxy. Images must be the project's own
-   public files. */
+   SAM toggle brief's, fixed server-side, and the route answers only
+   same-origin callers, so it cannot be used as an open segmentation
+   proxy. The image travels as a data URL, not a public URL: the
+   upstream refuses to fetch this project's Pages URLs (live-proven
+   2026-11-05, HTTP 400 media_url_not_fetchable), while the same call
+   with a data URL answers normally. The cap follows the /chat
+   data-image precedent (MAX_CHAT_IMAGE_BODY_CHARS): a full sheet as
+   base64 JPEG is most of a megabyte. */
 const SAM_MODEL = 'sam-3.1';
 const SAM_CONCEPTS = ['cardboard box', 'shipping label', 'damaged cardboard box', 'torn plastic wrap'];
-const SAM_IMAGE_PREFIX = 'https://grateful-ed.github.io/witness/';
-const MAX_SEGMENT_BODY_CHARS = 2000;
+const MAX_SEGMENT_BODY_CHARS = 1600000;
 const MAX_STATE_BODY_CHARS = 500000;
 
 function originAllowed(origin) {
@@ -369,8 +374,10 @@ async function handleStatePost(request, env) {
    (dev.meta.ai/docs/media-segmentation, /docs/sam/segmenting,
    /docs/sam/reading-segmentation):
    - request: one user message with an input_text part (the concept,
-     a bare noun phrase) and an input_image part (image_url: a public
-     URL or a data URL). metadata.include_confidence "true" asks for c;
+     a bare noun phrase) and an input_image part carrying the image
+     as a data URL (the upstream will not fetch this project's public
+     URLs — see the constants note). metadata.include_confidence
+     "true" asks for c;
      metadata.mask_encoding "one_bit" keeps the reply small (the masks
      are thrown away here anyway). store false: nothing kept upstream.
    - reply: special-token text in output_text. One line per frame
@@ -439,8 +446,8 @@ async function handleSegment(request, env) {
   } catch (e) {
     return json(400, { error: 'expected a JSON body' }, origin);
   }
-  if (!body || typeof body.imageUrl !== 'string' || body.imageUrl.indexOf(SAM_IMAGE_PREFIX) !== 0) {
-    return json(400, { error: 'body needs an "imageUrl" that is one of the project\'s own public images' }, origin);
+  if (!body || typeof body.imageData !== 'string' || body.imageData.indexOf('data:image/') !== 0 || body.imageData.indexOf(';base64,') === -1) {
+    return json(400, { error: 'body needs an "imageData" data URL (data:image/...;base64,...)' }, origin);
   }
   if (SAM_CONCEPTS.indexOf(body.concept) === -1) {
     return json(400, { error: 'body needs a "concept" from: ' + SAM_CONCEPTS.join(', ') }, origin);
@@ -453,7 +460,7 @@ async function handleSegment(request, env) {
       role: 'user',
       content: [
         { type: 'input_text', text: body.concept },
-        { type: 'input_image', image_url: body.imageUrl }
+        { type: 'input_image', image_url: body.imageData }
       ]
     }],
     metadata: { include_confidence: 'true', mask_encoding: 'one_bit' },

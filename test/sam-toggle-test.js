@@ -159,7 +159,7 @@ check('record ON: samEvidence is {on, concepts{count, boxes}}', recOn.samEvidenc
 /* ---------- the Worker: /segment and /save samEvidence --------------- */
 var ORIGIN = 'http://localhost:8902';
 var BASE = 'https://witness.example.workers.dev';
-var SHEET = 'https://grateful-ed.github.io/witness/test-data/photos/load-b-peaches-stack.webp';
+var SHEET_DATA = 'data:image/webp;base64,AAAA';
 function req(method, p, body, extraHeaders) {
   var headers = Object.assign({ 'Origin': ORIGIN, 'Content-Type': 'application/json' }, extraHeaders || {});
   var init = { method: method, headers: headers };
@@ -196,7 +196,7 @@ var WIRE = '<0f>0<|box;x1=160;y1=320;x2=319;y2=479;w=1600;h=1600;c=0.875|><|mask
   }
 
   reply = upstream(WIRE);
-  var r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }), env);
+  var r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }), env);
   var j = await r.json();
   check('/segment: 200 with {concept, matches}', r.status === 200 && j.concept === 'cardboard box' && Array.isArray(j.matches));
   check('/segment: one match per box record (3)', j.matches.length === 3);
@@ -208,52 +208,54 @@ var WIRE = '<0f>0<|box;x1=160;y1=320;x2=319;y2=479;w=1600;h=1600;c=0.875|><|mask
   var up = sent[0];
   check('/segment upstream: POST /v1/responses with the Worker\'s key',
     up.url === 'https://api.meta.ai/v1/responses' && up.auth === 'Bearer test-key');
-  check('/segment upstream: model sam-3.1, one user message, input_text concept + input_image URL',
+  check('/segment upstream: model sam-3.1, one user message, input_text concept + input_image data URL',
     up.body.model === 'sam-3.1' && up.body.input.length === 1 && up.body.input[0].type === 'message' &&
     up.body.input[0].role === 'user' &&
     up.body.input[0].content[0].type === 'input_text' && up.body.input[0].content[0].text === 'cardboard box' &&
-    up.body.input[0].content[1].type === 'input_image' && up.body.input[0].content[1].image_url === SHEET);
+    up.body.input[0].content[1].type === 'input_image' && up.body.input[0].content[1].image_url === SHEET_DATA);
   check('/segment upstream: confidence asked as the string "true", one_bit masks, store false',
     up.body.metadata.include_confidence === 'true' && up.body.metadata.mask_encoding === 'one_bit' && up.body.store === false);
 
   reply = upstream('');
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'torn plastic wrap' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'torn plastic wrap' }), env);
   j = await r.json();
   check('/segment: zero matches (empty output_text) is 200 with no matches', r.status === 200 && j.matches.length === 0);
 
   reply = upstream('<0f>0<|box;x1=1;y1=2;x2=3|><|mask;x=0;y=0;data=1,1,~a|>,1<|box;x1=a;y1=2;x2=3;y2=4;w=10;h=10|><|mask;x=0;y=0;data=1,1,~a|>');
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }), env);
   j = await r.json();
   check('/segment: malformed box tokens are skipped, not invented', r.status === 200 && j.matches.length === 0);
 
   var n = sent.length;
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'bus, bicycle' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'bus, bicycle' }), env);
   check('/segment: a concept outside the set is 400, no upstream call', r.status === 400 && sent.length === n);
   r = await worker.fetch(req('POST', '/segment', { imageUrl: 'https://evil.example/x.png', concept: 'cardboard box' }), env);
-  check('/segment: an image outside the project is 400, no upstream call', r.status === 400 && sent.length === n);
+  check('/segment: the old URL shape is 400, no upstream call', r.status === 400 && sent.length === n);
+  r = await worker.fetch(req('POST', '/segment', { imageData: 'data:text/html;base64,AAAA', concept: 'cardboard box' }), env);
+  check('/segment: a non-image data URL is 400, no upstream call', r.status === 400 && sent.length === n);
   r = await worker.fetch(req('POST', '/segment', 'not json'), env);
   check('/segment: not JSON is 400', r.status === 400);
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box', pad: 'x'.repeat(3000) }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box', pad: 'x'.repeat(1700000) }), env);
   check('/segment: an oversized body is 413', r.status === 413);
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }, { 'Origin': 'https://evil.example' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }, { 'Origin': 'https://evil.example' }), env);
   check('/segment: a foreign origin is 403', r.status === 403);
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }), {});
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }), {});
   check('/segment: no META_API_KEY is 500 with a plain error', r.status === 500 && /META_API_KEY/.test((await r.json()).error));
   r = await worker.fetch(req('GET', '/segment'), env);
   check('/segment: GET is 405', r.status === 405);
 
   reply = upstream('x', 404);
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }), env);
   j = await r.json();
   check('/segment: an upstream error is 502 naming the status', r.status === 502 && /HTTP 404/.test(j.error));
   reply = 'throw';
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }), env);
   check('/segment: upstream unreachable is 502', r.status === 502 && /unreachable/.test((await r.json()).error));
   reply = new Response('<html>', { status: 200 });
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }), env);
   check('/segment: an unreadable upstream body is 502', r.status === 502);
   reply = new Response(JSON.stringify({ choices: [] }), { status: 200 });
-  r = await worker.fetch(req('POST', '/segment', { imageUrl: SHEET, concept: 'cardboard box' }), env);
+  r = await worker.fetch(req('POST', '/segment', { imageData: SHEET_DATA, concept: 'cardboard box' }), env);
   check('/segment: an upstream reply with no output array is 502', r.status === 502);
 
   r = await worker.fetch(req('GET', '/nope'), env);

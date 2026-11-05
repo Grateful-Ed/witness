@@ -383,12 +383,37 @@
     try { window.localStorage.setItem(SAM_STORE_KEY, on ? 'on' : 'off'); } catch (e) { /* the switch still works for this page */ }
   }
 
+  /* The sheet as a data URL, for /segment: the segmentation service
+     will not fetch this project's public image URLs (live-proven
+     2026-11-05, HTTP 400 media_url_not_fetchable), so the image
+     travels inside the request. Built from the sheet file on this
+     origin — the geometry path the overlay uses — canvas-encoded as
+     JPEG at natural size: SAM reads geometry from it, and the label
+     crops still come from the full sheet image itself. Resolves null
+     when the image cannot be encoded. */
+  function sheetDataUrl(loadKey) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = function () { resolve(null); };
+      img.src = SHEET_GEOMETRY[loadKey] ? SHEET_GEOMETRY[loadKey].file : SHEETS[loadKey];
+    });
+  }
+
   /* One /segment call. Never rejects: a failure is {concept, failed}. */
-  function askSegment(loadKey, concept) {
+  function askSegment(imageData, concept) {
     return fetch(SEGMENT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageUrl: SHEETS[loadKey], concept: concept })
+      body: JSON.stringify({ imageData: imageData, concept: concept })
     }).then(function (r) {
       if (!r.ok) return { concept: concept, failed: true };
       return r.json().then(function (j) {
@@ -399,8 +424,13 @@
   }
 
   function runSam(loadKey) {
-    return Promise.all(SAM_CONCEPTS.map(function (c) { return askSegment(loadKey, c); }))
-      .then(function (results) { return buildSamEvidence(loadKey, results); });
+    return sheetDataUrl(loadKey).then(function (imageData) {
+      if (!imageData) {
+        return buildSamEvidence(loadKey, SAM_CONCEPTS.map(function (c) { return { concept: c, failed: true }; }));
+      }
+      return Promise.all(SAM_CONCEPTS.map(function (c) { return askSegment(imageData, c); }))
+        .then(function (results) { return buildSamEvidence(loadKey, results); });
+    });
   }
 
   var SAM_COLORS = {

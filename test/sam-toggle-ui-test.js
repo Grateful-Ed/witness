@@ -117,7 +117,7 @@ server.listen(0, async function () {
   var res = await page.evaluate(function (scan) { return window.WitnessPhoto.runWithScan(scan); }, SCAN);
   check('ON: one /segment call per concept, four in all', segments.length === 4 &&
     segments.map(function (s) { return s.concept; }).sort().join('|') === ['cardboard box', 'damaged cardboard box', 'shipping label', 'torn plastic wrap'].join('|'));
-  check('ON: /segment sends the sheet\'s public URL', segments.every(function (s) { return s.imageUrl === 'https://grateful-ed.github.io/witness/test-data/photos/load-b-peaches-stack.webp'; }));
+  check('ON: /segment sends the sheet as a data URL', segments.every(function (s) { return typeof s.imageData === 'string' && s.imageData.indexOf('data:image/jpeg;base64,') === 0; }));
   check('ON: a failed concept did not block the scan', !!res && res.verdicts.length === 1);
   var labelCalls = chats.filter(function (c) { return /crop of a contact-sheet photo/.test(c.messages[0].content); });
   check('ON: the located label was cropped and read through /chat as a data: image',
