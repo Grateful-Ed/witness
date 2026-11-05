@@ -56,29 +56,38 @@ function turn(s, uid, words, e, pending, label) {
   check('local: a problem beats a yes ("yes but the case is crushed")', V.localIntent('yes but the case is crushed', { pending: true }) === 'problem');
   check('local: a problem beats done ("done, but the pallet is torn")', V.localIntent('done, but the pallet is torn') === 'problem');
   check('local: "picked eight, two short" with a pick in hand is a completion', V.localIntent('picked eight, two short', { pickInHand: true }) === 'complete');
-  check('local: "what\'s next" pulls next; "say that again" repeats', V.localIntent("what's next") === 'next' && V.localIntent('say that again') === 'repeat');
+  check('local: "what\'s next" asks next; "say that again" repeats', V.localIntent("what's next") === 'next' && V.localIntent('say that again') === 'repeat');
 
-  /* ---------- the offer is the queue's own, read on a copy ---------- */
+  /* ---------- "what's next" is a question: the assigned list ---------- */
+  /* William, 2026-11-05: tasks are assigned, not pulled. The answer
+     names the next task on the worker's OWN assigned list; nothing is
+     staged, assigned, or pulled from the unassigned pool. */
   var s = fresh();
   var before = snap(s);
-  var peek = V.peekNext(s, TOMMY);
-  check('offer: the next task comes from the engine\'s own queue (W.nextFor), nothing assigned', !!peek && snap(s) === before &&
-    peek.id === W.nextFor(JSON.parse(before), TOMMY).task.id);
-  check('offer line: task + destination (pick names the bin)', /^Pick 10 × Rice — bags from Bin B-04 for ORD-501\.$/.test(V.offerLine(s, peek)));
-  var ctx = V.context(s, TOMMY, null);
-  check('context: worker, zone, nothing in hand, the next three — and reading it changes nothing',
-    ctx.worker === 'Tommy Nguyen' && ctx.zone === 'B' && ctx.inHand === null && ctx.nextUp.length === 3 && snap(s) === before);
-
-  /* ---------- pull next: stage, ask, yes takes ---------- */
   var d = turn(s, TOMMY, "what's next", env('next'));
-  check('pull next: stages "take it?" and asks — zero mutation', !!d.stage && d.stage.kind === 'take' && /Take it\? Say yes/.test(d.say) && snap(s) === before);
-  var take = d.stage;
-  d = turn(s, TOMMY, 'no', null, take);
-  check('pull next: "no" leaves it — nothing taken', !d.stage && !d.run && /^Not taken/.test(d.say) && snap(s) === before && !W.currentOf(s, TOMMY));
-  d = turn(s, TOMMY, 'yes', null, take);
+  check('next: nothing assigned → says so plainly — nothing staged, zero mutation', d.say === 'Nothing is assigned to you right now.' && !d.stage && !d.run && snap(s) === before);
+  check('next: the unassigned pool is never offered (Rice for ORD-501 is open but not Tommy\'s)', !/Rice/.test(d.say) && !W.currentOf(s, TOMMY));
+  var ctx = V.context(s, TOMMY, null);
+  check('context: worker, zone, nothing in hand, nothing assigned — and reading it changes nothing',
+    ctx.worker === 'Tommy Nguyen' && ctx.zone === 'B' && ctx.inHand === null && ctx.nextUp.length === 0 && snap(s) === before);
+  var q = fresh();
+  task(q, 't-pick-ORD-503-B-02').queuedFor = TOMMY;   /* assigned to Tommy ahead of time, not yet in hand */
+  before = snap(q);
+  d = turn(q, TOMMY, 'what is next', env('next'));
+  check('next: empty hands → names the first assigned task, task + destination — zero mutation',
+    d.say === 'Your first assigned task: Pick 6 × Tomato sauce — cases from Bin B-02 for ORD-503.' && !d.stage && snap(q) === before && !W.currentOf(q, TOMMY));
+  d = turn(q, TOMMY, 'yes', null, null);
+  check('next: a yes after the answer takes nothing (nothing was staged)', !d.run && snap(q) === before);
+  /* the WMS assigns two tasks to Tommy: one in hand, one queued behind it */
+  W.reassign(s, 't-pick-ORD-501-B-04', TOMMY, 'u-sam');
+  W.reassign(s, 't-pick-ORD-503-B-02', TOMMY, 'u-sam');
   var cur = W.currentOf(s, TOMMY);
-  check('pull next: "yes" takes exactly the offered task through W.nextFor', d.result.ok && cur && cur.id === peek.id && cur.status === 'assigned' &&
-    cur.assignee === TOMMY && /^Taken: Pick 10/.test(d.result.text));
+  before = snap(s);
+  d = turn(s, TOMMY, "what's next", env('next'));
+  check('next: with a task in hand → names the one after it on his list — zero mutation',
+    cur && cur.id === 't-pick-ORD-501-B-04' && d.say === 'After this one: Pick 6 × Tomato sauce — cases from Bin B-02 for ORD-503.' && !d.stage && snap(s) === before);
+  check('offer line: task + destination (pick names the bin)', V.offerLine(s, cur) === 'Pick 10 × Rice — bags from Bin B-04 for ORD-501.');
+  check('context: the next-up list is the assigned list only', V.context(s, TOMMY, null).nextUp.length === 1);
 
   /* ---------- repeat and question mutate nothing ---------- */
   before = snap(s);
@@ -98,16 +107,19 @@ function turn(s, uid, words, e, pending, label) {
   d = turn(s, TOMMY, 'nope', null, stage);
   check('complete: "no" leaves it open, nothing closes', /^Left open: "Pick 10/.test(d.say) && snap(s) === before);
   d = turn(s, TOMMY, "what's next", env('next'), stage);
-  check('complete: any other turn clears the stage, with a left-open note, and is its own turn', /^Left open/.test(d.note) && /^Still in hand/.test(d.say) && !d.stage && snap(s) === before);
+  check('complete: any other turn clears the stage, with a left-open note, and is its own turn', /^Left open/.test(d.note) && /^After this one/.test(d.say) && !d.stage && snap(s) === before);
   d = turn(s, TOMMY, 'yes', null, null);
   check('…and the yes after it has nothing to run (the stage lived one turn)', !d.run && snap(s) === before);
   d = turn(s, TOMMY, 'picked 10', env('complete'));
   var rice = binQty(s, 'B-04', 'Rice — bags');
   d = turn(s, TOMMY, 'yes', null, d.stage);
   var done = task(s, cur.id);
-  var next = W.currentOf(s, TOMMY);
   check('complete: "yes" closes through the WMS path — stock moved, task done', d.result.ok && done.status === 'done' && binQty(s, 'B-04', 'Rice — bags') === rice - 10);
-  check('complete: the next task is pulled, and the words come from the result', !!next && next.id !== cur.id && d.result.text === 'Picked 10 × Rice — bags. Next: ' + next.title + '.');
+  check('complete: nothing is pulled — the next assigned task is only named, words from the result',
+    !W.currentOf(s, TOMMY) && task(s, 't-pick-ORD-503-B-02').status === 'open' && task(s, 't-pick-ORD-503-B-02').queuedFor === TOMMY &&
+    d.result.text === 'Picked 10 × Rice — bags. Next on your list: Pick 6 × Tomato sauce — cases from Bin B-02 for ORD-503.');
+  W.nextFor(s, TOMMY);   /* the WMS hands him his assigned task (assignment is not voice's job) */
+  check('the assigned task goes in hand by the WMS, not by voice', W.currentOf(s, TOMMY).id === 't-pick-ORD-503-B-02');
   var rec = s.records.filter(function (r) { return r.taskId === cur.id && r.kind === 'complete'; })[0];
   check('attribution: who and when as a click, plus "by voice" and the words',
     done.doneBy === TOMMY && !!done.doneAt && done.via === 'voice' && done.heard === 'picked 10' && rec && rec.by === TOMMY && rec.via === 'voice' && rec.heard === 'picked 10');
@@ -131,7 +143,7 @@ function turn(s, uid, words, e, pending, label) {
   check('a pick with no count asks for the count — nothing staged', /^Say the count you picked/.test(d.say) && !d.stage && snap(s) === before);
 
   /* ---------- engine refusal: honest words, zero mutation ---------- */
-  next = W.currentOf(s, TOMMY);
+  var next = W.currentOf(s, TOMMY);
   d = turn(s, TOMMY, 'picked ' + next.qty, env('complete'));
   stage = d.stage;
   /* the bin is emptied underneath before the yes lands */
@@ -151,15 +163,6 @@ function turn(s, uid, words, e, pending, label) {
   before = snap(s);
   d = turn(s, TOMMY, 'yes', null, stage);
   check('refusal: the staged task was closed elsewhere first — honest note, nothing changes', d.result.ok === false && /no longer in your hands/.test(d.result.reason) && snap(s) === before);
-  /* the queue moved under a staged "take" */
-  s = fresh();
-  d = turn(s, TOMMY, "what's next", env('next'));
-  stage = d.stage;
-  W.nextFor(s, 'u-rosa');            /* Rosa takes it first */
-  var rosaTook = W.currentOf(s, 'u-rosa');
-  before = snap(s);
-  d = turn(s, TOMMY, 'yes', null, stage);
-  check('refusal: a staged take after the queue moved is refused honestly', rosaTook && rosaTook.id === stage.taskId && d.result.ok === false && /queue moved/.test(d.result.reason) && snap(s) === before);
 
   /* ---------- short pick rides the pick path ---------- */
   s = fresh();

@@ -282,14 +282,14 @@
   var WORK_ABOUT = ['current', 'other', 'unclear'];
 
   var WORK_PROMPT = [
-    'You are META, the voice of Witness — the same META a worker talks to through the warehouse glasses. You are on the warehouse console with one worker, working their real task queue. The context below says who the worker is, the task in their hands (if any), a question waiting for their yes or no (if any), and what is next in their queue.',
+    'You are META, the voice of Witness — the same META a worker talks to through the warehouse glasses. You are on the warehouse console with one worker, working their real task queue. The context below says who the worker is, the task in their hands (if any), a question waiting for their yes or no (if any), and what is next on their assigned list (the WMS assigns work to each worker ahead of time).',
     '',
     'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
     '{"intent":"answer","about":"current","say":"..."}',
     '',
     '"intent" is one of:',
     '- "complete": the worker says the task in their hands is done (including a spoken pick quantity, a bin they put it in, or a count). Only when their words mean it is finished.',
-    '- "next": the worker asks for their next task.',
+    '- "next": the worker asks what their next task is. It is a question: the console answers it from the worker\'s own assigned list and assigns nothing.',
     '- "repeat": the worker asks you to repeat or say again what their task is.',
     '- "problem": the worker reports something wrong — damage, a shortage, a spill, a wrong pallet, anything broken or unsafe. A task with a problem is not finished: never "complete".',
     '- "confirm": the worker says yes to the question waiting for them.',
@@ -316,10 +316,10 @@
     lines.push(c.inHand ? 'Task in hand: ' + c.inHand : 'No task in hand.');
     if (c.pending) lines.push('Waiting for the worker\'s yes or no: ' + c.pending);
     if (c.nextUp && c.nextUp.length) {
-      lines.push('Next in the queue:');
+      lines.push('Next on the worker\'s assigned list:');
       c.nextUp.forEach(function (o, i) { lines.push((i + 1) + '. ' + o); });
     } else {
-      lines.push('Nothing else is waiting in the queue.');
+      lines.push('Nothing else is assigned to the worker.');
     }
     lines.push('');
     lines.push('THE WORKER SAID (verbatim):');

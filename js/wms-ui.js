@@ -910,9 +910,9 @@
   function dest(binId) { return 'Stage: Bin ' + (binId || '?'); }
 
   /* ---- Work by voice (the full-flow voice brief) ----
-     Rides the task-queue screens. The worker's current offer is the
-     queue's own (W.currentOf, else what W.nextFor would hand them —
-     read on a copy, nothing assigned). Hold to talk: every act is
+     Rides the task-queue screens. The worker's offer is their own
+     assigned list (the task in hand, else their first assigned task —
+     read only; voice never assigns or pulls). Hold to talk: every act is
      staged and asked; only the next turn's yes runs it, through the
      WMS layer's own paths (js/wms-voice.js). */
   function voiceUnit() {
@@ -924,8 +924,8 @@
   function voiceOffer(uid) {
     var cur = W.currentOf(state, uid);
     if (cur) return 'In hand: <b>' + esc(V.offerLine(state, cur)) + '</b>';
-    var nx = V.peekNext(state, uid);
-    return nx ? 'Nothing in hand. Next up: <b>' + esc(V.offerLine(state, nx)) + '</b>' : 'Nothing in hand, and nothing waiting.';
+    var nx = V.nextAssigned(state, uid);
+    return nx ? 'Nothing in hand. First assigned: <b>' + esc(V.offerLine(state, nx)) + '</b>' : 'Nothing in hand, and nothing assigned.';
   }
   function voiceLines(uid) {
     var v = ui.voice, out = '';

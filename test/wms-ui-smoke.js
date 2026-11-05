@@ -281,6 +281,7 @@ server.listen(0, async function () {
      asks with nothing saved; only the next yes saves. */
   async function say(text) {
     asrText = text;
+    await page.locator('#wvTalk').scrollIntoViewIfNeeded();
     var b = await page.locator('#wvTalk').boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
     await page.mouse.down();
@@ -298,13 +299,25 @@ server.listen(0, async function () {
   var tommyBefore = s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId;
   var vp = posts;
   var v1 = await say("what's next");
-  s = await st();
-  check('voice: "what\'s next" stages the queue\'s offer and asks — nothing saved', /Take it\? Say yes/.test(v1.line) && v1.staged && posts === vp && !tommyBefore &&
-    !s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId && v1.shown === v1.line);
-  var v2 = await say('yes');
+  check('voice: "what\'s next" with nothing assigned says so plainly — nothing staged, nothing saved',
+    v1.line === 'Nothing is assigned to you right now.' && !v1.staged && posts === vp && !tommyBefore && v1.shown === v1.line);
+  /* The desk assigns Tommy two tasks (Reassign): one in hand, one queued behind it. */
+  var picksB = s.tasks.filter(function (t) { return t.type === 'pick' && t.zone === 'B' && t.status === 'open' && !t.queuedFor; });
+  for (var pi = 0; pi < 2; pi++) {
+    await page.selectOption('#raTask', picksB[pi].id);
+    await page.selectOption('#raUnit', 'u-tommy');
+    await click('[data-act="reassign"]');
+  }
+  await page.selectOption('#wvWho', 'u-tommy');
+  await page.waitForTimeout(150);
   s = await st();
   var tCur = s.tasks.find(function (t) { return t.id === s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId; });
-  check('voice: the next "yes" takes it — one save', /^Taken: /.test(v2.line) && posts === vp + 1 && !!tCur && tCur.takenVia === 'voice');
+  vp = posts;
+  var v2 = await say("what's next");
+  s = await st();
+  check('voice: "what\'s next" names the next task on his assigned list — nothing staged, nothing saved, nothing pulled',
+    /^After this one: Pick /.test(v2.line) && !v2.staged && posts === vp && !!tCur && tCur.id === picksB[0].id &&
+    s.tasks.find(function (t) { return t.id === picksB[1].id; }).queuedFor === 'u-tommy');
   vp = posts;
   var doneWords = tCur.type === 'pick' ? 'picked ' + tCur.qty : 'done';
   var v3 = await say(doneWords);
@@ -312,8 +325,9 @@ server.listen(0, async function () {
   var v4 = await say('yes');
   s = await st();
   var closed = s.tasks.find(function (t) { return t.id === tCur.id; });
-  check('voice: the next "yes" closes it through the WMS path, attributed by voice, words after the act', closed.status === 'done' && closed.via === 'voice' &&
-    closed.doneBy === 'u-tommy' && posts === vp + 1 && !v4.refused && /Next:|Nothing else waiting/.test(v4.line));
+  check('voice: the next "yes" closes it through the WMS path, attributed by voice, words after the act — and pulls nothing', closed.status === 'done' && closed.via === 'voice' &&
+    closed.doneBy === 'u-tommy' && posts === vp + 1 && !v4.refused && /Next on your list: Pick /.test(v4.line) &&
+    !s.labor.find(function (u) { return u.id === 'u-tommy'; }).currentTaskId);
   vp = posts;
   var v5 = await say('oil leaking by B-03');
   var v6 = await say('no');

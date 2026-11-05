@@ -12,14 +12,17 @@
        resolves it against the live state and decides what happens.
      - Every state-changing act STAGES and asks (the confirmation law,
        briefs/claude-brief-completion-confirm.md, carried to every act
-       this build adds): a completion, taking the next task, filing a
-       flag. Only the NEXT heard turn's yes runs it. Anything else
+       this build adds): a completion, filing a flag. Only the NEXT heard turn's yes runs it. Anything else
        clears the stage — a staged act never lingers past one turn.
-     - A run executes through js/wms.js's own paths (W.act → W.complete
-       → W.nextFor, W.nextFor, W.flag) with the engine's validation,
+     - A run executes through js/wms.js's own paths (W.complete — the
+       clicks' path — and W.flag) with the engine's validation,
        re-checked on the fresh state. A refusal returns the honest
        reason; success words are only ever built from the result.
-     - Questions, repeats and asks mutate nothing.
+     - Questions, repeats and asks mutate nothing. "What's next" is a
+       question too (William, 2026-11-05: tasks are ASSIGNED, not
+       pulled): it names the next task on the worker's own assigned
+       list and never assigns or pulls anything. Pull semantics live
+       only in Walk the Shift.
      - Ambiguity asks, never guesses: a completion whose words name a
        different bin, pallet or order than the task in hand — or that
        the model cannot tie to the task in hand — asks which task.
@@ -97,35 +100,27 @@
   }
   function taskById(state, id) { return find(state.tasks, function (t) { return t.id === id; }); }
   function unitById(state, id) { return find(state.labor, function (u) { return u.id === id; }); }
-  function copy(o) { return JSON.parse(JSON.stringify(o)); }
 
-  /* The task the engine's queue logic would hand this worker next —
-     found by running the real W.nextFor on a throwaway copy, so the
-     offer is exactly what a yes would take, and nothing is assigned. */
-  function peekNext(state, unitId) {
-    if (!W) return null;
-    var r = W.nextFor(copy(state), unitId);
-    return r && r.ok && r.task && !r.already ? taskById(state, r.task.id) : null;
+  /* The worker's own ASSIGNED list (William, 2026-11-05: tasks are
+     assigned, not pulled — the WMS assigns work to each user ahead of
+     time). Read only: the task in hand, then the tasks assigned to
+     this worker and waiting (queued for them). Never the unassigned
+     pool; nothing here assigns anything. */
+  function assignedList(state, unitId) {
+    var cur = W ? W.currentOf(state, unitId) : null;
+    var waiting = (state.tasks || []).filter(function (t) {
+      if (cur && t.id === cur.id) return false;
+      if (t.status === 'assigned' && t.assignee === unitId) return true;
+      return t.status === 'open' && t.queuedFor === unitId;
+    });
+    return { inHand: cur, waiting: waiting };
   }
 
-  /* The next few in this worker's queue, read only (for the model). */
-  function upcoming(state, unitId, n) {
-    if (!W) return [];
-    var c = copy(state), out = [];
-    var cur = W.currentOf(c, unitId);
-    for (var i = 0; i < (n || 3); i++) {
-      if (cur) {
-        /* step past the task in hand without touching the real state */
-        cur.status = 'done';
-        var u = unitById(c, unitId);
-        if (u) u.currentTaskId = null;
-      }
-      var r = W.nextFor(c, unitId);
-      if (!r || !r.task) break;
-      out.push(r.task);
-      cur = r.task;
-    }
-    return out;
+  /* "What's next" answered from that list: the one after the task in
+     hand, or the first assigned task when the hands are empty. */
+  function nextAssigned(state, unitId) {
+    var a = assignedList(state, unitId);
+    return a.waiting.length ? a.waiting[0] : null;
   }
 
   /* A task as the program offers it: the work and its destination
@@ -155,7 +150,7 @@
       zone: u ? u.zone : null,
       inHand: cur ? offerLine(state, cur) : null,
       pending: pending ? pending.question : null,
-      nextUp: upcoming(state, unitId, 3).map(function (t) { return offerLine(state, t); })
+      nextUp: assignedList(state, unitId).waiting.slice(0, 3).map(function (t) { return offerLine(state, t); })
     };
   }
 
@@ -272,13 +267,9 @@
 
     if (intent === 'problem') return stageFlag(state, u, cur, words, out);
     if (intent === 'complete') return stageComplete(state, u, cur, words, env, out);
-    if (intent === 'next') return stageNext(state, u, cur, out);
+    if (intent === 'next') { out.say = nextLine(state, u.id, cur); return out; }
     if (intent === 'repeat') {
-      if (cur) out.say = 'In hand: ' + offerLine(state, cur);
-      else {
-        var nx = peekNext(state, u.id);
-        out.say = nx ? 'Nothing in hand. Next up: ' + offerLine(state, nx) + ' Say "what\'s next" to take it.' : 'Nothing in hand, and nothing waiting for you right now.';
-      }
+      out.say = cur ? 'In hand: ' + offerLine(state, cur) : nextLine(state, u.id, null);
       return out;
     }
     if (env && (intent === 'answer' || intent === 'none')) {
@@ -293,7 +284,7 @@
 
   function stageComplete(state, u, cur, words, env, out) {
     if (!cur) {
-      out.say = 'Nothing is in your hands to complete. Say "what\'s next" for your next task. Nothing was done.';
+      out.say = 'Nothing is in your hands to complete. Nothing was done.';
       return out;
     }
     if (cur.type === 'receive') {
@@ -326,14 +317,13 @@
     return out;
   }
 
-  function stageNext(state, u, cur, out) {
-    if (cur) { out.say = 'Still in hand: ' + offerLine(state, cur) + ' Say "done" when it is finished.'; return out; }
-    var t = peekNext(state, u.id);
-    if (!t) { out.say = 'Nothing waiting for you right now.'; return out; }
-    var q = 'Next up: ' + offerLine(state, t) + ' Take it? Say yes to take it, or no to leave it.';
-    out.stage = { kind: 'take', unitId: u.id, taskId: t.id, title: t.title, question: q, leftOpen: 'Not taken: "' + t.title + '".' };
-    out.say = q;
-    return out;
+  /* "What's next" is a question (William, 2026-11-05): a pure answer
+     from the worker's own assigned list. Never staged, never assigned,
+     never pulled from the unassigned pool. */
+  function nextLine(state, unitId, cur) {
+    var nx = nextAssigned(state, unitId);
+    if (cur) return nx ? 'After this one: ' + offerLine(state, nx) : 'In hand: ' + offerLine(state, cur) + ' Nothing else is assigned to you after it.';
+    return nx ? 'Your first assigned task: ' + offerLine(state, nx) : 'Nothing is assigned to you right now.';
   }
 
   /* A spoken report files a flag the way the console's flag path does
@@ -372,21 +362,14 @@
       if (cur.type === 'receive' || cur.type === 'load') return { ok: false, reason: 'That is a signed act — voice does not perform it. Nothing was closed.' };
       var mark = state.records.length;
       var p = stage.plan || {};
-      var r = W.act(state, uid, { intent: 'confirm', task: cur, qty: p.qty, binId: p.binId, counts: p.counts, cartons: p.cartons, heard: stage.words });
-      if (!r.ok) return { ok: false, reason: r.reply + ' Nothing was closed.' };
+      /* the click's own path: W.complete, with the same engine
+         validation — and no pull afterwards (tasks are assigned, not
+         pulled; what is next is only named, from the assigned list) */
+      var r = W.complete(state, cur.id, { by: uid, qty: p.qty, binId: p.binId, counts: p.counts, cartons: p.cartons, words: stage.words });
+      if (!r.ok) return { ok: false, reason: r.reason + ' Nothing was closed.' };
       attribute(state, stage.taskId, mark, stage.words);
-      return { ok: true, text: r.reply, next: r.next || null };
-    }
-    if (stage.kind === 'take') {
-      if (W.currentOf(state, uid)) return { ok: false, reason: 'A task is already in your hands — nothing was taken.' };
-      var peek = peekNext(state, uid);
-      if (!peek || peek.id !== stage.taskId) {
-        return { ok: false, reason: 'The queue moved — "' + stage.title + '" is no longer next. Nothing was taken. Say "what\'s next" again.' };
-      }
-      var n = W.nextFor(state, uid);
-      if (!n.ok || !n.task || n.task.id !== stage.taskId) return { ok: false, reason: 'The task could not be handed over. Nothing was taken.' };
-      n.task.takenVia = 'voice';
-      return { ok: true, text: 'Taken: ' + offerLine(state, n.task), next: n.task };
+      var nx = nextAssigned(state, uid);
+      return { ok: true, text: r.text + (nx ? ' Next on your list: ' + offerLine(state, nx) : ' Nothing else is assigned to you.'), next: nx };
     }
     if (stage.kind === 'flag') {
       var f = W.flag(state, { unitId: uid, words: stage.words, label: opts.label, source: 'voice' });
@@ -411,8 +394,8 @@
 
   var api = {
     localIntent: localIntent,
-    peekNext: peekNext,
-    upcoming: upcoming,
+    assignedList: assignedList,
+    nextAssigned: nextAssigned,
     offerLine: offerLine,
     context: context,
     named: named,
