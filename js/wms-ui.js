@@ -843,7 +843,7 @@
         return opt(j.id, j.id + ' · ' + j.title + ' — ' + (j.owner ? uname(j.owner) : W.deptLabel(j.dept) + ' pool'));
       }).join('') + '</select></div><div class="field"><label>Give to</label><select id="rjUnit">' + workers().map(function (u) { return opt(u.id, unitLabel(u)); }).join('') + '</select></div></div>' +
         '<div class="form-actions"><button class="btn primary" data-act="reassign-job">Move job</button></div>' +
-        '<div class="panel-b"><p class="law">A manager\'s act, recorded with who moved it, when, and from whom. The job\'s remaining tasks move with it; done tasks keep their doer. The worker must work the job\'s department.</p></div>');
+        '<div class="panel-b"><p class="law">A manager\'s act, recorded with who moved it, when, and from whom. The job\'s remaining tasks move with it; done tasks keep their doer. A manager may also move a job across departments — the record marks it when they do.</p></div>');
     }
     var moves = state.records.filter(function (r) { return r.kind === 'job-reassign'; }).slice().reverse().map(function (r) {
       return '<tr><td class="id">' + time(r.ts) + '</td><td class="id">' + esc(r.jobId) + '</td><td>' + esc(r.from ? uname(r.from) : 'Pool') + ' → ' + esc(uname(r.to)) + '</td><td>' + esc(uname(r.by)) + '</td></tr>';
