@@ -29,12 +29,17 @@ var server = http.createServer(function (req, res) {
   fs.createReadStream(f).pipe(res);
 });
 
-var kv = null, gets = 0, posts = 0, chats = [], asrs = 0;
+var kv = null, gets = 0, posts = 0, chats = [], asrs = 0, describes = 0;
 var asrText = 'I decided to keep it on hold until the carrier calls back.';
 function chatReply(body) {
   var sys = body.messages[0].content;
   var content;
-  if (/working their real task queue/.test(sys)) {
+  if (/understand a part of its own data/.test(sys)) {
+    /* Ontology self-extension: Spark describes the new shape */
+    describes++;
+    content = JSON.stringify({ inferable: true, name: 'Customer returns', summary: 'Goods sent back by customers against an order.',
+      connectsTo: ['orders'], evidence: ['orderId', 'reason'] });
+  } else if (/working their real task queue/.test(sys)) {
     /* Work by voice: META names the intent from the worker's words */
     var said = String(body.messages[1].content.split('THE WORKER SAID (verbatim):\n')[1] || '').toLowerCase();
     var intent = /next/.test(said) ? 'next' : /picked|done|put away|counted/.test(said) ? 'complete' : /leak|broken|crushed/.test(said) ? 'problem' : 'answer';
@@ -344,6 +349,42 @@ server.listen(0, async function () {
     if (!h) bad.push(views[i]);
   }
   check('all ' + views.length + ' views render', bad.length === 0);
+
+  /* Ontology self-extension: a whole shift worked through the UI
+     gave the detector nothing to flag — no describe call, no
+     concept. Then the WMS grows a feature (a returns section lands
+     in the desk record): the console detects it, Spark describes
+     it, the digest announces it, and a person settles it. */
+  s = await st();
+  check('self-extension: a worked shift through the UI stays quiet — no describe call, no concept', describes === 0 && !s.concepts);
+  var grown = JSON.parse(kv);
+  grown.returns = [{ id: 'RMA-1', orderId: 'ORD-501', reason: 'crushed case', qty: 2 }];
+  grown.wmsRev = (grown.wmsRev || 0) + 1;
+  kv = JSON.stringify(grown);
+  await go('#/flags');
+  await click('[data-act="refresh"]');
+  await page.waitForFunction(function () {
+    var x = window.WitnessWmsPage.getState(); return !!(x.concepts && x.concepts.returns && x.concepts.returns.status === 'described');
+  }, null, { timeout: 5000 }).catch(function () {});
+  await page.waitForTimeout(300);
+  await go('#/ontology');
+  s = await st();
+  check('self-extension: the new section is detected and described by the AI (one call), AI-inferred, not settled',
+    describes === 1 && !!(s.concepts && s.concepts.returns) && s.concepts.returns.status === 'described' &&
+    s.concepts.returns.source === 'ai-inferred' && JSON.parse(kv).concepts.returns.status === 'described');
+  var onto = await page.evaluate(function () {
+    var m = document.querySelector('#main');
+    return { row: /Customer returns/.test(m.textContent) && /Described · AI-inferred/.test(m.textContent),
+      settle: !!m.querySelector('[data-act="concept-settle"][data-key="returns"]'),
+      announced: /New concept in the building: 'Customer returns'/.test(m.textContent) };
+  });
+  check('self-extension: the Ontology page lists it with its status and a Settle button, and the digest announces it', onto.row && onto.settle && onto.announced);
+  await click('[data-act="concept-settle"][data-key="returns"]');
+  await page.waitForTimeout(300);
+  s = await st();
+  check('self-extension: a person settles it — saved with their name; nothing settled on its own',
+    s.concepts.returns.status === 'settled' && !!s.concepts.returns.settledBy && JSON.parse(kv).concepts.returns.status === 'settled' && describes === 1);
+
   await go('#/dashboard');
   await page.screenshot({ path: process.env.WMS_SHOT || path.join(require('os').tmpdir(), 'wms-dashboard.png'), fullPage: true });
 

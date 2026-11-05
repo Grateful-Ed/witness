@@ -25,6 +25,17 @@
         task queues (js/wms-voice.js): META names an intent; code
         stages the act, asks, and runs it only on the next turn's
         yes, through js/wms.js. This call mutates nothing.
+     7. describeConcept — ontology self-extension: the ontology
+        (js/ontology.js) detected a shape in the state it has no
+        concept for; Spark reads a few real samples and writes what
+        it seems to be and what it connects to. The reply is checked
+        against the samples: a reading that cites no evidence found
+        in them is NOT a description. refreshConcepts is the
+        orchestration around it — detect, record "detected", ask,
+        record "described" or keep "detected" with an honest note —
+        and every write goes through the ontology's pure
+        learnConcept, applied by the caller's store path. The
+        ontology module itself stays pure: no call lives there.
 
    The request/retry/error plumbing is bol.js's readBody + sendRead —
    reused, never forked. Pure: the caller hands in fetch. Loads in the
@@ -343,7 +354,194 @@
       .then(function (r) { return { intent: r.value.intent, about: r.value.about, say: r.value.say, attempts: r.attempts }; });
   }
 
+  /* ---------- 7. ontology self-extension: describe a new shape ------- */
+  /* Detection is the ontology's (deterministic, js/ontology.js).
+     Description is this call's: Spark reads the samples and writes
+     the concept. Honesty gate: the reply must name its evidence —
+     field names or values that really are in the samples. A reply
+     with no evidence found there, or one that says the meaning
+     cannot be inferred, is "not grounded": the concept stays
+     detected, with that said plainly. Nothing is ever settled here. */
+
+  function ON() {
+    if (root.WitnessOntology) return root.WitnessOntology;
+    if (typeof require === 'function') { try { return require('./ontology.js'); } catch (e) { return null; } }
+    return null;
+  }
+
+  var DESCRIBE_PROMPT = [
+    'You help a warehouse management system understand a part of its own data it has no concept for yet. You are given the kind of shape that appeared (a new state section, a new task type, a new record kind, or a new field on a known task type or record kind), its key, the names the building already knows, and a few real samples.',
+    '',
+    'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
+    '{"inferable":true,"name":"...","summary":"...","connectsTo":["..."],"evidence":["..."]}',
+    '',
+    '- "name": a short plain name for the concept, two to five words.',
+    '- "summary": one or two plain sentences: what this seems to be in the warehouse, read from the samples.',
+    '- "connectsTo": the names the building already knows that this seems to connect to (from the list given), or field names in the samples that point at them. Empty list if none.',
+    '- "evidence": the exact field names or values in the samples your reading rests on.',
+    '',
+    'Rules: read only what the samples show. If the samples do not show what this is, return {"inferable":false,"why":"..."} — never invent a meaning. This is a best reading; a person confirms it later.'
+  ].join('\n');
+
+  var SAMPLE_CHARS = 4000;
+
+  /* Every field name (at any depth) and every short scalar value in
+     the samples — what evidence may cite. */
+  function sampleTerms(samples) {
+    var out = {};
+    (function walk(x, depth) {
+      if (depth > 6 || x == null) return;
+      if (Array.isArray(x)) { x.forEach(function (v) { walk(v, depth + 1); }); return; }
+      if (typeof x === 'object') {
+        Object.keys(x).forEach(function (k) { out[k.toLowerCase()] = true; walk(x[k], depth + 1); });
+        return;
+      }
+      var v = String(x).trim().toLowerCase();
+      if (v && v.length <= 80) out[v] = true;
+    })(samples, 0);
+    return out;
+  }
+
+  /* The names the building already has concepts for — the registry,
+     plus concepts it has learned — for the prompt and for checking
+     connectsTo. */
+  function buildingNames(state) {
+    var O = ON(), k = O ? O.KNOWN_SCHEMA : null, out = [];
+    if (k) {
+      out = out.concat(k.sections, k.wmsSections.map(function (x) { return 'wms.' + x; }),
+        Object.keys(k.taskTypes).map(function (x) { return x + ' task'; }),
+        Object.keys(k.recordKinds).map(function (x) { return x + ' record'; }));
+    }
+    Object.keys((state && state.concepts) || {}).forEach(function (c) { out.push(c); });
+    return out;
+  }
+  function nameKey(s) { return String(s || '').toLowerCase().replace(/\s+(task|record)$/, '').replace(/^wms\./, '').trim(); }
+
+  function describeBody(unknown, names) {
+    var sample = JSON.stringify(unknown.samples || []);
+    if (sample.length > SAMPLE_CHARS) sample = sample.slice(0, SAMPLE_CHARS) + ' …(cut)';
+    var kinds = { section: 'a new state section', 'task-type': 'a new task type', 'record-kind': 'a new record kind', field: 'a new field on a known task type or record kind' };
+    return textBody(DESCRIBE_PROMPT,
+      'WHAT APPEARED: ' + (kinds[unknown.kind] || unknown.kind) + '\nKEY: ' + unknown.key +
+      '\n\nNAMES THE BUILDING ALREADY KNOWS:\n' + (names || []).join(', ') +
+      '\n\nSAMPLES (real, verbatim):\n' + sample);
+  }
+
+  /* Returns { grounded:true, name, summary, connectsTo, evidence } or
+     { grounded:false, why } — both are answers, so neither is retried;
+     only a reply in no usable shape (null) is. */
+  function acceptDescribe(unknown, names) {
+    var terms = sampleTerms(unknown.samples);
+    var last = String(unknown.key || '').split('.').pop().toLowerCase();
+    if (last) terms[last] = true;
+    var known = {};
+    (names || []).forEach(function (n) { known[nameKey(n)] = n; });
+    return function (parsed) {
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (parsed.inferable === false) return { grounded: false, why: str(parsed.why) };
+      var summary = str(parsed.summary);
+      if (!summary) return null;
+      if (summary.length > 600) summary = summary.slice(0, 600);
+      var evidence = (Array.isArray(parsed.evidence) ? parsed.evidence : []).map(str).filter(function (e) {
+        return e && terms[e.toLowerCase()];
+      });
+      if (!evidence.length) return { grounded: false, why: 'the reading cited nothing that is in the samples' };
+      var name = str(parsed.name) || unknown.key;
+      if (name.length > 60) name = name.slice(0, 60);
+      var seen = {};
+      var links = (Array.isArray(parsed.connectsTo) ? parsed.connectsTo : []).map(str).filter(function (c) {
+        if (!c || seen[c.toLowerCase()]) return false;
+        seen[c.toLowerCase()] = true;
+        return !!known[nameKey(c)] || !!terms[c.toLowerCase()];
+      });
+      return { grounded: true, name: name, summary: summary, connectsTo: links, evidence: evidence };
+    };
+  }
+
+  function describeConcept(doFetch, unknown, names, url) {
+    return B.sendRead(doFetch, url, describeBody(unknown, names), acceptDescribe(unknown, names))
+      .then(function (r) { var v = r.value; v.attempts = r.attempts; return v; });
+  }
+
+  /* A mutation for the caller's store path: applies one ladder step
+     through the ontology's learnConcept (the single writer) and says
+     whether the ladder moved. fn(state) mutates only state.concepts. */
+  function conceptStep(concept) {
+    return function (s) {
+      var O = ON();
+      var next = O ? O.learnConcept(s, concept) : s;
+      if (next === s) return { ok: false, reason: 'Nothing changed — the concept is already past that step.' };
+      s.concepts = next.concepts;
+      return { ok: true, concept: next.concepts[concept.key] };
+    };
+  }
+
+  var NOT_INFERABLE = 'Meaning not yet inferable from the samples.';
+
+  /* Describe one unknown and record the outcome. opts: { fetch,
+     apply(fn) → Promise<result|null>, now(), url, state }. */
+  function describeOne(opts, unknown) {
+    var now = opts.now || function () { return new Date().toISOString(); };
+    var names = buildingNames(opts.state);
+    return describeConcept(opts.fetch, unknown, names, opts.url).then(function (d) {
+      if (d.grounded) {
+        return opts.apply(conceptStep({ key: unknown.key, kind: unknown.kind, status: 'described', name: d.name,
+          summary: d.summary, connectsTo: d.connectsTo, at: now() })).then(function (r) {
+          return { key: unknown.key, status: r && r.ok !== false ? 'described' : 'detected', saved: !!(r && r.ok !== false) };
+        });
+      }
+      return opts.apply(conceptStep({ key: unknown.key, status: 'detected', at: now(),
+        note: NOT_INFERABLE + (d.why ? ' (' + d.why + ')' : '') })).then(function (r) {
+        return { key: unknown.key, status: 'detected', saved: !!(r && r.ok !== false) };
+      });
+    }, function (e) {
+      return opts.apply(conceptStep({ key: unknown.key, status: 'detected', at: now(),
+        note: NOT_INFERABLE + ' The describe call did not come back' + (e && e.userMessage ? ': ' + e.userMessage : '.') }))
+        .then(function (r) { return { key: unknown.key, status: 'detected', failed: true, saved: !!(r && r.ok !== false) }; });
+    });
+  }
+
+  /* The orchestration, run on the digest refresh: every unknown the
+     building has no concept for is recorded as detected FIRST (so
+     growth is never silent, and never described twice), then
+     described by Spark. Serial, at most opts.max (default 5) per
+     refresh. Resolves the outcomes, [] when there is nothing new. */
+  function refreshConcepts(opts) {
+    var O = ON();
+    if (!O || !opts || !opts.state) return Promise.resolve([]);
+    var now = opts.now || function () { return new Date().toISOString(); };
+    var todo = O.newUnknowns(opts.state).slice(0, opts.max || 5);
+    var out = [];
+    return todo.reduce(function (p, u) {
+      return p.then(function (go) {
+        if (!go) return false;
+        return Promise.resolve(opts.apply(conceptStep({ key: u.key, kind: u.kind, status: 'detected', at: now() }))).then(function (r) {
+          if (!r || r.ok === false) return false;  /* someone else has it, or the save failed: stop this round */
+          return describeOne(opts, u).then(function (o) { out.push(o); return true; });
+        });
+      });
+    }, Promise.resolve(true)).then(function () { return out; });
+  }
+
+  /* Ask again for a concept still at "detected" (the Ontology page's
+     button). The shape must still be in the state to be read. */
+  function redescribe(opts, key) {
+    var O = ON();
+    var u = O ? O.detectUnknowns(opts.state).filter(function (x) { return x.key === key; })[0] : null;
+    if (!u) return Promise.resolve({ key: key, status: 'detected', gone: true });
+    return describeOne(opts, u);
+  }
+
   var api = {
+    DESCRIBE_PROMPT: DESCRIBE_PROMPT,
+    NOT_INFERABLE: NOT_INFERABLE,
+    describeBody: describeBody,
+    acceptDescribe: acceptDescribe,
+    describeConcept: describeConcept,
+    conceptStep: conceptStep,
+    buildingNames: buildingNames,
+    refreshConcepts: refreshConcepts,
+    redescribe: redescribe,
     WORK_PROMPT: WORK_PROMPT,
     WORK_INTENTS: WORK_INTENTS,
     workBody: workBody,

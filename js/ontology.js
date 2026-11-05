@@ -40,6 +40,24 @@
    ({ term, means, taughtBy }) so anything answering for the
    building can be handed the words the workers taught it.
 
+   Self-extension (William's design, 2026-11-04; brief 2026-11-05):
+   the ontology notices when the building's system grows a feature
+   it has no concept for. Detection is deterministic and lives here:
+   detectUnknowns(state) compares the state's SCHEMA — its sections,
+   task types, record kinds and per-kind field sets — against the
+   known-schema registry below, pinned to what the WMS writes today
+   (the shipped seed yields zero unknowns; a test proves it).
+   Description is the AI's job and does NOT live here — this module
+   makes no calls. The caller (the console AI module's refreshConcepts, run on
+   the console's digest refresh) asks Spark and hands the result to
+   learnConcept, which, like learnTerm, is pure: it returns a NEW
+   state and the caller applies state.concepts. Concepts climb a
+   ladder — detected → described → settled — and nothing here ever
+   settles one on its own: settle takes a named human. The digest
+   lists every concept with its status, and the applyChange that
+   first sees a concept described emits one transient prep note
+   announcing it — the vocabulary-growth exception, mirrored.
+
    Loads in the browser (window.WitnessOntology) and in node.
    ===================================================================== */(function (root) {
   'use strict';
@@ -198,6 +216,240 @@
     return next;
   }
 
+  /* ---------- self-extension: the known-schema registry ---------- */
+  /* What the digest builders, the WMS (js/wms.js) and the engine
+     (js/engine.js) have concepts for today — pinned to the real
+     writers, not guessed. A key the registry does not hold is an
+     unknown. Add to the registry only when code learns to read the
+     new shape; a concept (state.concepts) is how the building
+     learns it without a code change. */
+  var KNOWN = {
+    /* Top-level state sections. */
+    sections: ['doors', 'zones', 'bins', 'staging', 'labor', 'inbound', 'outbound', 'tasks', 'records', 'wms',
+      'wmsRev', 'wmsSavedAt', 'world', 'destinationRules', 'vocabulary', 'concepts'],
+    /* Sections of the WMS layer (state.wms). */
+    wmsSections: ['version', 'items', 'appointments', 'slots', 'orders', 'waves', 'receipts', 'osd', 'loads',
+      'flags', 'counts', 'decisions', 'seq'],
+    /* Every task carries these; each type adds its own. */
+    taskCommon: ['id', 'type', 'zone', 'title', 'detail', 'status', 'assignee', 'queuedFor', 'createdAt',
+      'startedAt', 'doneBy', 'doneAt', 'notes', 'note', 'via', 'heard'],
+    taskTypes: {
+      putaway: ['stagingId', 'toBinId', 'suggestedBinId', 'item'],
+      consolidate: ['desc', 'fromBinId', 'toBinId'],
+      breakdown: ['binId', 'desc'],
+      pick: ['orderId', 'binId', 'desc', 'qty'],
+      receive: ['shipmentId', 'link'],
+      pack: ['orderId'],
+      load: ['orderId'],
+      count: ['binId', 'reason', 'variance'],
+      replen: ['desc', 'fromBinId', 'toBinId', 'qty', 'movedQty'],
+      move: ['desc', 'fromBinId', 'toBinId', 'qty', 'movedQty']
+    },
+    /* Every record carries these; each kind adds its own. A record
+       with no kind is a plain note — the engine's oldest shape. */
+    recordCommon: ['ts', 'text', 'kind', 'by', 'zone', 'taskId', 'via', 'heard'],
+    recordKinds: {
+      complete: ['type', 'receiptId', 'adjust', 'shortPick'],
+      incident: [],
+      arrive: ['shipmentId', 'intake'],
+      hold: ['target'],
+      release: ['target'],
+      correction: [],
+      reassign: [],
+      'osd-closed': [],
+      'flag-closed': [],
+      'count-queued': [],
+      'putaway-override': [],
+      'move-requested': [],
+      schedule: ['shipmentId'],
+      slot: [],
+      order: [],
+      wave: [],
+      reallocate: [],
+      ship: ['loadId'],
+      'labor-move': ['approved'],
+      desk: ['words', 'source', 'decision', 'on'],
+      game: []
+    }
+  };
+
+  (function freeze(x) {
+    if (x && typeof x === 'object' && !Object.isFrozen(x)) { Object.freeze(x); Object.keys(x).forEach(function (k) { freeze(x[k]); }); }
+  })(KNOWN);
+
+  var SAMPLE_MAX = 3;
+  function has(list, k) { return list.indexOf(k) !== -1; }
+  function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function copyOf(x) { return x === undefined ? null : JSON.parse(JSON.stringify(x)); }
+  /* A few real entries of a section, carried for the describe step. */
+  function sectionSamples(v) {
+    if (Array.isArray(v)) return copyOf(v.slice(0, SAMPLE_MAX));
+    if (v && typeof v === 'object') {
+      return Object.keys(v).sort().slice(0, SAMPLE_MAX).map(function (k) { var o = {}; o[k] = copyOf(v[k]); return o; });
+    }
+    return [copyOf(v)];
+  }
+
+  /* Every shape in this state the registry has no concept for, in a
+     fixed order: top-level sections, WMS sections, task types,
+     record kinds, then fields on known task types and record kinds.
+     A field on an unknown type or kind is part of that unknown, not
+     one of its own. Pure: reads only; the samples are copies.
+     Each unknown: { kind, key, samples } — keys are unique across
+     kinds ('returns', 'wms.returns', 'task.kit', 'record.recall',
+     'task.pick.lot', 'record.complete.temp'). */
+  function detectUnknowns(state) {
+    var out = [];
+    if (!state || typeof state !== 'object') return out;
+    Object.keys(state).sort().forEach(function (k) {
+      if (!has(KNOWN.sections, k)) out.push({ kind: 'section', key: k, samples: sectionSamples(state[k]) });
+    });
+    var w = state.wms;
+    if (w && typeof w === 'object' && !Array.isArray(w)) {
+      Object.keys(w).sort().forEach(function (k) {
+        if (!has(KNOWN.wmsSections, k)) out.push({ kind: 'section', key: 'wms.' + k, samples: sectionSamples(w[k]) });
+      });
+    }
+    var tasks = Array.isArray(state.tasks) ? state.tasks.filter(function (t) { return t && typeof t === 'object'; }) : [];
+    var records = Array.isArray(state.records) ? state.records.filter(function (r) { return r && typeof r === 'object'; }) : [];
+    function groupBy(list, field) {
+      var g = {};
+      list.forEach(function (x) {
+        var v = x[field];
+        if (typeof v !== 'string' || !v) return;
+        (g[v] = g[v] || []).push(x);
+      });
+      return g;
+    }
+    var byType = groupBy(tasks, 'type'), byKind = groupBy(records, 'kind');
+    Object.keys(byType).sort().forEach(function (ty) {
+      if (!own(KNOWN.taskTypes, ty)) out.push({ kind: 'task-type', key: 'task.' + ty, samples: copyOf(byType[ty].slice(0, SAMPLE_MAX)) });
+    });
+    Object.keys(byKind).sort().forEach(function (kd) {
+      if (!own(KNOWN.recordKinds, kd)) out.push({ kind: 'record-kind', key: 'record.' + kd, samples: copyOf(byKind[kd].slice(0, SAMPLE_MAX)) });
+    });
+    function fieldsOf(groups, table, common, prefix) {
+      var found = [];
+      Object.keys(groups).sort().forEach(function (g) {
+        if (!own(table, g)) return;
+        var known = common.concat(table[g]);
+        var carriers = {};
+        groups[g].forEach(function (x) {
+          Object.keys(x).forEach(function (f) {
+            if (has(known, f)) return;
+            (carriers[f] = carriers[f] || []).push(x);
+          });
+        });
+        Object.keys(carriers).sort().forEach(function (f) {
+          found.push({ kind: 'field', key: prefix + g + '.' + f, samples: copyOf(carriers[f].slice(0, SAMPLE_MAX)) });
+        });
+      });
+      return found;
+    }
+    return out.concat(fieldsOf(byType, KNOWN.taskTypes, KNOWN.taskCommon, 'task.'),
+      fieldsOf(byKind, KNOWN.recordKinds, KNOWN.recordCommon, 'record.'));
+  }
+
+  /* The unknowns the building has no concept for yet — what the
+     describe orchestration works from. A concept at any rung of the
+     ladder means the shape has been seen; it is never re-detected. */
+  function newUnknowns(state) {
+    var c = (state && state.concepts) || {};
+    return detectUnknowns(state).filter(function (u) { return !own(c, u.key); });
+  }
+
+  var LADDER = ['detected', 'described', 'settled'];
+  var UNKNOWN_KINDS = ['section', 'task-type', 'record-kind', 'field'];
+
+  /* The single writer of concepts, beside learnTerm. Pure: returns a
+     NEW state, the input untouched; the caller applies
+     state.concepts. Created lazily — a state with no concepts has
+     no concepts key. Input that cannot move the ladder returns the
+     input state itself (same object), as learnTerm does.
+     concept: { key, kind?, status, at, name?, summary?, connectsTo?,
+                note?, by? }
+       detected  — seen, not understood. Creates the concept; on an
+                   existing detected concept it may only update the
+                   honest note. Never demotes a higher rung.
+       described — the AI's best reading: needs a summary. Allowed
+                   from detected (or absent) and as a re-description
+                   of a described concept; never over a settled one.
+       settled   — a human's act: needs `by`, and a described
+                   concept. An edited summary may come with it; the
+                   edit is recorded as that person's. */
+  function learnConcept(state, concept) {
+    if (!state || !concept) return state;
+    var key = String(concept.key || '').trim();
+    var status = concept.status;
+    if (!key || !has(LADDER, status)) return state;
+    var cur = (state.concepts && own(state.concepts, key)) ? state.concepts[key] : null;
+    var at = concept.at || null;
+    var entry;
+    function clean(s) { return String(s == null ? '' : s).trim(); }
+    function links(x) {
+      var seen = {};
+      return (Array.isArray(x) ? x : []).map(clean).filter(function (s) {
+        if (!s || seen[s]) return false; seen[s] = true; return true;
+      });
+    }
+    if (status === 'detected') {
+      if (cur && cur.status !== 'detected') return state;
+      var note = clean(concept.note);
+      if (cur && !note) return state;
+      entry = cur ? copyOf(cur) : {
+        key: key, kind: has(UNKNOWN_KINDS, concept.kind) ? concept.kind : null,
+        name: clean(concept.name) || key, summary: null, connectsTo: [],
+        status: 'detected', source: 'ai-inferred', firstSeen: at
+      };
+      if (note) entry.note = note;
+    } else if (status === 'described') {
+      var summary = clean(concept.summary);
+      if (!summary || (cur && cur.status === 'settled')) return state;
+      entry = cur ? copyOf(cur) : {
+        key: key, kind: has(UNKNOWN_KINDS, concept.kind) ? concept.kind : null,
+        source: 'ai-inferred', firstSeen: at
+      };
+      entry.name = clean(concept.name) || entry.name || key;
+      entry.summary = summary;
+      entry.connectsTo = links(concept.connectsTo);
+      entry.status = 'described';
+      entry.source = 'ai-inferred';
+      entry.describedAt = at;
+      delete entry.note;
+    } else {
+      var by = clean(concept.by);
+      if (!by || !cur || cur.status !== 'described') return state;
+      entry = copyOf(cur);
+      var edited = clean(concept.summary);
+      if (edited && edited !== entry.summary) { entry.summary = edited; entry.editedBy = by; }
+      entry.status = 'settled';
+      entry.settledBy = by;
+      entry.settledAt = at;
+    }
+    var next = JSON.parse(JSON.stringify(state));
+    next.concepts = next.concepts || {};
+    next.concepts[key] = entry;
+    return next;
+  }
+
+  /* The learned concepts, as a plain list for the digest — each with
+     its rung on the ladder, so anything answering for the building
+     knows how far to trust it. */
+  function conceptsOf(state) {
+    var c = (state && state.concepts) || {};
+    return Object.keys(c).sort().map(function (k) {
+      var e = c[k] || {};
+      var o = {
+        key: k, kind: e.kind || null, name: e.name || k, status: e.status || 'detected',
+        summary: e.summary || null, connectsTo: Array.isArray(e.connectsTo) ? e.connectsTo.slice() : [],
+        source: e.source || 'ai-inferred'
+      };
+      if (e.note) o.note = e.note;
+      if (e.settledBy) o.settledBy = e.settledBy;
+      return o;
+    });
+  }
+
   /* The same urgency set the map flags derive from (js/wms-map.js
      flags()) — held bins, held pallets, open OS&D findings, open
      worker flags — re-derived here so the digest stands alone. */
@@ -337,6 +589,7 @@
       people: peopleOf(state),
       needsEyes: needsEyesOf(state),
       vocabulary: vocabularyOf(state),
+      concepts: conceptsOf(state),
       prep: prepOf(state)
     };
   }
@@ -375,10 +628,31 @@
         fromChange: "Vocabulary learned '" + v.term + "'"
       });
     });
+    /* Self-extension, the same exception: the applyChange that
+       first sees a concept described announces it — once. A concept
+       the previous digest already held as described (or settled)
+       is known; a fresh rebuild announces nothing. */
+    var rung = {};
+    (prev.concepts || []).forEach(function (c) { rung[c.key] = c.status; });
+    next.concepts.forEach(function (c) {
+      if (c.status !== 'described' || rung[c.key] === 'described' || rung[c.key] === 'settled') return;
+      var forName = managerName(state);
+      if (!forName) return;
+      next.prep.push({
+        'for': forName, about: c.key,
+        note: "New concept in the building: '" + c.name + "' (" + (c.kind || 'shape') + ' ' + c.key + ') — ' + c.summary +
+          ' AI-inferred, not yet settled: confirm it on the Ontology page.',
+        fromChange: "Concept described '" + c.key + "'"
+      });
+    });
     return next;
   }
 
-  var api = { buildDigest: buildDigest, applyChange: applyChange, learnTerm: learnTerm, vocabularyOf: vocabularyOf };
+  var api = {
+    buildDigest: buildDigest, applyChange: applyChange, learnTerm: learnTerm, vocabularyOf: vocabularyOf,
+    KNOWN_SCHEMA: KNOWN, detectUnknowns: detectUnknowns, newUnknowns: newUnknowns,
+    learnConcept: learnConcept, conceptsOf: conceptsOf
+  };
   root.WitnessOntology = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
