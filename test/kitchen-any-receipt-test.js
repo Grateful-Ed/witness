@@ -31,7 +31,8 @@ function walkToEnd(state, will, n) {
   C.workerTurn(E, state, will, C.matchIntent('start groceries putaway'));
   var last = null, guard = 0;
   while (guard++ < n + 5) {
-    var tk = C.workerTurn(E, state, will, C.matchIntent('done'));
+    C.workerTurn(E, state, will, C.matchIntent('done')); /* stages the close, asks */
+    var tk = C.workerTurn(E, state, will, C.matchIntent('yes'));
     last = tk.spoken;
     if (JSON.stringify(last) === JSON.stringify(['Groceries putaway complete.'])) break;
   }

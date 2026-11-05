@@ -50,6 +50,47 @@
      to confirm, or a product to start with. */
   var START = /^(start|begin)\b\s*(.*)$/;
 
+  /* Completion takes a confirmation (William, 2026-11-05: "Just like
+     an 'are you sure you want to delete' type thing"). A completion
+     word only STAGES the close and asks; the next turn decides. These
+     words only mean confirm / deny while a stage is pending — with
+     none pending they read as they always did (unknown, nothing acts).
+     Deny is read before confirm: "no, go ahead" leaves it open. */
+  var CONFIRM = /\b(yes|yeah|yep|confirm|confirmed|do it|that'?s right|go ahead)\b/;
+  var DENY = /\b(no|nope|wait|cancel|not yet|never mind|nevermind)\b/;
+
+  /* The stage lives here, in this module's own memory, keyed by the
+     unit's id and holding the staged task's id. It is never written
+     into the saved state: a page reload forgets it, and the record
+     only ever shows confirmed completions. heardSeq counts utterances
+     heard (matchIntent calls); a stage is live only for the very next
+     one, so a staged act never lingers past the next turn — even when
+     that turn is a question a caller hands elsewhere. */
+  var stages = {};
+  var heardSeq = 0;
+  function liveStage(unitId) {
+    var st = stages[unitId];
+    if (!st) return null;
+    if (heardSeq - st.seq > 1) { delete stages[unitId]; return null; }
+    return st;
+  }
+  function anyLiveStage() {
+    for (var k in stages) if (Object.prototype.hasOwnProperty.call(stages, k) && liveStage(k)) return true;
+    return false;
+  }
+  /* Takes the unit's live stage out of memory and returns it (or null):
+     whatever this turn is, it decides the stage. */
+  function takeStage(unitId) {
+    var st = liveStage(unitId);
+    delete stages[unitId];
+    return st;
+  }
+  function pendingStage(unitId) {
+    var st = liveStage(unitId);
+    return st ? { taskId: st.taskId, title: st.title } : null;
+  }
+  function clearStages() { stages = {}; }
+
   function normalise(text) {
     return String(text || '')
       .toLowerCase()
@@ -66,17 +107,24 @@
        'start'   — begin the created job: its first task, or the
                    named product's task ("start with the milk")
        'next'    — say what's in hand, or pull one if hands are empty
+       'confirm' — yes to a staged completion (only while one is pending)
+       'deny'    — no to a staged completion (only while one is pending)
        'unknown' — take no action
-     Order matters: a problem beats a completion ("done, but the
+     Order matters: a problem beats a confirm or a completion ("done, but the
      pallet's crushed" must not close the task on a bad count), and a
      completion beats a bare "what's next" (William's own line: "what's
      up next? I just got done" closes the task). */
   function matchIntent(text) {
+    heardSeq++;
     var heard = String(text || '').trim();
     var t = normalise(heard).replace(WAKE, '');
     if (!t) return { intent: 'unknown', heard: heard };
     var p = t.replace(NOT_A_PROBLEM, ' ');
     if (PROBLEM.test(p)) return { intent: 'problem', heard: heard };
+    if (anyLiveStage()) {
+      if (DENY.test(t)) return { intent: 'deny', heard: heard };
+      if (CONFIRM.test(t)) return { intent: 'confirm', heard: heard };
+    }
     var d = p.replace(NOT_DONE, ' ');
     if (DONE.test(d)) return { intent: 'done', heard: heard };
     var sm = START.exec(d);
@@ -215,16 +263,42 @@
   /* Runs one intent against the engine. Mutates state through
      engine calls — the one exception is the start intent's
      assignment (see takeInHand). Returns { intent, acted, lines[], closed, next,
-     problem, spoken } — lines are what the screen says back, short,
+     problem, spoken, staged } — lines are what the screen says back, short,
      and the record keeps them in full. spoken, when set, is what
      the voice says instead: the terse form of an advance (William
      2026-11-04 — the voice carries the minimum, "Next: <product>.";
      the bin is in the glance, not the ear). */
   function workerTurn(E, state, unit, match) {
-    var out = { intent: match.intent, acted: false, lines: [], closed: null, next: null, problem: null, spoken: null };
+    var out = { intent: match.intent, acted: false, lines: [], closed: null, next: null, problem: null, spoken: null, staged: null };
     var closedRun = null;
     if (!unit) { out.lines.push('Pick your name first. Nothing was done.'); return out; }
     var current = inHand(E, state, unit);
+    var stage = takeStage(unit.id); /* this turn decides it, whatever it is */
+    var confirming = false;
+
+    if (match.intent === 'confirm' || match.intent === 'deny') {
+      if (!stage) {
+        /* No stage pending for this unit: yes / no mean nothing. */
+        out.lines.push('Heard you — no action taken.');
+        out.lines.push('Say "done", "what\'s next", or say what the problem is.');
+        return out;
+      }
+      if (match.intent === 'deny') {
+        out.lines.push('Left open: "' + stage.title + '".');
+        return out;
+      }
+      if (!current || current.id !== stage.taskId) {
+        out.lines.push('Can\'t close "' + stage.title + '" — it is no longer the task in your hand. Nothing was closed.');
+        if (current) out.lines.push('Still yours: ' + taskLine(current));
+        return out;
+      }
+      confirming = true;
+    } else if (stage && match.intent !== 'problem') {
+      /* The staged completion dies with the topic change; this turn
+         runs as its own, saying so. (A problem keeps today's lines —
+         they already say nothing was closed.) */
+      out.lines.push('Left open: "' + stage.title + '" — not marked complete.');
+    }
 
     if (match.intent === 'unknown') {
       out.lines.push('Heard you — no action taken.');
@@ -296,12 +370,21 @@
          or "No work waiting." when there is none. */
     }
 
-    if (match.intent === 'done') {
+    if (match.intent === 'done' || confirming) {
       if (current) {
         var held = E.blockedBy ? E.blockedBy(state, current) : null;
         if (held) {
           out.lines.push('Can\'t close "' + current.title + '" — ' + held);
           out.lines.push('Leave it be. Tell your manager.');
+          return out;
+        }
+        if (!confirming) {
+          /* Stage the close and ask. Nothing moves: acted stays
+             false, so no caller saves anything for this turn. */
+          stages[unit.id] = { taskId: current.id, title: current.title, seq: heardSeq };
+          out.staged = current;
+          out.lines.push('Mark "' + current.title + '" complete? Say yes to close it, or no to leave it open.');
+          out.spoken = ['Mark it complete?'];
           return out;
         }
         closedRun = runOfTask(state, current); /* before the close takes its pallet out of staging */
@@ -588,6 +671,8 @@
     SYSTEM_PROMPT: SYSTEM_PROMPT,
     matchIntent: matchIntent,
     workerTurn: workerTurn,
+    pendingStage: pendingStage,
+    clearStages: clearStages,
     buildStateSummary: buildStateSummary,
     managerMessages: managerMessages,
     askManager: askManager,
