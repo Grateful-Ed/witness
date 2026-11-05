@@ -207,7 +207,8 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
     check('run chips: the product is in the glance', ch1.item === res3.created[0].item && ch1.bin === 'Bin ' + res3.created[0].spot);
     var spoke = [], lastLines = null;
     for (var k = 0; k < 6; k++) {
-      var tk = C.workerTurn(E, s3, will3, C.matchIntent('done'));
+      C.workerTurn(E, s3, will3, C.matchIntent('done')); /* stages the close, asks */
+      var tk = C.workerTurn(E, s3, will3, C.matchIntent('yes'));
       spoke.push(tk.spoken);
       lastLines = tk.lines;
       if (k === 1) {

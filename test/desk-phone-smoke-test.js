@@ -172,11 +172,15 @@ server.listen(0, async function () {
     check('problem words pin the worker\'s exact words to the task', (tProb.notes || []).some(function (n) { return n.text === 'the wrap is torn on this one'; }));
     check('problem words close nothing', tProb.status === 'assigned' && unit(doc(), 'u-dee').currentTaskId === deeTask);
 
-    /* "done" closes and pulls the next */
+    /* "done" asks first and closes nothing; "yes" closes and pulls the next */
     await phone.fill('#phTypeInput', 'done');
     await phone.click('#phTypeBtn');
+    await phone.waitForFunction(function () { return /complete\?/.test(document.getElementById('phReply').textContent); });
+    check('"done" from the phone asks and closes nothing yet', doc().tasks.filter(function (t) { return t.id === deeTask; })[0].status === 'assigned');
+    await phone.fill('#phTypeInput', 'yes');
+    await phone.click('#phTypeBtn');
     await phone.waitForFunction(function () { return /Closed/.test(document.getElementById('phReply').textContent); });
-    check('"done" from the phone closes the task on the shared record', doc().tasks.filter(function (t) { return t.id === deeTask; })[0].status === 'done');
+    check('"yes" from the phone closes the task on the shared record', doc().tasks.filter(function (t) { return t.id === deeTask; })[0].status === 'done');
 
     /* capture */
     chats.length = 0;

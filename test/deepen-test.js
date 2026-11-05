@@ -232,10 +232,13 @@ var w = fresh();
 var marcus = E.unitById(w, 'u-marcus');
 var dee = E.unitById(w, 'u-dee');
 C.workerTurn(E, w, marcus, C.matchIntent("what's next"));            /* Marcus takes the receive */
-C.workerTurn(E, w, marcus, C.matchIntent('done'));                    /* closes it, takes the next */
+C.workerTurn(E, w, marcus, C.matchIntent('done'));                    /* stages the close, asks */
+C.workerTurn(E, w, marcus, C.matchIntent('yes'));                     /* closes it, takes the next */
 C.workerTurn(E, w, marcus, C.matchIntent('done'));
+C.workerTurn(E, w, marcus, C.matchIntent('yes'));
 C.workerTurn(E, w, dee, C.matchIntent("what's next"));
 C.workerTurn(E, w, dee, C.matchIntent('done'));
+C.workerTurn(E, w, dee, C.matchIntent('yes'));
 C.workerTurn(E, w, dee, C.matchIntent('problem, shrink wrap torn'));
 var sum = E.shiftSummary(w);
 var doneTasks = w.tasks.filter(function (t) { return t.status === 'done'; });
