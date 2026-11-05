@@ -1053,10 +1053,42 @@
 
   /* ---------- flags: a label plus the speaker's exact words ----------- */
 
+  /* A flag's zone is where the words say the problem is, not where
+     the reporter stands. The places are the building's own, read
+     from the live state (bins, staged pallets, doors, zones), so the
+     vocabulary grows with the building. Exact-place tokens only,
+     case aside: a place matches only with no letter, digit or dash
+     touching either end ("Inbound Door 1" is not inside "Inbound
+     Door 10"; a bare "B" is not a place). Every named place must sit
+     in one zone; places in two zones resolve nothing (null) and the
+     caller falls back. */
+  function zoneFromWords(state, words) {
+    var text = String(words || '').toLowerCase(), places = [];
+    (state.bins || []).forEach(function (b) { places.push([b.id, b.zone]); });
+    (state.staging || []).forEach(function (p) { places.push([p.id, doorZone(state, p.door)]); });
+    (state.doors || []).forEach(function (d) { places.push([d.id, d.zone]); });
+    (state.zones || []).forEach(function (z) { places.push(['Zone ' + z, z]); });
+    var found = {};
+    places.forEach(function (pl) {
+      if (!pl[0] || !pl[1]) return;
+      var id = String(pl[0]).toLowerCase(), at = text.indexOf(id);
+      while (at !== -1) {
+        var before = text.charAt(at - 1), after = text.charAt(at + id.length);
+        if (!/[a-z0-9-]/.test(before) && !/[a-z0-9-]/.test(after)) { found[pl[1]] = true; break; }
+        at = text.indexOf(id, at + 1);
+      }
+    });
+    var zones = Object.keys(found);
+    return zones.length === 1 ? zones[0] : null;
+  }
+  api.zoneFromWords = zoneFromWords;
+
   /* words are stored exactly as said (trimmed, nothing else). The
      label is short and comes from the model or the person; there are
      no category fields. Pinned to the task in hand (or the one named)
-     through the engine, so the task's record carries it too. */
+     through the engine, so the task's record carries it too. The
+     zone: the words' place first, then the task's, then the
+     reporter's own. */
   api.flag = function (state, f) {
     f = f || {};
     var u = unit(state, f.unitId);
@@ -1075,7 +1107,7 @@
     }
     var t = taskId ? task(state, taskId) : null;
     var flag = { id: nextId(state, 'flag', 'FLG-', 3), label: label, words: words, by: u.id, taskId: taskId,
-      zone: t ? t.zone : u.zone, ts: api.now(), status: 'open', source: f.source || 'typed' };
+      zone: zoneFromWords(state, words) || (t ? t.zone : u.zone), ts: api.now(), status: 'open', source: f.source || 'typed' };
     state.wms.flags.push(flag);
     return { ok: true, flag: flag };
   };

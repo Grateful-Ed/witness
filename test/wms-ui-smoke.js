@@ -87,7 +87,7 @@ server.listen(0, async function () {
       bins: m.querySelectorAll('[data-place="bin"]').length, rcv: !!m.querySelector('.wm-col-rcv.wm-band'), stg: !!m.querySelector('.wm-col-stg.wm-band'),
       bays: !!m.querySelector('.wm-bays'), tables: m.querySelectorAll('table').length };
   });
-  check('home is the map: 4 inbound docks, 4 outbound docks, receiving, staging, bays', home.docksIn === 4 && home.docksOut === 4 && home.rcv && home.stg && home.bays && home.bins === 24);
+  check('home is the map: 6 inbound docks, 6 outbound docks, 30 bins, receiving, staging, bays', home.docksIn === 6 && home.docksOut === 6 && home.rcv && home.stg && home.bays && home.bins === 30);
   check('no data tables on the map', home.tables === 0);
   await go('#/summary');
   var labels = await page.$$eval('.kpi .k-label', function (els) { return els.map(function (e) { return e.textContent; }); });
@@ -98,7 +98,7 @@ server.listen(0, async function () {
   await go('#/dashboard');
 
   var s = await st();
-  check('loaded state carries the WMS layer', !!(s.wms && s.wms.appointments.length === 3));
+  check('loaded state carries the WMS layer', !!(s.wms && s.wms.appointments.length === 5));
 
   /* Dock & Yard is merged into Receiving: the old link lands there */
   await go('#/dock');

@@ -245,5 +245,7 @@ input.cell { width: 80px; text-align: right; }
   .who span { display: none; }
   .who select { max-width: 120px; }
   .sync { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
-  .brand { font-size: 12px; }
+  /* Phone: the W mark stands for the name, so the sync pill fits
+     beside the Demos link instead of sticking out past the edge. */
+  .brand { font-size: 0; gap: 0; }
 }
