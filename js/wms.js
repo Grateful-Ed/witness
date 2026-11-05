@@ -698,7 +698,10 @@
     if (!by || by.role !== 'manager') return no('Only a manager can move a job. Sign in as a manager.');
     var to = unit(state, toUnitId);
     if (!to || to.role !== 'worker') return no('Pick a worker to give it to.');
-    if (!Array.isArray(to.depts) || to.depts.indexOf(j.dept) === -1) return no(to.name + ' does not work ' + api.deptLabel(j.dept) + '.');
+    /* A manager may move a job across departments (William's ruling,
+       2026-11-05: managers hold perms for hard changes on the fly).
+       The move lands; the record marks it as cross-department. */
+    var crossDept = !Array.isArray(to.depts) || to.depts.indexOf(j.dept) === -1;
     if (j.owner === to.id) return no(to.name + ' already holds ' + j.id + '.');
     var from = j.owner ? unit(state, j.owner) : null;
     var moved = 0;
@@ -714,10 +717,13 @@
       moved++;
     });
     var ts = api.now();
-    giveJob(state, j, to, 'reassigned', { from: from ? from.id : null, by: by.id });
+    var extra = { from: from ? from.id : null, by: by.id };
+    if (crossDept) extra.crossDept = true;
+    giveJob(state, j, to, 'reassigned', extra);
     record(state, 'Job ' + j.id + ' (' + j.title + ') moved ' + (from ? 'from ' + from.name : 'from the pool') + ' to ' + to.name +
-      ' by ' + by.name + ' — ' + moved + ' open task' + (moved === 1 ? '' : 's') + ' moved.',
-      { kind: 'job-reassign', jobId: j.id, from: from ? from.id : null, to: to.id, by: by.id, ts: ts });
+      ' by ' + by.name + ' — ' + moved + ' open task' + (moved === 1 ? '' : 's') + ' moved.' +
+      (crossDept ? ' Cross-department: ' + to.name + ' does not work ' + api.deptLabel(j.dept) + '.' : ''),
+      { kind: 'job-reassign', jobId: j.id, from: from ? from.id : null, to: to.id, by: by.id, ts: ts, crossDept: crossDept });
     /* The one who lost it may be free now: the system deals to them. */
     syncJobs(state);
     return { ok: true, job: j, from: from ? from.id : null, to: to.id, moved: moved };
