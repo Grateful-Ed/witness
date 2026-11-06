@@ -1,7 +1,16 @@
 # Brief — The Witness desk application (v1 shell)
 
-Status: DRAFT for William's review (written 2026-11-06 after his
-direction). Fire only on his word.
+Status: BUILT — by Faye on William's direct word (he chose the
+Faye-built route, 2026-11-06). PR #51, awaiting his review.
+Two build-time corrections to this brief, recorded here so the
+record stays honest: (1) the site name shows in the header on
+the application's own pages only — the header must add no
+network traffic to the record page, whose request discipline
+is pinned exactly (a plain open is one GET and no writes; the
+kitchen world touches nothing); (2) a DETECTED concept lists
+as awaiting description with NO settle button — the ontology
+ladder refuses to settle an undescribed concept, so the
+button would only ever refuse.
 
 ## Why this exists (William, 2026-11-06)
 
@@ -39,9 +48,11 @@ in this build.
   (masking, config application, tile assembly).
 - `css/witness-app.css` — the app's own styles. `css/witness.css`
   is FROZEN and must not be edited; the app may LINK it read-only
-  for shared tokens and carry its own sheet on top. Match the
-  console's navy/neutral design language (the design port,
-  PR line #29-era): this is the same product's desk face.
+  for shared tokens and carry its own sheet on top. DESIGN
+  (William, 2026-11-06): for now the app MIMICS what the dummy
+  WMS console looks like — its navy/neutral chrome, layout
+  grammar, and component feel. A visual identity of Witness's
+  own is a later call, not this build's.
 
 ### The record folds in (warehouse.html — NOT frozen)
 
@@ -88,8 +99,10 @@ as data.
 
 **Ontology** — the settle queue comes home:
 - Concepts from state.concepts grouped by status: described
-  and detected awaiting a human, settled below. Each awaiting
-  concept shows its name, summary, and a Settle action.
+  and detected awaiting a human, settled below. Each DESCRIBED
+  concept shows its name, its (editable) summary, and a Settle
+  action; a detected one shows plainly that a description
+  comes first (see the status note above).
 - Settle calls the SAME writer the console's ontology page
   uses (`js/ontology.js`'s concept-settle writer) through
   state.mutate — one writer, one behavior, two doors; the
