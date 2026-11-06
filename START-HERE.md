@@ -15,38 +15,50 @@ file is the working agreement.
   Faye does that after her review passes.**
 
 ## How work lands
-- **Commit directly to main.** There is no PR flow for Witness.
+- **Builds land as pull requests** (the flow since PR #1; PRs
+  #1–#44 are all merged). Open the PR as a draft, report the suite
+  counts, and stop: **merging waits for William's explicit word on
+  that PR** — Faye reviews first, William merges on his call.
 - Builds are additive. **Frozen files — do not touch without a brief
   saying so:** index.html (beyond a single approved masthead link),
   js/voice.js, js/record.js, js/photo.js, css/witness.css,
   worker/* (except the one approved change inside the desk-phone
   brief), and the existing test-data.
-- Every suite must stay green. Current counts: engine 29, converse
-  68, deepen 72, glasses 84 — plus each new slice's own tests.
+- Every suite must stay green. Current counts (2026-11-06): 1,776
+  node checks + 61 browser smoke, all passing. Run `test/*-test.js`
+  AND `test/wms-ui-smoke.js` — the glob does NOT cover the smoke
+  file; run it explicitly (NODE_PATH=~/workspace/.pwtest/node_modules).
 - If a brief seems to require breaking any of this, stop and report
   instead of improvising.
 
-## Where things stand (2026-11-01)
-- **Built and reviewed:** module one (the receiving cross-check),
-  the warehouse foundation, the conversational layer, slice 2
-  (deepened areas: inbound/outbound end-to-end, holds, incident
-  updates, shift summary), and the glasses view (phone-as-glasses).
-- **The glasses work is ON HOLD at William's word.** One known fix
-  is owed when it resumes: in the glasses free-ask path, a 413
-  fallback to words-only must tell the wearer the frame wasn't
-  sent. Don't pick it up unless William reopens the segment.
-- **Deadline: submissions due Wed Nov 4, 2026, 9:00 PM ET** (Meta
-  Global AI Developer Hackathon). Demo video spine: a real grocery
-  putaway run in William's kitchen (script v3, held by Faye).
+## Where things stand (2026-11-06)
+- **Submitted** to the Meta Global AI Developer Hackathon on
+  Nov 4, 2026 — and the project continues past it (William: "It's
+  my second baby"). PRs #1–#44 are merged; nothing is open.
+- **Built and reviewed since Nov 1:** the WMS desk console, the
+  central agent (dispatch architecture), the dynamic ontology —
+  including self-extension (it learns new WMS features; a human
+  settles them) — the shared record across desk, phone, and
+  glasses (one warehouse, one /state document), full-flow voice
+  under the confirmation law, and job-based assignment (jobs dealt
+  by department pool; see Standing product law).
+- **The glasses are live**, not on hold. One fix remains owed in
+  the glasses free-ask path: a 413 fallback to words-only must
+  tell the wearer the frame wasn't sent.
+- **Known production breakage (found 2026-11-05):** the desk
+  photo scan sends its sheet by public URL and Meta's service
+  refuses it. The data-URL fix is briefed
+  (briefs/claude-brief-photo-scan-data-url.md) and queued.
+- **Demo video:** being rebuilt from Faye's script v2
+  (~/workspace/witness/claude-demo-video/) — the cross-check is
+  module one in it, not the headline.
 
-## Build order (briefs in briefs/)
+## Build order (briefs in briefs/) — all built; kept for reference
 1. `claude-brief-desk-phone.md` — shared state in the Worker, desk
-   & phone surfaces. Includes the one approved Worker change.
-2. `claude-brief-bol-camera.md` — BOL camera read. Needs only
-   desk-phone **Step 1** (the Worker change), not the whole slice.
+   & phone surfaces. Built (PR #37).
+2. `claude-brief-bol-camera.md` — BOL camera read. Built and live.
 3. `claude-brief-kitchen-demo.md` — kitchen world; the receipt scan
-   creates the shipment and its tasks. Build after the BOL slice;
-   reuse js/bol.js, never fork it.
+   creates the shipment and its tasks. Built and live.
 
 Already built (for reference): `claude-conversational-layer.md`,
 `claude-deepen-areas.md` + `deepen-areas-spec.md`,
@@ -57,6 +69,24 @@ Already built (for reference): `claude-conversational-layer.md`,
   **Agree / Flag / Can't verify** ("can't verify" is first-class).
   The machine never signs off; a human decides. Records are never
   frozen; an incident can be added to a load's record at any time.
+- Completion confirmation (2026-11-05): a spoken completion only
+  STAGES the close — the system reads it back and asks; only the
+  worker's next-turn yes runs it, recorded with the exact words
+  heard. Voice can confirm; **voice can never sign.** The only
+  signed acts: a human posting a receiving, a human confirming a
+  load.
+- Assignment (2026-11-05): work is assigned as JOBS (one shipment's
+  or order's full flow), dealt from the worker's department pool.
+  Once assigned, a job's tasks go to no one else unless a manager
+  reassigns (a manager may cross departments; the record marks
+  it). "What's next" is a question, never a pull.
+- Interpretation (ratified 2026-11-05): the AI receives and
+  interprets the worker's words; the code is the double checker;
+  a settled ontology definition overrides any code-side reading;
+  a genuine ambiguity goes back to the worker as a clarification,
+  and the answer is learned. Facts land only by human
+  confirmation or deterministic derivation — assignment itself is
+  code: the jobs exist before anyone checks in.
 - Scan semantics: in the warehouse, a BOL scan **summons** — the
   BOL is already in the system and its tasks already exist; the
   scan identifies and brings them up. In the kitchen demo, the
