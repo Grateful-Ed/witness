@@ -1218,11 +1218,15 @@
 
   /* One heard turn of Work by voice. The pending stage is taken out
      first — whatever this turn is, it decides it (one turn, never
-     more). A plain yes / no to a pending stage is read from the
-     words alone; anything else goes to META (wms-ai.js workTurn) with
-     the live queue as context, and the local words decide when she
-     cannot be reached. A run goes through act() on the fresh desk
-     record; its words come only from the result. */
+     more). Every turn goes through META (wms-ai.js workTurn) — the
+     translation layer is never absent (note 37) — with the live queue
+     and the ontology digest (places, settled vocabulary) as context.
+     A yes / no to a pending stage is still read from the words, as
+     the code's check under her reading. When she cannot be reached,
+     nothing is staged or run: the door says "AI is currently down."
+     and a pending stage dies unrun (note 40). A run goes through
+     act() on the fresh desk record; its words come only from the
+     result. */
   function workHear(uid, text) {
     var v = ui.voice;
     if (!V || v.busy) return Promise.resolve();
@@ -1230,13 +1234,10 @@
     v.stage = null;
     v.unit = uid; v.heard = text; v.line = ''; v.note = ''; v.guide = null; v.refused = false; v.busy = true;
     render();
-    var cur = W.currentOf(state, uid);
-    var loc = V.localIntent(text, { pending: !!pending, pickInHand: !!cur && cur.type === 'pick' });
-    var envP = pending && (loc === 'confirm' || loc === 'deny')
-      ? Promise.resolve(null)
-      : AI.workTurn(window.fetch.bind(window), V.context(state, uid, pending), text).then(function (r) { return r; }, function () { return null; });
+    var dg = window.WitnessOntology ? digestNow() : null;
+    var envP = AI.workTurn(window.fetch.bind(window), V.context(state, uid, pending, dg), text).then(function (r) { return r; }, function () { return null; });
     return envP.then(function (env) {
-      var d = V.decide(state, uid, text, env, pending);
+      var d = V.decide(state, uid, text, env, pending, { digest: dg });
       v.note = d.note || '';
       if (!d.run) {
         v.stage = d.stage || null;

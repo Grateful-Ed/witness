@@ -33,14 +33,38 @@ W.now = function () { return new Date(t0 + 60000 * (tick++)).toISOString(); };
 
 function fresh() { return W.seed(); }
 function snap(s) { return JSON.stringify(s); }
-function env(intent, say, about) { return { intent: intent, say: say || 'OK.', about: about || 'current' }; }
+function env(intent, say, about, extra) {
+  var e = { intent: intent, say: say || 'OK.', about: about || 'current' };
+  Object.keys(extra || {}).forEach(function (k) { e[k] = extra[k]; });
+  return e;
+}
 function task(s, id) { return E.taskById(s, id); }
 function binQty(s, id, desc) { var b = E.binById(s, id), q = 0; b.contents.forEach(function (c) { if (c.desc === desc) q += c.qty; }); return q; }
 
+/* The translation layer (interpretation instances 1 + 2): every turn
+   goes through the model. A test that does not care what META says
+   passes null and gets a model that reads the words as the local
+   reader does; OUT stands for the model not answering (the outage).
+   A completion envelope with no claim given gets an honest claim:
+   the numbers and bin the words say — a pronoun "this one" claims
+   no count (note 33). */
+var OUT = { outage: true };
+function honestClaim(words) {
+  var w = String(words || '').replace(/\b(this|that|the other) one\b/gi, ' ');
+  return { qty: W.parseQty(w), bin: W.parseBin(w), cartons: null };
+}
 /* A worker's turn, the way the page runs it: decide on the state,
    and if the decision runs a staged act, run it on the state. */
-function turn(s, uid, words, e, pending, label) {
-  var d = V.decide(s, uid, words, e === undefined ? null : e, pending || null);
+function turn(s, uid, words, e, pending, label, opts) {
+  if (e === OUT) e = null;
+  else {
+    if (e == null) {
+      var c = W.currentOf(s, uid);
+      e = env(V.localIntent(words, { pending: !!pending, pickInHand: !!c && c.type === 'pick' }));
+    }
+    if (e.intent === 'complete' && !e.claim) e.claim = honestClaim(words);
+  }
+  var d = V.decide(s, uid, words, e, pending || null, opts);
   if (d.run) d.result = V.run(s, d.run, { label: label || null });
   return d;
 }
@@ -146,8 +170,13 @@ function turn(s, uid, words, e, pending, label) {
   check('ambiguity: the model saying "other" asks', /^Which task/.test(d.say) && !d.stage && snap(s) === before);
   d = turn(s, PRIYA, 'it is done I think', env('complete', 'Done.', 'unclear'));
   check('ambiguity: the model saying "unclear" asks', /^Which task/.test(d.say) && !d.stage);
+  /* EXPECTED CHANGE (note 39): a bare "done" on a pick translated
+     cleanly — no count claimed, none read — so the FULL close is
+     staged (the confirmation law still owns it). It used to ask the
+     count. */
   d = turn(s, PRIYA, 'done', env('complete'));
-  check('a pick with no count asks for the count — nothing staged', /^Say the count you picked/.test(d.say) && !d.stage && snap(s) === before);
+  check('a bare "done" on a pick stages the full close — nothing saved', !!d.stage && d.stage.kind === 'complete' && d.stage.plan.qty === W.currentOf(s, PRIYA).qty &&
+    d.say === 'Mark "' + W.currentOf(s, PRIYA).title + '" complete — ' + W.currentOf(s, PRIYA).qty + ' picked? Say yes to close it, or no to leave it open.' && snap(s) === before);
 
   /* ---------- engine refusal: honest words, zero mutation ---------- */
   var next = W.currentOf(s, PRIYA);
@@ -297,8 +326,10 @@ function turn(s, uid, words, e, pending, label) {
   check('a yes in other words (the model reads it as confirm, no local word against it) runs', !!d.run);
   d = V.decide(s, PRIYA, 'no, sure', env('confirm'), st2);
   check('a local no beats the model\'s confirm', !d.run && /^Left open/.test(d.say));
+  /* EXPECTED CHANGE (note 40): with the model down, the local words
+     no longer decide anything — the door names the outage. */
   d = V.decide(s, PRIYA, 'nothing in hand?', null, null);
-  check('offline: unknown words do nothing', /Didn't catch an instruction/.test(d.say) && !d.stage);
+  check('offline: the door says "AI is currently down." and does nothing', d.say === 'AI is currently down.' && !d.stage && !d.run);
 
   /* ---------- the envelope (wms-ai.js workTurn) ---------- */
   function stub(replies) {
@@ -313,17 +344,18 @@ function turn(s, uid, words, e, pending, label) {
   }
   s = fresh();
   W.nextFor(s, PRIYA);
-  var f = stub([{ intent: 'complete', about: 'current', say: 'Nice work.' }]);
+  var f = stub([{ intent: 'complete', about: 'current', say: 'Nice work.', claim: { qty: 10, bin: null, cartons: null } }]);
   var r = await AI.workTurn(f, V.context(s, PRIYA, null), 'picked 10');
   var body = f.calls[0];
   check('envelope: system prompt is the work prompt; the context carries the task in hand and the words verbatim',
     body.messages[0].content === AI.WORK_PROMPT && /Task in hand: Pick 10 × Rice — bags from Bin B-04/.test(body.messages[1].content) &&
     /THE WORKER SAID \(verbatim\):\npicked 10$/.test(body.messages[1].content));
-  check('envelope: intent, about and words come back', r.intent === 'complete' && r.about === 'current' && r.say === 'Nice work.');
+  check('envelope: intent, about, words and the claim come back', r.intent === 'complete' && r.about === 'current' && r.say === 'Nice work.' &&
+    r.claim.qty === 10 && r.claim.bin === null && r.claim.cartons === null);
   f = stub([{ intent: 'close_task', say: 'x' }, { intent: 'answer', say: 'Here.' }]);
   r = await AI.workTurn(f, {}, 'hello');
   check('envelope: an unknown intent is refused (retried once)', r.intent === 'answer' && f.calls.length === 2);
-  check('envelope: a completion with no "about" reads as unclear (asks)', AI.acceptWork({ intent: 'complete', say: 'ok' }).about === 'unclear');
+  check('envelope: a completion with no "about" reads as unclear (asks)', AI.acceptWork({ intent: 'complete', say: 'ok', claim: { qty: null, bin: null, cartons: null } }).about === 'unclear');
   var pend = V.context(s, PRIYA, { question: 'Mark "X" complete?' });
   check('envelope: a pending question is in the context', /Waiting for the worker's yes or no: Mark "X" complete\?/.test(JSON.parse(AI.workBody(pend, 'yes')).messages[1].content));
   var threw = false;
