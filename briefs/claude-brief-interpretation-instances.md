@@ -120,9 +120,22 @@ The change:
    combined reading still cannot resolve it, the next ask
    is narrower than the last; the same question is never
    asked twice.
-4. If the model turn fails or returns no claim, the door
-   behaves as "nothing claimed": it asks. The code's read
-   alone never stages a number again.
+4. If the model turn fails or returns no claim, **no act
+   is staged or run from code-side reading at all**
+   (William, 2026-11-06, note 40): Witness does not work
+   without the model — it cannot fall back on code alone.
+   The door answers plainly that it cannot take spoken
+   work right now. That covers staging a completion or a
+   flag, and running a staged act on a local "yes" — a
+   stage caught by an outage dies like a topic change,
+   unrun. The local intent reader (localIntent) keeps its
+   role only as the code-side nudge it always was: it may
+   prompt the AI's reconsideration, never decide an act.
+   In a real deployment this is the honest outage story:
+   the warehouse simply works in its own WMS, as it did
+   before Witness, which was always fully functional
+   underneath. The code's read alone never stages a
+   number again — and never stages an act.
 
 ## Instance 2 — the flag's zone (problem reports)
 
@@ -190,8 +203,10 @@ The change:
   full count (claim and parser agree); a claimed short
   count stages the short close with its detail line; a
   claim/parser disagreement asks and stages nothing; a
-  model failure asks rather than staging the parser's
-  number. For flags: an AI place that validates lands the
+  model failure stages nothing and runs nothing — the door
+  answers that it cannot take spoken work right now (any
+  expectation that pinned local-fallback staging is an
+  expected change). For flags: an AI place that validates lands the
   zone; an invented place falls back; two-zone words
   resolve nothing; an AI/token zone disagreement asks
   before filing. For the clarification loop: "full"
