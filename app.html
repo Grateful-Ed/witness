@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Witness — The Application</title>
+<link rel="stylesheet" href="css/witness-app.css">
+</head>
+<body class="app-body">
+
+<div id="witness-app-nav"></div>
+
+<main class="app-main" id="witness-app">
+
+  <section class="app-screen" id="screen-home">
+    <h2 class="app-h">Home</h2>
+    <p class="app-note" id="home-note"></p>
+    <p class="tile-sub" id="home-empty" style="display:none">No warehouse record yet — this application reads the shared record the other surfaces write. Open the console or the record first and this page will read the same building.</p>
+    <div class="tile-grid">
+      <div class="tile">
+        <div class="tile-head">Connection</div>
+        <div id="tile-connection"><div class="tile-sub">Reading the adapter…</div></div>
+      </div>
+      <div class="tile">
+        <div class="tile-head">The building</div>
+        <div id="tile-tasks"><div class="tile-sub">Reading the record…</div></div>
+      </div>
+      <div class="tile">
+        <div class="tile-head">Needs a human</div>
+        <div id="tile-human"><div class="tile-sub">Reading the record…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="app-screen" id="screen-connection" style="display:none">
+    <h2 class="app-h">Connection — the client’s WMS</h2>
+    <p class="app-lede">Witness does not replace the warehouse system. It connects to it: acts travel through the host’s own interfaces (never its database), and the host stays the system of record. This is the connection Witness is currently running on.</p>
+    <div id="conn-profile"></div>
+    <h3 class="app-h3">Host API key</h3>
+    <p class="app-lede">The credential this connection presents to the host. It is entered hidden, and after saving it is only ever shown as a mask.</p>
+    <p id="key-state"></p>
+    <form id="key-form" class="app-form">
+      <input type="password" id="key-input" autocomplete="off" placeholder="Paste the host API key" aria-label="Host API key">
+      <button type="submit" class="btn">Save key</button>
+      <button type="button" class="btn btn-quiet" id="key-remove" style="display:none">Remove</button>
+    </form>
+    <p class="app-note" id="key-note"></p>
+    <p class="tile-sub">In this demonstration build the key is kept with the application’s configuration. A production deployment keeps it in the client’s own server-side secret store — never in the shared record, never on a screen.</p>
+  </section>
+
+  <section class="app-screen" id="screen-ontology" style="display:none">
+    <h2 class="app-h">Ontology — what the building has learned</h2>
+    <p class="app-lede">The ontology holds what this building is, what its words mean, and how this site runs. When the system meets a shape it cannot name, it learns it as a concept — detected, then described by the AI, then <b>settled by a person</b>. Settling happens here; it is the same writer the console uses, through a second door.</p>
+    <label class="app-field">Settling as <input type="text" id="settle-as" placeholder="Your name" aria-label="Settling as"></label>
+    <h3 class="app-h3">Waiting to be settled</h3>
+    <div id="onto-awaiting"></div>
+    <p class="app-note" id="onto-note"></p>
+    <h3 class="app-h3">Settled</h3>
+    <div id="onto-settled"></div>
+    <h3 class="app-h3">Vocabulary — words the building has learned</h3>
+    <div id="onto-vocab"></div>
+  </section>
+
+  <section class="app-screen" id="screen-site" style="display:none">
+    <h2 class="app-h">Site — this client’s configuration</h2>
+    <p class="app-lede">How this site runs is the client’s to settle, and it lives here — in the application, not in the WMS.</p>
+    <form id="site-form" class="app-form">
+      <label class="app-field">Site name <input type="text" id="site-name" placeholder="Shown in the header" aria-label="Site name"></label>
+      <button type="submit" class="btn">Save</button>
+    </form>
+    <p class="app-note" id="site-note"></p>
+    <p class="tile-sub">The site’s operating choices — what a completion must mean here, how concrete it has to be, the knobs a manager should own — land on this screen as the configuration layer is built. Nothing here pretends to work before it does.</p>
+  </section>
+
+</main>
+
+<script src="data/world.js"></script>
+<script src="data/kitchen-world.js"></script>
+<script src="js/world-select.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ontology.js"></script>
+<script src="js/adapter.js"></script>
+<script src="js/state.js"></script>
+<script src="js/witness-app.js"></script>
+</body>
+</html>

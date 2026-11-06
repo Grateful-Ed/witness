@@ -231,7 +231,16 @@
          SENT to an async host and waiting on its verdict, and the
          counter their idempotency keys are minted from. Registered
          deliberately, never left for the detector to "discover". */
-      'sentActs', 'adapterSeq'],
+      'sentActs', 'adapterSeq',
+      /* The Witness application's client configuration (app.html):
+         the site's name and the host connection's key, held in the
+         ontology's client layer (note 39) and registered the same
+         deliberate way — never left for the detector to discover. */
+      'clientConfig'],
+    /* The client configuration carries these; its hostKey, when
+       present, carries value / lastFour / savedAt and is never
+       read into the digest. */
+    clientConfigFields: ['siteName', 'hostKey'],
     /* Every entry of state.sentActs carries these (status: 'sent' |
        'landed' | 'refused'; settledAt, reason and localRefusal once
        the host's verdict is in). */
