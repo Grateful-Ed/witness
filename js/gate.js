@@ -39,9 +39,30 @@
      5. Run through the engine — its public paths only (js/wms.js,
         js/engine.js, the game's own step functions). The gate never
         mutates state itself; when the engine refuses, the refusal is
-        said honestly.
+        said honestly. On the WMS world this is a SUBMISSION through
+        the current host adapter (below).
      6. One attribution writer: who, via, and the exact words heard,
         written here, in one shape, for every door.
+
+   The host adapter (briefs/claude-brief-adapter.md; note 38). The WMS
+   world — the console voice door's — is ADAPTED: check 1 also reads
+   the current adapter's declared verbs (an undeclared verb is refused
+   in words that name the host: capability honesty), and check 5
+   submits through the adapter (js/adapter.js) instead of calling the
+   engine. The gate stays synchronous:
+     - a sync adapter (the dummy WMS, the default) lands the act now —
+       today's outcome, unchanged;
+     - an async adapter answers SENT: { ok: true, result: { sent: true,
+       key, host, entry, text } }. The act is recorded in
+       state.sentActs ({ key, via, who, intent, target, params, words,
+       ts, status: 'sent' }) with an idempotency key minted here from
+       state.adapterSeq; the task stays open and in hand. The host's
+       verdict arrives later through adapter.confirm(state, key,
+       verdict), which lands the act once via settle() (below) or
+       marks it refused with the host's reason.
+   The engine and game worlds are the demo building's own and stay
+   BUILT-IN: they run on their engines directly, not through an
+   adapter.
 
    The confirmation and signature rules live in ONE policy object
    (POLICY, below) so the ontology's configuration layer can supply
@@ -67,6 +88,27 @@
     }
     return W;
   }
+
+  /* The adapter seam (js/adapter.js) — read lazily, like the WMS
+     layer: the page may load it after this file. */
+  function adapters() {
+    var A = root.WitnessAdapter || null;
+    if (!A && typeof require === 'function') {
+      try { A = require('./adapter.js'); } catch (e) { A = null; }
+    }
+    return A;
+  }
+  function adapterFor(opts) {
+    if (opts && opts.adapter) return opts.adapter;
+    var A = adapters();
+    return A ? A.current() : null;
+  }
+  function copyPlan(pl) {
+    pl = pl || {};
+    return { qty: pl.qty, binId: pl.binId, counts: pl.counts, cartons: pl.cartons };
+  }
+  function plain(x) { return x == null ? null : JSON.parse(JSON.stringify(x)); }
+  function cap(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
 
   var OUTAGE = 'AI is currently down.';
   var PF = 'Is this a partial or full completion?';
@@ -186,9 +228,10 @@
   function cartonsAsk() { return 'How many cartons? Say just the number. Nothing was closed.'; }
 
   /* ================================================================
-     The worlds under the seam. Each adapter knows only its engine's
-     public paths. The dummy WMS (js/wms.js) is simply the first
-     thing under the seam; the host adapter slots in here later.
+     The worlds above the seam. Each world knows only its engine's
+     public paths. The WMS world is adapted: the dummy WMS (js/wms.js)
+     is simply the first adapter under the seam (js/adapter.js); the
+     engine and game worlds are built-in.
      ================================================================ */
 
   /* ---------- console voice: the live desk record (js/wms.js) ------- */
@@ -248,20 +291,21 @@
       return why ? no('That task is blocked: ' + why + ' Nothing was closed.') : null;
     },
 
-    run: function (state, req, prep) {
-      var W = wms(), p = req.params || {};
-      if (req.intent === 'complete') {
-        var pl = prep.plan || {};
-        var r = W.complete(state, prep.task.id, { by: req.who, qty: pl.qty, binId: pl.binId, counts: pl.counts, cartons: pl.cartons, words: prep.words });
-        if (!r.ok) return no(r.reason + ' Nothing was closed.');
-        return r;
+    /* No run of its own: this world is ADAPTED. Check 5 submits the
+       act below through the current adapter (js/adapter.js); the
+       dummy adapter lands it through W.complete / W.flag exactly as
+       this world's run did before the adapter build. */
+    adapted: true,
+    act: function (req, prep) {
+      var p = req.params || {}, params = {};
+      if (req.intent === 'complete') params.plan = copyPlan(prep.plan);
+      else {
+        if (p.label !== undefined) params.label = p.label;
+        if ('zone' in p) params.zone = p.zone;
+        if (p.zoneNote) params.zoneNote = p.zoneNote;
       }
-      var fo = { unitId: req.who, words: prep.words, label: p.label, source: 'voice' };
-      if ('zone' in p) fo.zone = p.zone;
-      if (p.zoneNote) fo.zoneNote = p.zoneNote;
-      var f = W.flag(state, fo);
-      if (!f.ok) return no(f.reason + ' Nothing was filed.');
-      return f;
+      return { via: req.via, who: req.who, intent: req.intent,
+        target: prep.task ? prep.task.id : null, params: params, words: prep.words || '' };
     },
 
     taskId: function (req, prep) { return prep.task ? prep.task.id : null; }
@@ -430,6 +474,18 @@
     /* 1. the act exists, model-formed, params complete (and cross-checked) */
     if (POLICY.modelFormed[req.via] && !p.model) return no(OUTAGE, { outage: true });
     if (!req.intent || !world.intents[req.intent]) return no('That is not something I can do — nothing was done.', { unknown: true });
+    /* ... and the host takes it (capability honesty, note 38): on an
+       adapted world, a verb the current adapter's profile does not
+       declare is refused here, in words that name the host — before
+       anything is staged, sent, or recorded. */
+    var ad = null;
+    if (world.adapted) {
+      ad = adapterFor(opts);
+      if (!ad) return no('The host adapter is not loaded. Nothing was done.');
+      if (!ad.profile.verbs[req.intent]) {
+        return no(cap(ad.profile.hostLabel) + ' doesn\'t take that from Witness — it has to be done there directly. Nothing was done.', { unsupported: true });
+      }
+    }
     var prep = world.prepare(state, req, opts);
     if (!prep.ok) {
       if (prep.clarify) return { ok: false, clarify: prep.clarify, field: prep.field };
@@ -448,9 +504,15 @@
     var mine = world.owns(state, req, prep, opts);
     if (mine) return mine;
 
-    /* 5. run through the engine (or, unconfirmed, stage) */
+    /* 5. run through the engine (or, unconfirmed, stage); on an adapted
+       world, submit through the adapter */
     var held = world.blocked(state, req, prep, opts);
     if (held) return held;
+    var async = ad && ad.profile.transport === 'async';
+    var sentAlready = async ? pendingFor(state, req, prep, world) : null;
+    if (sentAlready && sentAlready.key !== req.key) {
+      return no('That is already sent to ' + ad.profile.hostLabel + ' — waiting on it to confirm. Nothing was sent again.', { pending: sentAlready.key });
+    }
     if (stageOnly) {
       return { ok: true, result: { staged: true, act: {
         via: req.via, who: req.who, intent: req.intent, target: req.target,
@@ -458,16 +520,75 @@
       } } };
     }
     var mark = (state.records || []).length;
-    var r = world.run(state, req, prep, opts);
+    var a = null, r;
+    if (ad) {
+      a = world.act(req, prep);
+      /* The idempotency key: minted once, here, from the state-held
+         counter — door + counter, unique per act by construction. The
+         key rides on the request object, so resubmitting the same act
+         reuses it. The dummy is in-process (its landing IS the
+         record's transaction) and is not keyed. */
+      if (ad.profile.keyed || async) {
+        if (!req.key) {
+          state.adapterSeq = (state.adapterSeq || 0) + 1;
+          req.key = req.via + '-' + state.adapterSeq;
+        }
+        a.key = req.key;
+      }
+      r = ad.submit(state, a);
+    } else {
+      r = world.run(state, req, prep, opts);
+    }
     if (!r || r.ok === false) return no((r && r.reason) || 'The act did not go through. Nothing was done.', r && r.unbalanced ? { unbalanced: true } : null);
 
-    /* 6. one attribution writer */
+    /* 6. one attribution writer — a SENT act is recorded in
+       state.sentActs, attributed exactly as a landed act is (who, via,
+       the words heard) plus its key; it lands (and is attributed on
+       the record) only when the host's verdict says so. */
+    if (r.sent) {
+      var entry = sentAlready || find(state.sentActs, function (e) { return e.key === a.key; });
+      if (!entry) {
+        entry = { key: a.key, via: req.via, who: req.who, intent: req.intent, target: a.target,
+          params: plain(a.params), words: a.words, ts: nowTs(), status: 'sent' };
+        if (!state.sentActs) state.sentActs = [];
+        state.sentActs.push(entry);
+      }
+      return { ok: true, result: { sent: true, key: a.key, host: ad.profile.hostLabel, entry: entry,
+        text: 'Sent to ' + ad.profile.hostLabel + ' — waiting on it to confirm.' } };
+    }
     attribute(state, mark, req, world.taskId(req, prep, r), prep.words);
     return { ok: true, result: r };
   }
 
+  /* A SENT act still waiting on the host for the same act on the same
+     target: the task stays open and in hand, and a fresh act on it is
+     not sent twice. A retry of the same act (same key) goes through. */
+  function pendingFor(state, req, prep, world) {
+    var tid = world.taskId(req, prep);
+    if (!tid) {
+      return req.key ? find(state.sentActs, function (e) { return e.key === req.key && e.status === 'sent'; }) : null;
+    }
+    return find(state.sentActs, function (e) { return e.status === 'sent' && e.intent === req.intent && e.target === tid; });
+  }
+
+  function nowTs() { var W = wms(); return W && W.now ? W.now() : new Date().toISOString(); }
+
+  /* The host's 'landed' verdict on a SENT act (called by the adapter's
+     confirmation handler): the act's effect lands through the one land
+     path, and check 6 attributes it exactly as a sync landing is. */
+  function settle(state, entry) {
+    var A = adapters();
+    if (!A) return no('The host adapter is not loaded. Nothing was done.');
+    var mark = (state.records || []).length;
+    var r = A.land(state, entry);
+    if (!r || r.ok === false) return no((r && r.reason) || 'The act did not go through. Nothing was done.');
+    attribute(state, mark, entry, entry.intent === 'complete' ? entry.target : null, entry.words);
+    return r;
+  }
+
   var api = {
     act: act,
+    settle: settle,
     POLICY: POLICY,
     OUTAGE: OUTAGE,
     PARTIAL_OR_FULL: PF,

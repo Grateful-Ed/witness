@@ -226,7 +226,17 @@
   var KNOWN = {
     /* Top-level state sections. */
     sections: ['doors', 'zones', 'bins', 'staging', 'labor', 'inbound', 'outbound', 'tasks', 'records', 'wms',
-      'wmsRev', 'wmsSavedAt', 'world', 'destinationRules', 'vocabulary', 'concepts'],
+      'wmsRev', 'wmsSavedAt', 'world', 'destinationRules', 'vocabulary', 'concepts',
+      /* The host-adapter seam (briefs/claude-brief-adapter.md): acts
+         SENT to an async host and waiting on its verdict, and the
+         counter their idempotency keys are minted from. Registered
+         deliberately, never left for the detector to "discover". */
+      'sentActs', 'adapterSeq'],
+    /* Every entry of state.sentActs carries these (status: 'sent' |
+       'landed' | 'refused'; settledAt, reason and localRefusal once
+       the host's verdict is in). */
+    sentActFields: ['key', 'via', 'who', 'intent', 'target', 'params', 'words', 'ts', 'status',
+      'settledAt', 'reason', 'localRefusal'],
     /* Sections of the WMS layer (state.wms). */
     wmsSections: ['version', 'items', 'appointments', 'slots', 'orders', 'waves', 'receipts', 'osd', 'loads',
       'flags', 'counts', 'decisions', 'seq', 'jobs'],
