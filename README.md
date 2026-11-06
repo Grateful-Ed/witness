@@ -1,6 +1,6 @@
 # Witness
 
-**Live:** [WMS console](https://grateful-ed.github.io/witness/wms.html) · [Warehouse glasses](https://grateful-ed.github.io/witness/glasses.html) · [Kitchen glasses](https://grateful-ed.github.io/witness/glasses.html?world=kitchen) · [Receiving cross-check](https://grateful-ed.github.io/witness/) · [Demos](https://grateful-ed.github.io/witness/demos.html)
+**Live:** [Demo WMS console](https://grateful-ed.github.io/witness/wms.html) · [Warehouse glasses](https://grateful-ed.github.io/witness/glasses.html) · [Kitchen glasses](https://grateful-ed.github.io/witness/glasses.html?world=kitchen) · [Receiving cross-check](https://grateful-ed.github.io/witness/) · [Demos](https://grateful-ed.github.io/witness/demos.html)
 
 *Directed by E. William Harris IV (domain: software implementation, Six Sigma, and continuous improvement — his passion). Project management and records by Faye (AI), William's Muse assistant; code by Claude (AI). Authorship is stated the way it happened: directed by William, built with AI.*
 
@@ -8,13 +8,13 @@
 
 A receiver's hands are busy. A warehouse's paperwork lies. Witness starts from those two facts: the people doing the work should be able to talk to the system, the system should check what it's told against what it can see, and no machine should ever sign off on freight — a human decides.
 
-> **This README is the project's definition of record.** The project grew on Oct 31, 2026 — from a receiving-dock cross-check into the whole warehouse. Module one (the cross-check) is built and live; the whole building has since been built in the open, in this repo. Witness was submitted to the hackathon on Nov 4, 2026 — and the project continues past it. If anything anywhere describes Witness as only a receiving app, this file supersedes it.
+> **This README is the project's definition of record.** The project grew on Oct 31, 2026 — from a receiving-dock cross-check into the whole warehouse. Module one (the cross-check) is built and live; the layer has since grown to the whole warehouse, demonstrated on a dummy WMS built in this repo for that purpose. **Witness is not a WMS** — it is the layer that sits on the WMS a warehouse already runs; the dummy is demo equipment, not the product. Witness was submitted to the hackathon on Nov 4, 2026 — and the project continues past it. If anything anywhere describes Witness as only a receiving app, this file supersedes it.
 
 > **One name note:** William and Ed are the same person — E. William Harris IV, this project's director. The Ship Safe repo's documents usually call him Ed; this repo calls him William. One person, one set of rulings — an approval under either name is his.
 
 ## The whole project
 
-The glasses only make sense if the whole warehouse runs through them — you can't sell them for one task. So Witness is the building, organized the way the work is:
+The glasses only make sense if the whole warehouse runs through them — you can't sell them for one task. So Witness spans the whole building, organized the way the work is:
 
 1. **The building** — dock doors, zones, staging lanes, and bins: every storage location, what belongs in it, what's in it now.
 2. **Inbound** — what's expected (the bill of lading is already in the system before the truck arrives), door assignment, receiving, putaway, and exceptions at the door.
@@ -31,7 +31,7 @@ The glasses only make sense if the whole warehouse runs through them — you can
 
 One law at every level: **the AI proposes; a human decides.**
 
-Scope honesty, in the builder's own rule: a full warehouse management system is a multi-year industry. The target in this window is the high-level basic of each area *that works* — narrow claims, checked deeply, the same discipline as the pallet cross-check below.
+Scope honesty, in the builder's own rule: a full warehouse management system is a multi-year industry, and Witness does not try to be one. The in-repo WMS is a dummy that demonstrates the layer; the target is the high-level basic of each area *of the layer* that works — narrow claims, checked deeply, the same discipline as the pallet cross-check below.
 
 ## Module one — the receiving cross-check (built, live)
 
