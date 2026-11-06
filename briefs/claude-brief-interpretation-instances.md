@@ -70,19 +70,33 @@ The change:
      confirmation law still owns the close).
    - The AI claims a number the parser does not read (or
      reads differently) → **clarification, nothing
-     staged**: the door asks which was meant, in the
-     existing ask style.
+     staged**, in the decided shape (below).
    - The worker claimed nothing and the parser reads
      nothing → today's asks stand ("Say the count you
      picked…").
    - The worker claimed nothing but the parser reads a
      number → that is the pronoun case: the parser's read
-     is a nudge, never a stage. For a pick, ask the count
-     (as when nothing was claimed). The number the parser
-     saw may be named in the ask — it may never be staged
-     silently.
+     is a nudge, never a stage. The ask is the decided
+     clarification (below); the parser's number is never
+     named in it and never staged silently.
    - Claim above the task's quantity → today's guard
      stands (an ask, nothing staged).
+   **The clarification's shape (William, decided
+   2026-11-06).** For a quantity ambiguity the door asks
+   exactly: "Is this a partial or full completion?" —
+   *full* stages the full close; *partial* asks the count
+   (today's ask), and that answer stages the short close.
+   The worker's answer is an ordinary next utterance
+   through the same path, with one addition: the pending
+   clarification carries the initial utterance and its
+   readings for exactly one turn — the same module-memory
+   pattern as the confirmation stage, never persisted,
+   dead after that one utterance — and the second reading
+   is made against the initial words and the answer
+   TOGETHER before anything is asked again. If the
+   combined reading still cannot resolve it, the next ask
+   is narrower than the last; the same question is never
+   asked twice.
 4. If the model turn fails or returns no claim, the door
    behaves as "nothing claimed": it asks. The code's read
    alone never stages a number again.
@@ -152,7 +166,12 @@ The change:
   number. For flags: an AI place that validates lands the
   zone; an invented place falls back; two-zone words
   resolve nothing; an AI/token zone disagreement asks
-  before filing.
+  before filing. For the clarification loop: "full"
+  stages the full close; "partial" draws the count ask
+  and the count stages; an answer that only resolves
+  read together with the initial utterance stages from
+  the combined reading; a second ambiguity narrows the
+  ask instead of repeating it.
 - Behavior parity everywhere else: full node suite AND
   test/wms-ui-smoke.js reported separately; counts only
   grow.
