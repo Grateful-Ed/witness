@@ -1,0 +1,76 @@
+/* witness-app.css — the Witness application's own sheet.
+   Design (William, 2026-11-06): mimic the dummy WMS console for
+   now — its navy masthead, panel-and-band tiles, dense plain
+   forms. The palette values below ARE the console's (css/wms.css),
+   scoped to the app's own containers so this sheet can ride on
+   the record page (warehouse.html) without touching its design.
+   A visual identity of Witness's own is a later call.
+   NO warehouse map lives here: the map is a WMS surface, and
+   this is not a WMS. */
+
+#witness-app-nav, .app-main{
+  --navy:#0d2b45; --navy-2:#143a5c; --accent:#1f74c4; --accent-2:#155a9b;
+  --bg:#eef1f5; --panel:#ffffff; --line:#d4dbe4; --head:#e8edf3;
+  --ink:#1b2733; --ink-2:#4a5a6b; --ink-3:#6f7f90; --bad:#b3261e;
+}
+body.app-body{background:#eef1f5;margin:0}
+
+/* The shared header — the console's masthead, restated. */
+.app-topbar{display:flex;align-items:center;gap:14px;background:var(--navy);
+  color:#fff;padding:10px 16px;font:14px system-ui,sans-serif}
+.app-brand{font-weight:800;letter-spacing:.04em;display:flex;align-items:center;gap:9px}
+.app-brand small{font-weight:600;color:#cfe0f2;letter-spacing:0}
+.app-mark{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+  background:var(--accent);border-radius:5px;font-weight:800;color:#fff}
+.app-spacer{flex:1}
+.app-tag{color:#cfe0f2;font-size:12.5px}
+
+.app-tabs{display:flex;gap:2px;background:var(--navy-2);padding:0 16px;
+  font:14px system-ui,sans-serif}
+.app-tab{color:#cfe0f2;text-decoration:none;font-weight:600;font-size:13px;
+  padding:10px 14px;border-bottom:3px solid transparent}
+.app-tab:hover{color:#fff}
+.app-tab.current{color:#fff;border-bottom-color:var(--accent);background:rgba(255,255,255,.06)}
+
+/* Screens */
+.app-main{max-width:1080px;margin:0 auto;padding:18px 16px 48px;
+  font:14px/1.5 system-ui,sans-serif;color:var(--ink)}
+.app-h{font-size:19px;margin:6px 0 4px;color:var(--navy)}
+.app-h3{font-size:14px;margin:22px 0 6px;color:var(--navy);
+  text-transform:uppercase;letter-spacing:.06em}
+.app-lede{color:var(--ink-3);max-width:72ch;margin:4px 0 12px}
+.app-note{color:var(--accent);min-height:1.2em}
+.app-note.bad{color:var(--bad)}
+
+.tile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.tile-head{background:var(--head);border-top:3px solid var(--navy);padding:7px 12px;
+  color:var(--navy);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.tile > div:not(.tile-head){padding:10px 12px}
+.tile-num{font-size:17px;font-weight:700;color:var(--ink)}
+.tile-sub{color:var(--ink-3);font-size:12.5px}
+
+.app-kv{border-collapse:collapse;background:var(--panel);border:1px solid var(--line)}
+.app-kv th,.app-kv td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.app-kv th{color:var(--navy);white-space:nowrap;background:var(--head);font-size:12px;
+  text-transform:uppercase;letter-spacing:.06em}
+
+.app-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.app-form input[type="password"],.app-form input[type="text"],.app-field input{
+  font:14px system-ui,sans-serif;padding:8px 10px;border:1px solid var(--line);
+  border-radius:6px;min-width:260px;background:var(--panel);color:var(--ink)}
+.app-field{display:flex;gap:8px;align-items:center;font-weight:600;color:var(--navy)}
+.btn{font:600 13px system-ui,sans-serif;padding:8px 14px;border-radius:7px;cursor:pointer;
+  background:var(--accent);border:1px solid var(--accent);color:#fff}
+.btn-quiet{background:transparent;color:var(--navy);border-color:var(--line)}
+.key-mask{font-weight:700;letter-spacing:.12em;margin-right:10px}
+
+.concept{background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  padding:10px 12px;margin:8px 0}
+.concept p{margin:4px 0}
+.concept textarea{width:100%;box-sizing:border-box;font:13.5px system-ui,sans-serif;
+  padding:8px;border:1px solid var(--line);border-radius:6px;margin:6px 0;
+  background:var(--panel);color:var(--ink)}
+.concept .btn{margin-top:2px}
+.rung{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--accent);border:1px solid var(--line);border-radius:20px;padding:2px 8px;margin-left:6px}
