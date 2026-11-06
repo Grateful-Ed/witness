@@ -124,8 +124,10 @@ The change:
    is staged or run from code-side reading at all**
    (William, 2026-11-06, note 40): Witness does not work
    without the model — it cannot fall back on code alone.
-   The door answers plainly that it cannot take spoken
-   work right now. That covers staging a completion or a
+   The door's reply is exactly: **"AI is currently
+   down."** — the outage named as an outage, never a
+   per-request apology, so nobody retries against it
+   like a bug (William's wording call, 2026-11-06). That covers staging a completion or a
    flag, and running a staged act on a local "yes" — a
    stage caught by an outage dies like a topic change,
    unrun. The local intent reader (localIntent) keeps its
@@ -204,7 +206,7 @@ The change:
   count stages the short close with its detail line; a
   claim/parser disagreement asks and stages nothing; a
   model failure stages nothing and runs nothing — the door
-  answers that it cannot take spoken work right now (any
+  answers "AI is currently down." (any
   expectation that pinned local-fallback staging is an
   expected change). For flags: an AI place that validates lands the
   zone; an invented place falls back; two-zone words
