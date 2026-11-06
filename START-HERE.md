@@ -37,7 +37,7 @@ file is the working agreement.
   my second baby"). PRs #1–#44 are merged; nothing is open.
 - **Built and reviewed since Nov 1:** the WMS desk console, the
   central agent (dispatch architecture), the dynamic ontology —
-  including self-extension (it learns new WMS features; a human
+  including self-extension (it learns new features of the WMS under it; a human
   settles them) — the shared record across desk, phone, and
   glasses (one warehouse, one /state document), full-flow voice
   under the confirmation law, and job-based assignment (jobs dealt
@@ -68,13 +68,16 @@ Already built (for reference): `claude-conversational-layer.md`,
   **Agree / Flag / Can't verify** ("can't verify" is first-class).
   The machine never signs off; a human decides. Records are never
   frozen; an incident can be added to a load's record at any time.
-- Third-party by design (standing): Witness is a layer that
-  sits on the customer's OWN WMS (Manhattan / SAP / Blue
-  Yonder class); the WMS in this repo is host zero — the
-  proving stand-in, not the product's home. Anything built
-  for the real application reads and validates against the
-  ontology digest's shapes (the surface an adapter supplies),
-  never against this WMS's internals alone.
+- **Witness is not a WMS** (standing; William, 2026-11-06):
+  Witness is the AI layer that sits on the customer's OWN
+  WMS (Manhattan / SAP / Blue Yonder class). The WMS in
+  this repo is a DUMMY — it exists only to demonstrate the
+  layer's capability; it is not Witness's WMS and not a
+  stand-in for one. Anything built for the real application
+  reads and validates against the ontology digest's shapes
+  (the surface an adapter supplies), never against the
+  dummy's internals alone. Dummy-WMS work is demo support,
+  never product progress.
 - Completion confirmation (2026-11-05): a spoken completion only
   STAGES the close — the system reads it back and asks; only the
   worker's next-turn yes runs it, recorded with the exact words
