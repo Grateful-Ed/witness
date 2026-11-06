@@ -20,7 +20,14 @@ and demote the code to the double checker.
   them so the code lands.
 - **Note 33:** "Done with this one" is a known completion
   phrase claiming no count — ontology knowledge, not a
-  number.
+  number. **Note 39 (2026-11-06) refines note 33's fix
+  sketch:** where 33 said a no-count completion on a pick
+  asks the count, 39 rules that a clean completion stages
+  the FULL close; the count ask survives for count tasks
+  and after a "partial" answer. Note 33's parser half (the
+  parser stops eating the pronoun) is NOT in this build —
+  the claim architecture makes the parser's read harmless,
+  because it can never stage alone.
 - Audit rows (tracker, Interpretation audit tab): #6
   numbers-from-speech (MISALIGNED), #21 flag's zone
   (resolution directed by William 2026-11-06).
