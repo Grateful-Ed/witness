@@ -72,8 +72,18 @@ The change:
      reads differently) → **clarification, nothing
      staged**, in the decided shape (below).
    - The worker claimed nothing and the parser reads
-     nothing → today's asks stand ("Say the count you
-     picked…").
+     nothing → the utterance translated cleanly (a known
+     completion phrase — note 33): **the full task is
+     assumed complete** and the full close is staged (the
+     confirmation law still owns the close). This CHANGES
+     today's behavior — completionPlan's no-number
+     branches currently ask for the count; William's
+     ruling (2026-11-06, note 39): the partial/full
+     question is reserved for utterances that do NOT
+     translate well. Exception: count tasks, where the
+     number is the work product (a cycle count's counted
+     quantity) — there the count ask stands, because
+     "done" cannot supply a measurement.
    - The worker claimed nothing but the parser reads a
      number → that is the pronoun case: the parser's read
      is a nudge, never a stage. The ask is the decided
@@ -185,7 +195,10 @@ The change:
 - Behavior parity everywhere else: full node suite AND
   test/wms-ui-smoke.js reported separately; counts only
   grow.
+- Bare "done" on a pick stages the full close; bare
+  "done" on a count task still asks for the count.
 - The PR states its head SHA and names any expectation it
   changed in existing tests (completion wording on the
-  pronoun path is the expected one).
+  pronoun path and the bare-"done" path are the expected
+  ones).
 - Open as a draft. Do not merge — William's word.
