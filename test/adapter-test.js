@@ -98,9 +98,12 @@ yt.via = 'voice'; yt.heard = words;
 y.s.records.slice(mark).forEach(function (rec) { rec.via = 'voice'; rec.heard = words; if (rec.by == null) rec.by = PRIYA; });
 check('dummy: a confirmed complete lands now — the task is done, the result is the engine\'s own',
   r.ok === true && !r.result.sent && E.taskById(x.s, x.cur.id).status === 'done' && r.result.text === byHand.text);
-/* (js/engine.js stamps a task's doneAt from the wall clock, which no
-   test can pin; that one stamp is masked.) */
-function wall(st) { return snap(st).replace(/"doneAt":"[^"]*"/g, '"doneAt":"*"'); }
+/* (Two stamps come from the wall clock, which no test can pin:
+   js/engine.js's doneAt on a task, and the ts on each record the
+   paths write — the two runs land a millisecond apart as often as
+   not. Both stamps are masked; everything else must match exactly.
+   Mask extended by Faye in the PR #50 review, 2026-11-06.) */
+function wall(st) { return snap(st).replace(/"doneAt":"[^"]*"/g, '"doneAt":"*"').replace(/"ts":"[^"]*"/g, '"ts":"*"'); }
 check('dummy: the state is byte-identical to the engine\'s own path with today\'s attribution (via, heard, by)',
   wall(x.s) === wall(y.s));
 check('dummy: nothing new in the state — no sentActs, no adapterSeq (the dummy is in-process, not keyed)',
@@ -117,7 +120,7 @@ var fh = W.flag(y.s, { unitId: TOMMY, words: 'there is oil leaking by B-03', lab
 y.s.records.slice(mark).forEach(function (rec) { rec.via = 'voice'; rec.heard = 'there is oil leaking by B-03'; if (rec.by == null) rec.by = TOMMY; });
 check('dummy: a spoken flag lands as before — landed language, the console\'s path',
   d.result.ok === true && !d.result.sent && /^Flagged "Oil leak" with your words \(Zone B\)/.test(d.result.text) && fh.ok);
-check('dummy: the flag\'s state is byte-identical to W.flag with today\'s attribution', snap(x.s) === snap(y.s));
+check('dummy: the flag\'s state is byte-identical to W.flag with today\'s attribution', wall(x.s) === wall(y.s));
 
 /* A spoken complete through the door, on the dummy: landed language. */
 x = pickInHand();
