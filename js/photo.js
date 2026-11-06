@@ -224,14 +224,25 @@
     return out;
   }
 
+  /* The sheet travels as a data URL, not its public URL: the /chat
+     service refuses to fetch this project's hosted images (live-proven
+     2026-11-05, media_url_not_fetchable) — the same refusal /segment
+     hit. No fallback to the URL: that is the broken path. */
   function askPhoto(loadKey) {
-    return chat([
-      { role: 'system', content: PHOTO_PROMPT },
-      { role: 'user', content: [
-        { type: 'text', text: 'Read this load\'s four sides and return the flags JSON.' },
-        { type: 'image_url', image_url: { url: SHEETS[loadKey] } }
-      ] }
-    ], 'photo scan', 6000).then(function (parsed) {
+    return sheetDataUrl(loadKey).then(function (imageData) {
+      if (!imageData) {
+        var prep = new Error('sheet not encodable');
+        prep.userMessage = 'The photo could not be prepared for the scan. Nothing was changed — what is already on screen still stands.';
+        throw prep;
+      }
+      return chat([
+        { role: 'system', content: PHOTO_PROMPT },
+        { role: 'user', content: [
+          { type: 'text', text: 'Read this load\'s four sides and return the flags JSON.' },
+          { type: 'image_url', image_url: { url: imageData } }
+        ] }
+      ], 'photo scan', 6000);
+    }).then(function (parsed) {
       var flags = normalisePhotoFlags(parsed);
       if (!flags) {
         var wrong = new Error('unparseable');
