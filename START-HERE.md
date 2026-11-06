@@ -68,6 +68,13 @@ Already built (for reference): `claude-conversational-layer.md`,
   **Agree / Flag / Can't verify** ("can't verify" is first-class).
   The machine never signs off; a human decides. Records are never
   frozen; an incident can be added to a load's record at any time.
+- Third-party by design (standing): Witness is a layer that
+  sits on the customer's OWN WMS (Manhattan / SAP / Blue
+  Yonder class); the WMS in this repo is host zero — the
+  proving stand-in, not the product's home. Anything built
+  for the real application reads and validates against the
+  ontology digest's shapes (the surface an adapter supplies),
+  never against this WMS's internals alone.
 - Completion confirmation (2026-11-05): a spoken completion only
   STAGES the close — the system reads it back and asks; only the
   worker's next-turn yes runs it, recorded with the exact words
