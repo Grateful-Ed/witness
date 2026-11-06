@@ -495,6 +495,30 @@ banner itself now carries the way out it was missing: an "End
 practice copy" button that returns to the same view of the live
 record (js/wms-ui.js).
 
+## The gate — one act path for the agent doors (js/gate.js)
+
+Console voice (js/wms-voice.js), converse (js/converse.js — the
+glasses and the phone) and the game's voice (js/wms-game.js) no
+longer carry their own copies of the permission laws. Every act they
+take goes through `gate.act(state, { who, via, intent, target,
+params, confirmed })`, which runs six checks in order: the act exists
+and its params cross-check (a disagreement returns a clarification;
+an act that is not model-formed returns "AI is currently down."); the
+signature class (posting a receiving, confirming a load — refused
+with the desk guidance, again at run time); the confirmation law (an
+unconfirmed act is only staged — the door keeps the stage); ownership;
+the run through the engine's public paths; and one attribution writer
+(who, via, the words heard). The rules live in one `POLICY` object.
+
+Scope (William, 2026-11-06): converse routes through the gate with
+today's behavior. Its pull retirement, its translation-layer move
+(instance 3), the outage line and the signature refusal for converse
+wait for their own brief — js/glasses.js (frozen) reads words in code
+and uses the turn synchronously. The policy says so
+(`modelFormed.converse`, `signatureEnforced.converse`, `pull.converse`).
+Desk clicks — including the game panel's buttons — route through the
+gate in the follow-on build.
+
 ## Tests
 
 ```

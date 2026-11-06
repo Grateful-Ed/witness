@@ -367,16 +367,20 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
     JSON.stringify(pState.tasks.map(function (t) { return t.status; })) + '|' + pState.records.length === pSnap &&
     pHtml.indexOf('flag it for the lead') !== -1 && pHtml.indexOf('Task 1 of 5') !== -1);
 
-  /* the /chat call fails → the matcher fallback hears "Complete task." */
+  /* the /chat call fails → the outage rule (note 40, the gate build):
+     no code-only act path — the door says "AI is currently down." and
+     nothing is worked. (Before the gate build the keyword matcher
+     completed the step here.) */
   var fState = W.seedGame();
   G.afterRender(gameCtx(fState, function () { return Promise.reject(new Error('network')); }));
   await G.ui('start');
   G.hear('Complete task.');
   await flush(); await flush();
   var fHtml = G.panelHtml(panelStub, fState, true);
-  check('hear: when META cannot be reached, the fallback matcher completes the step — and no META line is shown',
-    fState.records.some(function (r) { return /Checked in/.test(r.text); }) &&
-    fHtml.indexOf('task 1 of 5 worked') !== -1 && fHtml.indexOf('META:') === -1);
+  check('hear: when META cannot be reached, nothing is worked — the door says "AI is currently down." and no META line is shown',
+    !fState.records.some(function (r) { return /Checked in/.test(r.text); }) &&
+    fHtml.indexOf('AI is currently down.') !== -1 && fHtml.indexOf('task 1 of 5 worked') === -1 &&
+    fHtml.indexOf('META:') === -1 && fHtml.indexOf('Task 1 of 5') !== -1);
 
   /* the act refuses → her words are discarded for the honest note */
   var dState = W.seedGame();
@@ -506,7 +510,9 @@ function flush() { return new Promise(function (res) { setTimeout(res, 0); }); }
 
   G.reset();
   var kvState = stockedState();
-  G.afterRender(polishCtx(kvState, []));
+  /* META hears the start (the outage rule: with no model, nothing
+     acts — so the voice start needs her intent). */
+  G.afterRender(polishCtx(kvState, [], function () { return Promise.resolve({ intent: 'start', say: 'Starting.' }); }));
   await G.ui('role', 'counter');
   await G.ui('start');
   await workToEnd();
