@@ -38,6 +38,7 @@ var server = http.createServer(function (req, res) {
   fs.createReadStream(f).pipe(res);
 });
 
+var MS = require('./converse-model-stub.js');
 var kv = null, log = [], chats = [], saves = [], down = false;
 var PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
@@ -56,6 +57,8 @@ async function stub(ctx) {
     if (u.pathname === '/chat') {
       var b = JSON.parse(req.postData());
       chats.push(b);
+      /* the converse model step: the phone's worker turn is read first */
+      if (MS.isConverse(b)) return route.fulfill({ status: 200, headers: cors, body: JSON.stringify({ choices: [{ message: { content: MS.converseReply(b) } }] }) });
       var isPhoto = /photo scan/.test(b.messages[0].content);
       var content = isPhoto
         ? JSON.stringify({ flags: [{ label: 'Torn wrap', side: 'front', detail: 'Wrap is torn at the top left corner.' }] })
@@ -143,26 +146,37 @@ server.listen(0, async function () {
     check('phone open + who-am-I is read-only (no POST)', log.filter(function (m) { return m === 'POST'; }).length === postsBefore);
     check('no task in hand: no chip shows', await phone.isHidden('#chipTask'));
 
+    /* the pull retirement: an ask for work with nothing assigned pulls nothing */
+    log.length = 0;
+    await phone.fill('#phTypeInput', "what's next");
+    await phone.click('#phTypeBtn');
+    await phone.waitForFunction(function () { return /Nothing is assigned to you right now\./.test(document.getElementById('phReply').textContent); });
+    check('"what\'s next" with nothing assigned: "Nothing is assigned to you right now.", no POST, no task moves',
+      log.indexOf('POST') === -1 && !unit(doc(), 'u-dee').currentTaskId);
+
+    /* the desk assigns Dee's task; the phone sees it */
+    await desk.reload();
+    await deskReady(desk);
+    await desk.click('#nameChips [data-unit="u-dee"]');
+    await desk.click('#nextBtn');
+    await desk.waitForFunction(function () { return /Done/.test(document.getElementById('nextBtn').textContent); });
+    var deeTask = unit(doc(), 'u-dee').currentTaskId;
+    check('the desk\'s assignment is on the shared record', !!deeTask);
+    var deskCard = await desk.textContent('#taskCard');
+    var deeTitle = doc().tasks.filter(function (t) { return t.id === deeTask; })[0].title;
+    check('desk: the card shows Dee\'s assigned task', deskCard.indexOf(deeTitle) !== -1);
+
     log.length = 0;
     await phone.fill('#phTypeInput', "what's next");
     await phone.click('#phTypeBtn');
     await phone.waitForSelector('#chipTask:not([hidden])');
     var chipTask = await phone.textContent('#chipTask');
     var chipBin = await phone.isHidden('#chipBin') ? '' : await phone.textContent('#chipBin');
-    check('"what\'s next" from the phone: GET then POST', log.join(',') === 'GET,POST');
+    check('"what\'s next" from the phone: a fresh GET, nothing written', log.join(',') === 'GET');
     check('glance chip: Task #', /^Task \d+$/.test(chipTask));
     check('glance chip: Bin # (or door) when it has a reason', chipBin === '' || /^(Bin |.*Door )/.test(chipBin));
-    var deeTask = unit(doc(), 'u-dee').currentTaskId;
-    check('the phone\'s pull is on the shared record', !!deeTask);
+    check('desk → phone: the phone says Dee\'s assigned task back', /Still yours/.test(await phone.textContent('#phReply')));
     check('the reply shows, clipped', (await phone.textContent('#phReply')).length <= 160 && (await phone.textContent('#phReply')).length > 0);
-
-    /* the desk sees the phone's change */
-    await desk.reload();
-    await deskReady(desk);
-    await desk.click('#nameChips [data-unit="u-dee"]');
-    var deskCard = await desk.textContent('#taskCard');
-    var deeTitle = doc().tasks.filter(function (t) { return t.id === deeTask; })[0].title;
-    check('phone → desk: the desk shows Dee\'s task from the phone', deskCard.indexOf(deeTitle) !== -1);
 
     /* problem words pin and close nothing */
     await phone.fill('#phTypeInput', 'the wrap is torn on this one');
@@ -172,7 +186,7 @@ server.listen(0, async function () {
     check('problem words pin the worker\'s exact words to the task', (tProb.notes || []).some(function (n) { return n.text === 'the wrap is torn on this one'; }));
     check('problem words close nothing', tProb.status === 'assigned' && unit(doc(), 'u-dee').currentTaskId === deeTask);
 
-    /* "done" asks first and closes nothing; "yes" closes and pulls the next */
+    /* "done" asks first and closes nothing; "yes" closes (and pulls nothing) */
     await phone.fill('#phTypeInput', 'done');
     await phone.click('#phTypeBtn');
     await phone.waitForFunction(function () { return /complete\?/.test(document.getElementById('phReply').textContent); });

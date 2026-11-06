@@ -8,10 +8,15 @@
    (module.exports).
 
    Two halves:
-   - WORKER: matchIntent() turns a transcript into one of four
-     intents, LOCALLY and deterministically — no model decides what
-     a worker meant. workerTurn() carries the intent out through the
-     engine (complete, pull next, report a problem) or does nothing.
+   - WORKER: the model reads the worker's words first (readWorker →
+     js/wms-ai.js converseTurn, the converse model step, 2026-11-06);
+     matchIntent() is the code's own deterministic read, used as the
+     cross-check. Agreement proceeds; a stark disagreement is one
+     clarification; no model reading is the outage ("AI is currently
+     down.") — nothing staged, nothing run. workerTurn() carries an
+     adjudicated intent out through the gate (complete, report a
+     problem, start the worker's created job) or does nothing. Work is
+     assigned, never pulled.
    - MANAGER: buildStateSummary() writes the building's live numbers
      as plain text; askManager() sends that text plus the question to
      Muse Spark (Worker POST /chat), bound to answer only from those
@@ -31,8 +36,8 @@
   var MANAGER_MAX_TOKENS = 6000;
 
   /* The gate (js/gate.js, the gate build 2026-11-06): every act this
-     door takes on the building — a close, a problem note, a start, a
-     pull — goes through gate.act, which owns the checks (signature,
+     door takes on the building — a close, a problem note, a start —
+     goes through gate.act, which owns the checks (signature,
      the confirmation law, ownership), the run through the engine, and
      the attribution. This door keeps its own conversation and its own
      stage, exactly as before. Read lazily: a page may load the gate
@@ -44,13 +49,19 @@
     }
     return g;
   }
-  function gateAct(E, state, unit, intent, target, words, extra) {
+  function gateAct(E, state, unit, intent, target, words, extra, model) {
     var G = gate();
     if (!G) return { ok: false, reason: 'The gate is not loaded. Nothing was done.' };
-    var params = { words: words };
+    var params = { words: words, model: model || null };
     if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) params[k] = extra[k];
     return G.act(state, { who: unit.id, via: 'converse', intent: intent, target: target, params: params, confirmed: intent === 'complete' ? !!(extra && extra.confirmed) : undefined }, { engine: E });
   }
+
+  /* The two fixed lines of this door. OUTAGE is note 40's line, word
+     for word (the gate's own); NOTHING_ASSIGNED is the console voice's
+     answer to an ask for work with nothing assigned (PR #40). */
+  var OUTAGE = 'AI is currently down.';
+  var NOTHING_ASSIGNED = 'Nothing is assigned to you right now.';
 
   /* ---------- worker: what did they say? ---------------------------- */
 
@@ -111,7 +122,25 @@
     var st = liveStage(unitId);
     return st ? { taskId: st.taskId, title: st.title } : null;
   }
-  function clearStages() { stages = {}; }
+  function clearStages() { stages = {}; clarifs = {}; }
+
+  /* A clarification waiting for its answer (the interpretation model,
+     notes 34/34b): module memory only, keyed by unit id, live for the
+     very next utterance, never persisted. It holds the words that
+     raised it, so the answer is weighed with them; once answered (or
+     let go) it is gone, and the same question is never asked again. */
+  var clarifs = {};
+  function takeClarif(unitId) {
+    var c = clarifs[unitId];
+    delete clarifs[unitId];
+    if (!c || heardSeq - c.seq > 1) return null;
+    return c;
+  }
+  function pendingClarification(unitId) {
+    var c = clarifs[unitId];
+    if (!c || heardSeq - c.seq > 1) return null;
+    return { words: c.words, question: c.question };
+  }
 
   function normalise(text) {
     return String(text || '')
@@ -125,10 +154,11 @@
   /* Returns { intent, heard } — a 'start' match also carries
      startText, the words after "start"/"begin". intent is one of:
        'problem' — something is wrong; note it, complete nothing
-       'done'    — close the task in hand, pull the next
+       'done'    — close the task in hand (staged; the next yes runs it)
        'start'   — begin the created job: its first task, or the
                    named product's task ("start with the milk")
-       'next'    — say what's in hand, or pull one if hands are empty
+       'next'    — say what's in hand; with empty hands, that nothing
+                   is assigned (work is assigned, never pulled)
        'confirm' — yes to a staged completion (only while one is pending)
        'deny'    — no to a staged completion (only while one is pending)
        'unknown' — take no action
@@ -270,8 +300,8 @@
      no "assign this one" call, and the start intent must honor the
      product the wearer named, so the assignment is made here, in
      exactly the engine's shape. */
-  function takeInHand(E, state, unit, task, words) {
-    return gateAct(E, state, unit, 'take', task.id, words);
+  function takeInHand(E, state, unit, task, words, model) {
+    return gateAct(E, state, unit, 'take', task.id, words, null, model);
   }
 
   function inHand(E, state, unit) {
@@ -292,6 +322,17 @@
     var out = { intent: match.intent, acted: false, lines: [], closed: null, next: null, problem: null, spoken: null, staged: null };
     var closedRun = null;
     if (!unit) { out.lines.push('Pick your name first. Nothing was done.'); return out; }
+    /* Note 40: no model reading, no turn. A match that did not come
+       through the model reading (readWorker) stages nothing and runs
+       nothing — a pending stage dies unrun. */
+    if (!match || !match.model) {
+      delete stages[unit.id];
+      out.lines.push(OUTAGE);
+      out.spoken = [OUTAGE];
+      out.outage = true;
+      return out;
+    }
+    var model = match.model;
     var current = inHand(E, state, unit);
     var stage = takeStage(unit.id); /* this turn decides it, whatever it is */
     var confirming = false;
@@ -327,7 +368,7 @@
     }
 
     if (match.intent === 'problem') {
-      var pg = gateAct(E, state, unit, 'note-problem', null, match.heard);
+      var pg = gateAct(E, state, unit, 'note-problem', null, match.heard, null, model);
       if (!pg.ok) { out.lines.push(pg.reason); return out; }
       var rep = pg.result.report;
       out.acted = true;
@@ -378,7 +419,7 @@
         }
         if (!chosen && open.length) chosen = open[0];
       }
-      if (chosen && !takeInHand(E, state, unit, chosen, match.heard).ok) chosen = null;
+      if (chosen && !takeInHand(E, state, unit, chosen, match.heard, model).ok) chosen = null;
       if (chosen) {
         out.acted = true;
         out.next = chosen;
@@ -386,9 +427,19 @@
         out.spoken = ['Next: ' + (taskProduct(state, chosen) || chosen.title) + '.'];
         return out;
       }
-      /* No created job to start (or nothing of it left open): fall
-         through to the ordinary pull below — the warehouse's work,
-         or "No work waiting." when there is none. */
+      /* No created job to start (or nothing of it left open): work
+         is assigned, never pulled (note 32) — say so; nothing moves. */
+      out.lines.push(NOTHING_ASSIGNED);
+      out.spoken = [NOTHING_ASSIGNED];
+      return out;
+    }
+
+    if (match.intent === 'next') {
+      /* An ask for work with nothing in hand: a question, never a
+         pull. Nothing moves. */
+      out.lines.push(NOTHING_ASSIGNED);
+      out.spoken = [NOTHING_ASSIGNED];
+      return out;
     }
 
     if (match.intent === 'done' || confirming) {
@@ -399,7 +450,7 @@
            hold. Confirmed, it runs the close and writes the record's
            attribution. */
         if (confirming) closedRun = runOfTask(state, current); /* before the close takes its pallet out of staging */
-        var cg = gateAct(E, state, unit, 'complete', current.id, match.heard, { confirmed: confirming, title: current.title });
+        var cg = gateAct(E, state, unit, 'complete', current.id, match.heard, { confirmed: confirming, title: current.title }, model);
         if (!cg.ok && cg.held) {
           out.lines.push('Can\'t close "' + current.title + '" — ' + cg.held);
           out.lines.push('Leave it be. Tell your manager.');
@@ -429,28 +480,235 @@
         out.lines.push('Closed: ' + current.title + '.');
       } else {
         out.lines.push('Nothing was in hand to close.');
+        out.lines.push(NOTHING_ASSIGNED);
+        out.spoken = [NOTHING_ASSIGNED];
+        return out;
       }
     }
 
     E.generateTasks(state); /* what this turn made possible (putaway after receiving, a load after the last pick) */
-    var pg2 = gateAct(E, state, unit, 'pull', null, match.heard);
-    var next = pg2.ok ? pg2.result.task : null;
+    /* No pull (note 32). A close inside the worker's own created job
+       moves to that job's next open task — the job is theirs once
+       started (the assignment law: a job's tasks go to no one else),
+       taken by name through the gate, the same 'take' a start makes.
+       Anything else: nothing is assigned, and nothing moves. */
+    var next = null;
+    if (closedRun && !runComplete(state, closedRun)) {
+      var jobOpen = jobTasks(state, closedRun).filter(function (t) {
+        return t.status === 'open' && !(E.blockedBy && E.blockedBy(state, t));
+      });
+      if (jobOpen.length && takeInHand(E, state, unit, jobOpen[0], match.heard, model).ok) next = jobOpen[0];
+    }
     /* The voice's version of this advance: no "Closed:" line at all,
        the next task named by its product only, and the job's own
        completion, in its name, when the close finished it. */
     var spoken = [];
     if (closedRun && runComplete(state, closedRun)) spoken.push(jobNameOf(closedRun) + ' complete.');
     if (next) {
-      out.acted = true;
       out.next = next;
       out.lines.push('Next: ' + taskLine(next));
       spoken.push('Next: ' + (taskProduct(state, next) || next.title) + '.');
     } else {
-      out.lines.push('No work waiting. The building is caught up.');
-      if (!spoken.length) spoken.push('No work waiting.');
+      out.lines.push(NOTHING_ASSIGNED);
+      if (!spoken.length) spoken.push(NOTHING_ASSIGNED);
     }
     out.spoken = spoken;
     return out;
+  }
+
+  /* ---------- worker: the read turn (the converse model step) ---------
+     Every worker turn on this door is read by the model FIRST
+     (js/wms-ai.js converseTurn — the translation layer, note 37:
+     never bypassed; verbatim is a valid translation). matchIntent is
+     the code's cross-check. readWorker adjudicates and resolves one
+     decision; the caller runs it in its own act path, against the
+     fresh state it saves:
+
+       { kind: 'turn', match }  run C.workerTurn(E, state, unit, match)
+                                (the match carries the model reading)
+       { kind: 'say', turn }    a finished turn that touches nothing —
+                                the outage, a clarification, an honest
+                                line. Nothing to save.
+       { kind: 'ask', turn }    neither reading names an act: the
+                                words are for the free ask where the
+                                door has one (glasses); turn is what a
+                                door without one shows.
+
+     The adjudication (notes 34/34b, 40):
+       - no model reading → "AI is currently down." Nothing staged or
+         run; a pending stage DIES (a later yes is inert).
+       - model and code agree, or the code has no reading and the
+         model reads an intent → proceed with the model's intent.
+       - they disagree (or the model has no reading where the code
+         reads an act) → ONE clarification naming the readings;
+         nothing staged or recorded. The answer is read again by the
+         model TOGETHER with the first words; a second ambiguity is
+         answered honestly, never asked again.
+       - a yes / no to a pending stage the two readings do not agree
+         on leaves the stage open, unrun — a close needs a clear yes.
+     ================================================================= */
+
+  /* The model envelope lives in js/wms-ai.js (which reads through
+     js/bol.js). Pages that do not carry those scripts get them here,
+     once, on the first read turn — the frozen glasses.html loads
+     neither. In node, require. */
+  var aiLoading = null;
+  function aiNow() {
+    var W = root.WitnessWmsAi || null;
+    if (!W && typeof require === 'function' && typeof document === 'undefined') {
+      try { W = require('./wms-ai.js'); } catch (e) { W = null; }
+    }
+    return W;
+  }
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var tag = document.createElement('script');
+      tag.src = src;
+      tag.onload = function () { resolve(); };
+      tag.onerror = function () { reject(new Error('load ' + src)); };
+      document.head.appendChild(tag);
+    });
+  }
+  function ensureAi() {
+    var W = aiNow();
+    if (W) return Promise.resolve(W);
+    if (typeof document === 'undefined') return Promise.resolve(null);
+    if (!aiLoading) {
+      aiLoading = (root.WitnessBol ? Promise.resolve() : loadScript('js/bol.js'))
+        .then(function () { return root.WitnessWmsAi ? null : loadScript('js/wms-ai.js'); })
+        .then(function () { return root.WitnessWmsAi || null; }, function () { aiLoading = null; return null; });
+    }
+    return aiLoading;
+  }
+
+  /* How a reading is named back to the worker in a clarification. */
+  function readingWords(intent, current) {
+    if (intent === 'done') return current ? 'you\'re done with this one' : 'you\'re done';
+    if (intent === 'problem') return 'that there\'s a problem';
+    if (intent === 'start') return 'to start the job';
+    if (intent === 'next') return 'to hear what\'s next';
+    if (intent === 'confirm') return 'yes';
+    if (intent === 'deny') return 'no';
+    return null;
+  }
+  var SAY_AGAIN = 'Say "done", "what\'s next", or say what the problem is.';
+
+  function quietTurn(intent, lines, spoken) {
+    return { intent: intent, acted: false, lines: lines, closed: null, next: null, problem: null,
+      spoken: spoken || null, staged: null };
+  }
+  function outageTurn(intent) {
+    var t = quietTurn(intent, [OUTAGE], [OUTAGE]);
+    t.outage = true;
+    return t;
+  }
+
+  /* What the model is told about the worker: the task in hand, what is
+     assigned to them, and what question (stage or clarification) is
+     waiting. */
+  function workerContext(E, state, unit, stage, clar) {
+    var cur = inHand(E, state, unit);
+    var assigned = (state.tasks || []).filter(function (t) {
+      return t.assignee === unit.id && t.status !== 'done';
+    }).map(function (t) { return t.title; });
+    return {
+      inHand: cur ? { title: cur.title, type: cur.type } : null,
+      assigned: assigned,
+      pending: stage ? stage.title : null,
+      clarify: clar ? { words: clar.words, question: clar.question } : null
+    };
+  }
+
+  function readWorker(E, state, unit, text, opts) {
+    opts = opts || {};
+    var code = matchIntent(text); /* the cross-check; also counts the utterance heard */
+    if (!unit) return Promise.resolve({ kind: 'say', turn: quietTurn(code.intent, ['Pick your name first. Nothing was done.']) });
+    var uid = unit.id;
+    var clar = takeClarif(uid);
+    var stage = liveStage(uid);
+    if (!code.heard) return Promise.resolve({ kind: 'say', turn: quietTurn('unknown', ['Heard you — no action taken.', SAY_AGAIN]) });
+    var ctx = workerContext(E, state, unit, stage, clar);
+    var doFetch = opts.fetch || null;
+
+    return ensureAi().then(function (W) {
+      if (!W || !W.converseTurn || !doFetch) return null;
+      return W.converseTurn(doFetch, ctx, code.heard, opts.url || CHAT_URL);
+    }).then(function (reading) {
+      return adjudicate(E, state, unit, code, reading, stage, clar);
+    }, function () {
+      return adjudicate(E, state, unit, code, null, stage, clar);
+    });
+  }
+
+  function adjudicate(E, state, unit, code, reading, stage, clar) {
+    var uid = unit.id;
+    var ci = code.intent;
+
+    /* Note 40: no reading, no act. The stage dies unrun. */
+    if (!reading) {
+      delete stages[uid];
+      if (ci === 'unknown' && !clar) return { kind: 'ask', turn: outageTurn(ci), outage: true };
+      return { kind: 'say', turn: outageTurn(ci) };
+    }
+    var mi = reading.intent;
+    var model = { intent: mi, startText: reading.startText || '' };
+    function proceed(intent, heard) {
+      return { kind: 'turn', match: {
+        intent: intent,
+        heard: heard || code.heard,
+        startText: intent === 'start' ? (ci === 'start' ? code.startText : (reading.startText || '')) : undefined,
+        model: model
+      } };
+    }
+
+    /* The answer to a clarification: weighed with the first words by
+       the reading above (its context carried them). One turn only —
+       a second ambiguity is said honestly, never asked again. */
+    if (clar) {
+      if (mi === 'unknown' || (ci !== 'unknown' && ci !== mi)) {
+        return { kind: 'say', turn: quietTurn(ci, ['Still not sure what you meant — nothing was done.', SAY_AGAIN]) };
+      }
+      return proceed(mi, clar.words + ' — ' + code.heard);
+    }
+
+    if (mi === ci) {
+      if (mi === 'unknown') return { kind: 'ask', turn: quietTurn('unknown', ['Heard you — no action taken.', SAY_AGAIN]) };
+      return proceed(mi);
+    }
+    if (ci === 'unknown') return proceed(mi); /* the translation layer earning its keep */
+
+    /* The two readings differ. A yes / no to a pending stage that they
+       do not agree on closes nothing: the stage is left open. */
+    var cur = inHand(E, state, unit);
+    if (stage && (mi === 'confirm' || mi === 'deny' || ci === 'confirm' || ci === 'deny')) {
+      delete stages[uid];
+      return { kind: 'say', turn: quietTurn(ci, [
+        'Left open: "' + stage.title + '" — I couldn\'t tell if that was a yes. Nothing was closed.',
+        'Say "done" again to close it.'
+      ]) };
+    }
+
+    /* A stark disagreement: one clarification, nothing staged or
+       recorded. A pending stage dies with it (the topic changed). */
+    var a = readingWords(ci, cur), b = mi === 'unknown' ? null : readingWords(mi, cur);
+    var question = 'Did you mean ' + a + (b ? ', or ' + b : '') + '?';
+    var lines = [];
+    if (stage) { delete stages[uid]; lines.push('Left open: "' + stage.title + '" — not marked complete.'); }
+    lines.push(question + ' Nothing was done yet.');
+    clarifs[uid] = { words: code.heard, question: question, seq: heardSeq };
+    var t = quietTurn(ci, lines, [question]);
+    t.clarify = question;
+    return { kind: 'say', turn: t };
+  }
+
+  /* The whole read turn on one state: read, adjudicate, run. Resolves
+     the turn; turn.ask is set when the words belong to the free ask. */
+  function readTurn(E, state, unit, text, opts) {
+    return readWorker(E, state, unit, text, opts).then(function (d) {
+      if (d.kind === 'turn') return workerTurn(E, state, unit, d.match);
+      if (d.kind === 'ask') d.turn.ask = true;
+      return d.turn;
+    });
   }
 
   /* ---------- manager: the building as numbers ------------------------ */
@@ -703,7 +961,12 @@
     SYSTEM_PROMPT: SYSTEM_PROMPT,
     matchIntent: matchIntent,
     workerTurn: workerTurn,
+    readWorker: readWorker,
+    readTurn: readTurn,
+    OUTAGE: OUTAGE,
+    NOTHING_ASSIGNED: NOTHING_ASSIGNED,
     pendingStage: pendingStage,
+    pendingClarification: pendingClarification,
     clearStages: clearStages,
     buildStateSummary: buildStateSummary,
     managerMessages: managerMessages,

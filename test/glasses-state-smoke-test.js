@@ -3,8 +3,11 @@
    in-memory KV, nothing leaves the machine. The desk-phone smoke
    pattern, for the glasses shared-state brief:
      - warehouse glasses boot from the shared record, read-only
-     - the wearer's talk ("what's next", "done", "yes") lands on the
-       shared record; the WMS layer rides along; a fresh GET follows
+     - the desk assigns; the wearer's talk ("what's next", "done",
+       "yes") is read by the model first (the converse model step —
+       /chat stubbed, test/converse-model-stub.js) and lands on the
+       shared record; the WMS layer rides along; a fresh GET follows;
+       an ask for work with nothing assigned pulls nothing
      - the desk, opened after, shows the same world
      - a desk change reaches the glasses when they become visible again
      - a failed save is said on the glasses; the next save carries it
@@ -26,6 +29,7 @@ var pw;
 try { pw = require('playwright'); } catch (e) { console.log('SKIP  playwright not installed'); process.exit(0); }
 
 var ROOT = path.join(__dirname, '..');
+var MS = require('./converse-model-stub.js');
 var failures = 0, passes = 0;
 function check(name, cond) { console.log((cond ? 'PASS' : 'FAIL') + '  ' + name); if (cond) passes++; else failures++; }
 
@@ -52,6 +56,10 @@ async function stub(ctx) {
       if (postFail) return route.fulfill({ status: 500, headers: cors, body: '{"ok":false}' });
       kv = req.postData();
       return route.fulfill({ status: 200, headers: cors, body: '{"ok":true}' });
+    }
+    if (u.pathname === '/chat') {
+      var b = JSON.parse(req.postData());
+      if (MS.isConverse(b)) return route.fulfill({ status: 200, headers: cors, body: JSON.stringify({ choices: [{ message: { content: MS.converseReply(b) } }] }) });
     }
     return route.fulfill({ status: 404, headers: cors, body: '{}' });
   });
@@ -91,20 +99,24 @@ server.listen(0, async function () {
     return page;
   }
   async function glassesReady(page) { await page.waitForSelector('#pickList [data-unit]'); await page.waitForFunction(function () { return !document.getElementById('openBtn').disabled; }); }
-  async function say(page, text) { await page.evaluate(function (t) { window.__mic.onText(t); }, text); await wait(350); }
+  async function say(page, text) { await page.evaluate(function (t) { window.__mic.onText(t); }, text); await wait(700); }
   function meta(page) { return page.textContent('#metaText'); }
 
   try {
     /* ---------------- the desk seeds the record ---------------- */
     var desk = await open('/warehouse.html');
     await desk.waitForSelector('#nameChips .namechip');
+    /* The desk assigns Tommy his task (work is assigned, never pulled). */
+    await desk.click('#nameChips [data-unit="u-tommy"]');
+    await desk.click('#nextBtn');
+    await desk.waitForFunction(function () { return /Done/.test(document.getElementById('nextBtn').textContent); });
     var d0 = doc(); d0.wms = { marker: 'kept' }; kv = JSON.stringify(d0);
     var rev0 = d0.wmsRev || 0;
     await desk.context().close();
 
     /* ---------------- glasses boot: read-only ---------------- */
     log.length = 0;
-    var g = await open('/glasses.html?unit=u-marcus', { width: 390, height: 844 });
+    var g = await open('/glasses.html?unit=u-tommy', { width: 390, height: 844 });
     await glassesReady(g);
     check('boot: the glasses read the shared record, GET only', log.join(',') === 'GET');
     var boot = await g.evaluate(function () {
@@ -127,25 +139,33 @@ server.listen(0, async function () {
     await g.waitForSelector('#view:not([hidden])');
     log.length = 0;
     await say(g, "what's next");
-    var marcusTask = unit(doc(), 'u-marcus').currentTaskId;
-    check('"what\'s next" on the glasses: the task lands on the shared record', !!marcusTask);
-    check('"what\'s next": POST, then a fresh GET', log.join(',') === 'POST,GET');
-    check('the WMS layer rode along untouched', doc().wms && doc().wms.marker === 'kept');
-    check('wmsRev stamped past the desk\'s', (doc().wmsRev || 0) > rev0);
+    var marcusTask = unit(doc(), 'u-tommy').currentTaskId;
+    check('"what\'s next" on the glasses: the desk-assigned task is the one in hand, said back', !!marcusTask && /Still yours/.test(await meta(g)));
+    check('"what\'s next" with a task in hand writes nothing (no POST)', log.indexOf('POST') === -1);
 
     await say(g, 'done');
     check('"done" asks and closes nothing yet', /complete\?/.test(await meta(g)) && task(doc(), marcusTask).status === 'assigned');
+    log.length = 0;
     await say(g, 'yes');
     check('"yes" closes the task on the shared record', task(doc(), marcusTask).status === 'done');
-    var nextTask = unit(doc(), 'u-marcus').currentTaskId;
+    check('the close: POST, then a fresh GET', log.join(',') === 'POST,GET');
+    check('the WMS layer rode along untouched', doc().wms && doc().wms.marker === 'kept');
+    check('wmsRev stamped past the desk\'s', (doc().wmsRev || 0) > rev0);
+    var nextTask = unit(doc(), 'u-tommy').currentTaskId;
+    check('the close pulls nothing: Tommy\'s hands are empty, "Nothing is assigned to you right now."',
+      !nextTask && /Nothing is assigned to you right now\./.test(await meta(g)));
+    log.length = 0;
+    await say(g, "what's next");
+    check('"what\'s next" with nothing assigned: the console line, no task moves, no POST',
+      /^Nothing is assigned to you right now\.$/.test((await meta(g)).trim()) && !unit(doc(), 'u-tommy').currentTaskId && log.indexOf('POST') === -1);
 
     /* ---------------- the desk, opened after, shows the same world ---------------- */
     var desk2 = await open('/warehouse.html');
     await desk2.waitForSelector('#nameChips .namechip');
-    await desk2.click('#nameChips [data-unit="u-marcus"]');
+    await desk2.click('#nameChips [data-unit="u-tommy"]');
     var card = await desk2.textContent('#taskCard');
     var want = nextTask ? task(doc(), nextTask).title : null;
-    check('the desk opened after shows the glasses\' world (Marcus\'s next task, or nothing in hand)', want ? card.indexOf(want) !== -1 : /Nothing in hand/.test(card));
+    check('the desk opened after shows the glasses\' world (Tommy\'s next task, or nothing in hand)', want ? card.indexOf(want) !== -1 : /Nothing in hand/.test(card));
 
     /* ---------------- a desk change reaches the glasses on visible ---------------- */
     var dd = doc(); dd.tasks[0].note = 'desk-made'; dd.wmsRev = (dd.wmsRev || 0) + 1; kv = JSON.stringify(dd);

@@ -243,9 +243,9 @@
   }
 
   /* ---------- worker voice: "done — what's next?" ------------------- */
-  /* The transcript is shown first, then what was done with it. The
-     intent is matched locally (converse.js) — no model decides what a
-     worker meant, and an unrecognised sentence does nothing. */
+  /* The transcript is shown first, then what was done with it. META
+     reads the words and the code cross-checks them (converse.js
+     readWorker); an unrecognised sentence does nothing. */
 
   function clearWorkerTalk() {
     $('workerHeard').hidden = true;
@@ -263,12 +263,18 @@
 
   function onWorkerHeard(text) {
     var unitId = selectedUnitId;
-    var match = C.matchIntent(text);
-    act(function (s) {
-      var turn = C.workerTurn(E, s, E.unitById(s, unitId), match);
-      return { ok: !!turn.acted, turn: turn };
-    }, function (r) {
-      showWorkerTurn('“' + text + '”', r.turn);
+    /* The converse model step: META reads the words first, matchIntent
+       cross-checks (C.readWorker adjudicates) — the same reading path
+       the glasses and the phone take. Only an adjudicated act runs. */
+    $('workerTalkStatus').textContent = 'Reading your words…';
+    C.readWorker(E, state, E.unitById(state, unitId), text, { fetch: window.fetch.bind(window), url: C.CHAT_URL }).then(function (d) {
+      if (d.kind !== 'turn') { showWorkerTurn('“' + text + '”', d.turn); return; }
+      act(function (s) {
+        var turn = C.workerTurn(E, s, E.unitById(s, unitId), d.match);
+        return { ok: !!turn.acted, turn: turn };
+      }, function (r) {
+        showWorkerTurn('“' + text + '”', r.turn);
+      });
     });
   }
 

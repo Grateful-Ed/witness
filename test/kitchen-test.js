@@ -9,6 +9,9 @@
 
 var E = require('../js/engine.js');
 var C = require('../js/converse.js');
+/* A model-formed match (the converse model step): the code's read with
+   an agreeing model reading — what readWorker hands workerTurn. */
+function M(t) { var m = C.matchIntent(t); m.model = { intent: m.intent, startText: m.startText || '' }; return m; }
 var B = require('../js/bol.js');
 var K = require('../js/kitchen.js');
 var G = require('../js/glasses.js');
@@ -141,8 +144,11 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
 
   /* --- the run is the ordinary queue, by voice -------------------------- */
   var will = E.unitById(s, 'u-william');
-  var turn = C.workerTurn(E, s, will, C.matchIntent("what's next"));
-  check('queue: "what\'s next" gives William a putaway task', turn.acted && will.currentTaskId && /^t-putaway-STG-RUN-1-/.test(will.currentTaskId));
+  var ask0 = C.workerTurn(E, s, will, M("what's next"));
+  check('queue: "what\'s next" before the start pulls nothing — "Nothing is assigned to you right now."',
+    !ask0.acted && !will.currentTaskId && JSON.stringify(ask0.lines) === JSON.stringify(['Nothing is assigned to you right now.']));
+  var turn = C.workerTurn(E, s, will, M('start groceries putaway'));
+  check('queue: the start gives William a putaway task of the run', turn.acted && will.currentTaskId && /^t-putaway-STG-RUN-1-/.test(will.currentTaskId));
 
   /* --- voice correction -------------------------------------------------- */
   check('correction: "coffee goes in Cabinet B" parses', JSON.stringify(K.parseCorrection('coffee goes in Cabinet B')) === '{"item":"coffee","spot":"Cabinet B"}');
@@ -201,14 +207,14 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
   return K.readReceipt(B, f3, 'https://w/chat', 'x').then(function (r3) {
     var res3 = K.createRun(E, s3, r3, 'u-william');
     var will3 = E.unitById(s3, 'u-william');
-    C.workerTurn(E, s3, will3, C.matchIntent("what's next"));
+    C.workerTurn(E, s3, will3, M('start'));
     var ch1 = G.chipsFor(E, s3, will3);
     check('run chips: the count runs inside the run', ch1.task === 'Task 1 of 6');
     check('run chips: the product is in the glance', ch1.item === res3.created[0].item && ch1.bin === 'Bin ' + res3.created[0].spot);
     var spoke = [], lastLines = null;
     for (var k = 0; k < 6; k++) {
-      C.workerTurn(E, s3, will3, C.matchIntent('done')); /* stages the close, asks */
-      var tk = C.workerTurn(E, s3, will3, C.matchIntent('yes'));
+      C.workerTurn(E, s3, will3, M('done')); /* stages the close, asks */
+      var tk = C.workerTurn(E, s3, will3, M('yes'));
       spoke.push(tk.spoken);
       lastLines = tk.lines;
       if (k === 1) {
@@ -226,7 +232,7 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
       }));
     check('voice: the last item closes the job, in its name', JSON.stringify(spoke[5]) === JSON.stringify(['Groceries putaway complete.']));
     check('voice: the screen lines keep the full wording the record needs',
-      lastLines[0].indexOf('Closed: Put away') === 0 && /caught up/.test(lastLines[1]));
+      lastLines[0].indexOf('Closed: Put away') === 0 && lastLines[1] === 'Nothing is assigned to you right now.');
     check('run: the engine agrees the shipment is closed', E.inboundStage(s3, s3.inbound[0]).key === 'closed');
   });
 }).then(function () {
@@ -240,14 +246,14 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
     var res4 = K.createRun(E, s4, r4, 'u-william');
     var will4 = E.unitById(s4, 'u-william');
     check('start: nothing is in hand before the word is said', !will4.currentTaskId);
-    var t0 = C.workerTurn(E, s4, will4, C.matchIntent('start'));
-    check('start: "start" pulls the job\'s first task', t0.acted && will4.currentTaskId === res4.created[0].taskId);
+    var t0 = C.workerTurn(E, s4, will4, M('start'));
+    check('start: "start" takes the job\'s first task', t0.acted && will4.currentTaskId === res4.created[0].taskId);
     check('start: spoken is exactly "Next: <first item>."',
       JSON.stringify(t0.spoken) === JSON.stringify(['Next: ' + res4.created[0].item + '.']));
     check('start: the screen line keeps the full task wording',
       t0.lines.some(function (l) { return l.indexOf('Next: Put away') === 0; }));
     var heldId = will4.currentTaskId;
-    var t0b = C.workerTurn(E, s4, will4, C.matchIntent('start groceries putaway'));
+    var t0b = C.workerTurn(E, s4, will4, M('start groceries putaway'));
     check('start: saying the job\'s name mid-job keeps the task in hand',
       will4.currentTaskId === heldId && !t0b.closed && /Still yours/.test(t0b.lines[0]));
   }).then(function () {
@@ -257,7 +263,7 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
       var res5 = K.createRun(E, s5, r5, 'u-william');
       var will5 = E.unitById(s5, 'u-william');
       var pasta = res5.created[2];
-      var t1 = C.workerTurn(E, s5, will5, C.matchIntent('start with penne pasta'));
+      var t1 = C.workerTurn(E, s5, will5, M('start with penne pasta'));
       check('start: "start with <a later product>" starts at that product',
         will5.currentTaskId === pasta.taskId && pasta.taskId !== res5.created[0].taskId &&
         JSON.stringify(t1.spoken) === JSON.stringify(['Next: penne pasta.']));
@@ -265,9 +271,9 @@ K.readReceipt(B, f1, 'https://w/chat', K.receiptBody(B, 'data:image/jpeg;base64,
   }).then(function () {
     var s6 = kitchen();
     var will6 = E.unitById(s6, 'u-william');
-    var t2 = C.workerTurn(E, s6, will6, C.matchIntent('start groceries putaway'));
-    check('start: with no job created, spoken is "No work waiting."',
-      JSON.stringify(t2.spoken) === JSON.stringify(['No work waiting.']) && !t2.next);
+    var t2 = C.workerTurn(E, s6, will6, M('start groceries putaway'));
+    check('start: with no job created, spoken is "Nothing is assigned to you right now." (nothing pulled)',
+      JSON.stringify(t2.spoken) === JSON.stringify(['Nothing is assigned to you right now.']) && !t2.next && !will6.currentTaskId);
   });
 }).then(function () {
   console.log('---');

@@ -47,12 +47,12 @@
    (POLICY, below) so the ontology's configuration layer can supply
    them later without surgery. In this build it holds today's law.
 
-   Scope note (William, 2026-11-06, on the gate build): converse's acts
-   route through the gate with today's behavior. Its pull retirement
-   and its translation-layer move (instance 3) wait for their own
-   brief — js/glasses.js (frozen) reads words in code and uses the
-   turn synchronously, so converse has no model reading to pass in
-   yet. POLICY.modelFormed.converse and POLICY.pull.converse say so.
+   Converse (the converse model step, 2026-11-06): converse's reader
+   is now the model (js/wms-ai.js converseTurn; matchIntent is the
+   cross-check), so its declared exceptions are closed —
+   POLICY.modelFormed.converse and POLICY.signatureEnforced.converse
+   are true, and pull is gone from every door: work is assigned,
+   never pulled.
 
    Pure: no DOM, no network. Loads in the browser (window.WitnessGate)
    and in node (module.exports).
@@ -88,18 +88,15 @@
       converse: { complete: true },
       game: {}
     },
-    /* Note 40: an act reaches the gate only as a model-formed intent.
-       converse: false until its own brief (see the scope note above). */
-    modelFormed: { voice: true, game: true, converse: false },
-    /* Doors on which the signature class refuses. converse: false
-       until its own brief — today the glasses' receiving flow closes
-       the engine world's receive task by voice ("run the cross-check,
-       then mark this done"), and William's ruling for this build
-       (2026-11-06) keeps converse's behavior unchanged. */
-    signatureEnforced: { voice: true, game: true, converse: false },
-    /* Pull (taking unassigned work) is retired on every door but
-       converse's, which waits for its own brief. */
-    pull: { converse: true }
+    /* Note 40: an act reaches the gate only as a model-formed intent,
+       on every door (converse since the converse model step). */
+    modelFormed: { voice: true, game: true, converse: true },
+    /* Doors on which the signature class refuses: every door. A
+       spoken close of an engine-world receive or load task is
+       refused with the guidance to the desk. */
+    signatureEnforced: { voice: true, game: true, converse: true }
+    /* Pull (taking unassigned work) is retired on every door (note 32;
+       the assignment law): there is no pull entry and no pull intent. */
   };
 
   function find(list, pred) {
@@ -271,13 +268,12 @@
   };
 
   /* ---------- converse: the glasses / phone world (js/engine.js) ---- */
-  /* Today's converse law, unchanged (see the scope note): complete
-     stages and asks; a problem is noted on the task in hand at once;
-     'take' puts a named task in hand (the created job's start); 'pull'
-     gives the next task from the pool — the pull that waits for its
-     own brief. */
+  /* Converse's law: complete stages and asks; a problem is noted on the
+     task in hand at once; 'take' puts a named task of the worker's own
+     created job in hand (the job's start, and its next task after a
+     close). There is no pull: work is assigned, never pulled. */
   var ENGINE_WORLD = {
-    intents: { complete: 1, 'note-problem': 1, take: 1, pull: 1, 'post-receiving': 1, 'confirm-load': 1 },
+    intents: { complete: 1, 'note-problem': 1, take: 1, 'post-receiving': 1, 'confirm-load': 1 },
 
     prepare: function (state, req, opts) {
       var E = opts && opts.engine;
@@ -288,10 +284,6 @@
       var words = String(p.words || '').trim();
       if (req.intent === 'note-problem') {
         if (!words) return no('Nothing to note. No action taken.');
-        return { ok: true, unit: unit, words: words };
-      }
-      if (req.intent === 'pull') {
-        if (!POLICY.pull[req.via]) return no('Work is assigned, not pulled. Nothing was done.');
         return { ok: true, unit: unit, words: words };
       }
       if (req.intent === 'post-receiving' || req.intent === 'confirm-load') return { ok: true, unit: unit, words: words };
@@ -349,14 +341,12 @@
         prep.unit.currentTaskId = prep.task.id;
         return { ok: true, task: prep.task };
       }
-      /* pull */
-      var nx = E.nextTaskFor(state, prep.unit);
-      return { ok: true, task: nx || null };
+      return no('The act did not go through. Nothing was done.');
     },
 
     taskId: function (req, prep, r) {
       if (r && r.taskId !== undefined) return r.taskId;
-      if (r && r.task && req.intent !== 'pull') return r.task.id;
+      if (r && r.task) return r.task.id;
       return prep.task ? prep.task.id : null;
     }
   };

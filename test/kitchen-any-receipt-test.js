@@ -9,6 +9,9 @@
 'use strict';
 var E = require('../js/engine.js');
 var C = require('../js/converse.js');
+/* A model-formed match (the converse model step): the code's read with
+   an agreeing model reading — what readWorker hands workerTurn. */
+function M(t) { var m = C.matchIntent(t); m.model = { intent: m.intent, startText: m.startText || '' }; return m; }
 var B = require('../js/bol.js');
 var K = require('../js/kitchen.js');
 var G = require('../js/glasses.js');
@@ -28,11 +31,11 @@ function everyTaskReal(state, res) {
 }
 /* Walk a run to its finish line by voice; returns the last spoken. */
 function walkToEnd(state, will, n) {
-  C.workerTurn(E, state, will, C.matchIntent('start groceries putaway'));
+  C.workerTurn(E, state, will, M('start groceries putaway'));
   var last = null, guard = 0;
   while (guard++ < n + 5) {
-    C.workerTurn(E, state, will, C.matchIntent('done')); /* stages the close, asks */
-    var tk = C.workerTurn(E, state, will, C.matchIntent('yes'));
+    C.workerTurn(E, state, will, M('done')); /* stages the close, asks */
+    var tk = C.workerTurn(E, state, will, M('yes'));
     last = tk.spoken;
     if (JSON.stringify(last) === JSON.stringify(['Groceries putaway complete.'])) break;
   }
@@ -177,7 +180,7 @@ K.readReceipt(B, f9, 'https://w/chat', 'x').then(function (r9) {
     check('spoken: "50 gallons of milk" is one task of 50, in the Fridge', /Put away 50 × milk/.test(milkTask.title) && milkTask.toBinId === 'Fridge');
     check('spoken: the record tells the truth about how the run was made',
       s10.inbound[0].intake === 'spoken-list' && s10.records.some(function (rec) { return rec.intake === 'spoken-list' && /^List told by/.test(rec.text); }));
-    C.workerTurn(E, s10, E.unitById(s10, 'u-william'), C.matchIntent("what's next"));
+    C.workerTurn(E, s10, E.unitById(s10, 'u-william'), M('start groceries putaway'));
     var ch10 = G.chipsFor(E, s10, E.unitById(s10, 'u-william'));
     check('spoken: the glance counts inside the told run too', ch10.task === 'Task 1 of 4' && ch10.item === 'milk');
     var end10 = walkToEnd(s10, E.unitById(s10, 'u-william'), 4);

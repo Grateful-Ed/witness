@@ -15,7 +15,22 @@ function check(name, cond) {
   if (!cond) failures++;
 }
 function fresh() { var s = E.seedWorld(); E.generateTasks(s); return s; }
+/* Put an unsigned task of the unit's zone in its hand — the engine's
+   own three writes (work is assigned; converse never pulls). A receive
+   or a load is a signed act and is left out here (the signature is
+   pinned in test/converse-read-test.js). */
+function give(world, u) {
+  var t = world.tasks.filter(function (x) {
+    return x.status === 'open' && x.type !== 'receive' && x.type !== 'load' && x.zone === u.zone && !E.blockedBy(world, x);
+  })[0];
+  t.status = 'assigned'; t.assignee = u.id; u.currentTaskId = t.id;
+  return t;
+}
 function intentOf(t) { return C.matchIntent(t).intent; }
+/* A model-formed match (the converse model step): the code's read with
+   a model reading that agrees — what readWorker hands workerTurn on
+   agreement. workerTurn refuses any match without one (note 40). */
+function M(t) { var m = C.matchIntent(t); m.model = { intent: m.intent, startText: m.startText || '' }; return m; }
 
 /* --- intent matcher ---------------------------------------------- */
 check('William\'s line → done', intentOf("Hey Muse, what's up next? I just got done with my task.") === 'done');
@@ -46,12 +61,12 @@ check('empty → unknown', intentOf('') === 'unknown' && intentOf('   ') === 'un
 check('wake word alone → unknown', intentOf('Hey Muse') === 'unknown');
 check('matcher keeps the words as heard', C.matchIntent('  Done.  ').heard === 'Done.');
 
-/* --- worker turn: done asks; yes closes + pulls -------------------- */
+/* --- worker turn: done asks; yes closes; nothing is pulled ---------- */
 var s = fresh();
 var marcus = E.unitById(s, 'u-marcus');
-var first = E.nextTaskFor(s, marcus);
+var first = give(s, marcus);
 var askSnap = JSON.stringify(s);
-var ask = C.workerTurn(E, s, marcus, C.matchIntent("what's up next? I just got done"));
+var ask = C.workerTurn(E, s, marcus, M("what's up next? I just got done"));
 check('confirm: done asks the question', JSON.stringify(ask.lines) ===
   JSON.stringify(['Mark "' + first.title + '" complete? Say yes to close it, or no to leave it open.']));
 check('confirm: the spoken ask is the minimum form', JSON.stringify(ask.spoken) === JSON.stringify(['Mark it complete?']));
@@ -60,39 +75,42 @@ check('confirm: done mutates nothing — task open, state unchanged, acted false
   ask.acted === false && ask.closed === null && ask.staged && ask.staged.id === first.id);
 check('confirm: the stage is never written into the saved state', JSON.stringify(s).indexOf('stage') === askSnap.indexOf('stage') &&
   !!C.pendingStage('u-marcus') && C.pendingStage('u-marcus').taskId === first.id);
-var turn = C.workerTurn(E, s, marcus, C.matchIntent('yes'));
+var turn = C.workerTurn(E, s, marcus, M('yes'));
 check('confirm: the stage clears once yes runs', C.pendingStage('u-marcus') === null);
 check('done closes the task in hand', first.status === 'done' && turn.closed && turn.closed.id === first.id);
-check('done pulls the next task to the same unit',
-  !!turn.next && turn.next.assignee === 'u-marcus' && marcus.currentTaskId === turn.next.id);
-check('done says what closed and what is next',
-  turn.lines.some(function (l) { return l.indexOf('Closed: ') === 0; }) &&
-  turn.lines.some(function (l) { return l.indexOf('Next: ') === 0; }));
-check('done speaks tersely: exactly "Next: <product>.", no Closed line',
-  JSON.stringify(turn.spoken) === JSON.stringify(['Next: ' + turn.next.desc + '.']));
+check('the close pulls nothing: no next task, empty hands (work is assigned, never pulled)',
+  !turn.next && !marcus.currentTaskId && s.tasks.filter(function (t) { return t.assignee === 'u-marcus' && t.status === 'assigned'; }).length === 0);
+check('the close says what closed, then that nothing is assigned',
+  JSON.stringify(turn.lines) === JSON.stringify(['Closed: ' + first.title + '.', 'Nothing is assigned to you right now.']));
+check('the close speaks the minimum: exactly "Nothing is assigned to you right now."',
+  JSON.stringify(turn.spoken) === JSON.stringify(['Nothing is assigned to you right now.']));
+give(s, marcus); /* the desk assigns Marcus his next task */
 
 /* --- worker turn: next with a task in hand changes nothing -------- */
 var held = marcus.currentTaskId;
 var recs = s.records.length;
-var t2 = C.workerTurn(E, s, marcus, C.matchIntent("what's next"));
+var t2 = C.workerTurn(E, s, marcus, M("what's next"));
 check('"what\'s next" with a task in hand keeps it', marcus.currentTaskId === held && !t2.acted);
 check('"what\'s next" with a task in hand completes nothing', s.records.length === recs);
 
-/* --- worker turn: next with empty hands pulls one ----------------- */
+/* --- worker turn: next with empty hands is a question, never a pull -- */
 var dee = E.unitById(s, 'u-dee');
-var t3 = C.workerTurn(E, s, dee, C.matchIntent("what's next"));
-check('"what\'s next" with empty hands assigns work', !!t3.next && dee.currentTaskId === t3.next.id);
+var snap3 = JSON.stringify(s);
+var t3 = C.workerTurn(E, s, dee, M("what's next"));
+check('"what\'s next" with empty hands answers exactly "Nothing is assigned to you right now."',
+  JSON.stringify(t3.lines) === JSON.stringify(['Nothing is assigned to you right now.']));
+check('"what\'s next" with empty hands moves nothing: no task changes hands', !t3.next && !t3.acted && !dee.currentTaskId && JSON.stringify(s) === snap3);
 
 /* --- worker turn: unknown does nothing --------------------------- */
 var snap = JSON.stringify(s);
-var t4 = C.workerTurn(E, s, marcus, C.matchIntent('how about that game'));
+var t4 = C.workerTurn(E, s, marcus, M('how about that game'));
 check('unknown takes no action and changes no state', !t4.acted && JSON.stringify(s) === snap);
 
 /* --- worker turn: problem notes, logs, completes nothing ---------- */
 var taskBefore = E.taskById(s, marcus.currentTaskId);
 var binsBefore = JSON.stringify(s.bins) + JSON.stringify(s.staging);
 recs = s.records.length;
-var t5 = C.workerTurn(E, s, marcus, C.matchIntent('Problem: two cases crushed on the bottom layer'));
+var t5 = C.workerTurn(E, s, marcus, M('Problem: two cases crushed on the bottom layer'));
 check('problem pins the note to the task in hand',
   taskBefore.notes && taskBefore.notes.length === 1 &&
   taskBefore.notes[0].text === 'Problem: two cases crushed on the bottom layer' && taskBefore.notes[0].by === 'u-marcus');
@@ -103,43 +121,56 @@ check('problem moves no freight', JSON.stringify(s.bins) + JSON.stringify(s.stag
 
 var priya = E.unitById(s, 'u-priya');
 recs = s.records.length;
-var t6 = C.workerTurn(E, s, priya, C.matchIntent('there is a spill in aisle C'));
+var t6 = C.workerTurn(E, s, priya, M('there is a spill in aisle C'));
 check('problem with empty hands still logs', t6.acted && s.records.length === recs + 1 && !priya.currentTaskId);
 check('reportProblem refuses an empty note', E.reportProblem(s, 'u-priya', '   ') === null);
 
-/* --- worker turn: done with empty hands just pulls ---------------- */
+/* --- worker turn: done with empty hands pulls nothing ------------- */
 var tommy = E.unitById(s, 'u-tommy');
-var t7 = C.workerTurn(E, s, tommy, C.matchIntent('done'));
-check('done with empty hands closes nothing, pulls next', !t7.closed && !!t7.next && tommy.currentTaskId === t7.next.id);
-check('done with empty hands speaks the same terse next',
-  t7.spoken.length === 1 && /^Next: .+\.$/.test(t7.spoken[0]) &&
-  t7.spoken[0].indexOf('Closed:') === -1 && t7.spoken[0].indexOf('Put away') === -1 && t7.spoken[0].indexOf('Pick ') === -1);
+var snap7 = JSON.stringify(s);
+var t7 = C.workerTurn(E, s, tommy, M('done'));
+check('done with empty hands closes nothing and pulls nothing', !t7.closed && !t7.next && !tommy.currentTaskId && JSON.stringify(s) === snap7);
+check('done with empty hands says so, and that nothing is assigned',
+  JSON.stringify(t7.lines) === JSON.stringify(['Nothing was in hand to close.', 'Nothing is assigned to you right now.']) &&
+  JSON.stringify(t7.spoken) === JSON.stringify(['Nothing is assigned to you right now.']));
 
-/* --- worker turn: start in the warehouse pulls like "next" ------ */
+/* --- worker turn: start in the warehouse (no created job) pulls nothing */
 var rosa = E.unitById(s, 'u-rosa');
-var t9 = C.workerTurn(E, s, rosa, C.matchIntent('start'));
-check('"start" with empty hands in the warehouse pulls the next task', !!t9.next && rosa.currentTaskId === t9.next.id);
+var snap9 = JSON.stringify(s);
+var t9 = C.workerTurn(E, s, rosa, M('start'));
+check('"start" with no created job: "Nothing is assigned to you right now.", no task moves',
+  !t9.next && !rosa.currentTaskId && JSON.stringify(t9.lines) === JSON.stringify(['Nothing is assigned to you right now.']) && JSON.stringify(s) === snap9);
 
 /* --- worker turn: caught-up building ------------------------------ */
 var empty = fresh();
 empty.tasks.forEach(function (t) { t.status = 'done'; });
 var jay = E.unitById(empty, 'u-jay');
-var t8 = C.workerTurn(E, empty, jay, C.matchIntent("what's next"));
-check('caught-up building says so, assigns nothing', !t8.next && /caught up/.test(t8.lines.join(' ')));
+var t8 = C.workerTurn(E, empty, jay, M("what's next"));
+check('caught-up building: nothing is assigned, nothing moves', !t8.next && t8.lines[0] === 'Nothing is assigned to you right now.');
+
+/* --- note 40: a match with no model reading runs nothing ---------- */
+var ow40 = fresh(), om40 = E.unitById(ow40, 'u-marcus'), ot40 = give(ow40, om40);
+C.workerTurn(E, ow40, om40, M('done')); /* staged */
+var o40Snap = JSON.stringify(ow40);
+var o40 = C.workerTurn(E, ow40, om40, C.matchIntent('yes')); /* the code's read alone */
+check('no model reading: a code-only yes runs nothing — "AI is currently down."',
+  JSON.stringify(o40.lines) === JSON.stringify(['AI is currently down.']) && !o40.acted && ot40.status === 'assigned' && JSON.stringify(ow40) === o40Snap);
+check('no model reading: the pending stage died unrun', C.pendingStage('u-marcus') === null);
+C.clearStages();
 
 /* --- completion takes a confirmation: the next turn decides ------- */
 C.clearStages();
 function staged(world, unitId) {
   var u = E.unitById(world, unitId);
-  var t = E.nextTaskFor(world, u);
-  var a = C.workerTurn(E, world, u, C.matchIntent('done'));
+  var t = give(world, u);
+  var a = C.workerTurn(E, world, u, M('done'));
   return { u: u, t: t, a: a };
 }
 
 /* every confirm word closes */
 ['yes', 'yeah', 'yep', 'confirm', 'do it', "that's right", 'go ahead', 'Hey Muse, yes'].forEach(function (w) {
   var cw = fresh(), st = staged(cw, 'u-marcus');
-  var r = C.workerTurn(E, cw, st.u, C.matchIntent(w));
+  var r = C.workerTurn(E, cw, st.u, M(w));
   check('confirm word "' + w + '" closes the staged task', st.t.status === 'done' && r.acted && r.closed && r.closed.id === st.t.id);
 });
 
@@ -147,33 +178,33 @@ function staged(world, unitId) {
 ['no', 'nope', 'wait', 'cancel', 'not yet', 'never mind'].forEach(function (w) {
   var dw = fresh(), st = staged(dw, 'u-marcus');
   var snapD = JSON.stringify(dw);
-  var r = C.workerTurn(E, dw, st.u, C.matchIntent(w));
+  var r = C.workerTurn(E, dw, st.u, M(w));
   check('deny word "' + w + '" closes nothing and says Left open',
     !r.acted && st.t.status === 'assigned' && JSON.stringify(dw) === snapD &&
     JSON.stringify(r.lines) === JSON.stringify(['Left open: "' + st.t.title + '".']));
   check('after "' + w + '", no stage remains', C.pendingStage('u-marcus') === null);
 });
 var nw = fresh(), nst = staged(nw, 'u-marcus');
-C.workerTurn(E, nw, nst.u, C.matchIntent('no'));
+C.workerTurn(E, nw, nst.u, M('no'));
 var nSnap = JSON.stringify(nw);
-var nYes = C.workerTurn(E, nw, nst.u, C.matchIntent('yes'));
+var nYes = C.workerTurn(E, nw, nst.u, M('yes'));
 check('deny: a yes after the no acts on nothing (as if no stage ever existed)',
   !nYes.acted && nst.t.status === 'assigned' && JSON.stringify(nw) === nSnap && /no action taken/.test(nYes.lines.join(' ')));
 
 /* a question as the next turn: stage cleared, no close, one added line */
 var qw = fresh(), qst = staged(qw, 'u-marcus');
-var q = C.workerTurn(E, qw, qst.u, C.matchIntent("what's next"));
+var q = C.workerTurn(E, qw, qst.u, M("what's next"));
 check('question next: no close, the task stays in hand', qst.t.status === 'assigned' && qst.u.currentTaskId === qst.t.id && !q.closed);
 check('question next: one added line notes the staged completion was left open',
   q.lines[0] === 'Left open: "' + qst.t.title + '" — not marked complete.' && q.lines[1].indexOf('Still yours: ') === 0);
 check('question next: the stage is cleared', C.pendingStage('u-marcus') === null);
-var q2 = C.workerTurn(E, qw, qst.u, C.matchIntent('yes'));
+var q2 = C.workerTurn(E, qw, qst.u, M('yes'));
 check('question next: a later yes closes nothing', !q2.acted && qst.t.status === 'assigned');
 
 /* small talk as the next turn: today's unknown, plus the note */
 var uw = fresh(), ust = staged(uw, 'u-marcus');
 var uSnap = JSON.stringify(uw);
-var ut = C.workerTurn(E, uw, ust.u, C.matchIntent('how about that game'));
+var ut = C.workerTurn(E, uw, ust.u, M('how about that game'));
 check('unknown next: stage cleared, nothing acts, note added',
   !ut.acted && JSON.stringify(uw) === uSnap && ut.lines[0].indexOf('Left open: ') === 0 && /no action taken/.test(ut.lines.join(' ')) &&
   C.pendingStage('u-marcus') === null);
@@ -181,7 +212,7 @@ check('unknown next: stage cleared, nothing acts, note added',
 /* a problem as the next turn: filed as today, stage cleared, no close */
 var pw = fresh(), pst = staged(pw, 'u-marcus');
 var precs = pw.records.length;
-var pr = C.workerTurn(E, pw, pst.u, C.matchIntent('no wait, two cases are crushed'));
+var pr = C.workerTurn(E, pw, pst.u, M('no wait, two cases are crushed'));
 check('problem next: filed on the task as today', pr.intent === 'problem' && pr.acted && pw.records.length === precs + 1 &&
   pst.t.notes && pst.t.notes[0].text === 'no wait, two cases are crushed');
 check('problem next: no close, stage cleared', pst.t.status === 'assigned' && !pr.closed && C.pendingStage('u-marcus') === null);
@@ -194,7 +225,7 @@ C.clearStages();
 
 /* a fresh completion word as the next turn: clears, then stages anew, with the note */
 var fw = fresh(), fst = staged(fw, 'u-marcus');
-var fr = C.workerTurn(E, fw, fst.u, C.matchIntent('done'));
+var fr = C.workerTurn(E, fw, fst.u, M('done'));
 check('done again: closes nothing, notes the old stage, asks again',
   fst.t.status === 'assigned' && !fr.acted && fr.lines[0].indexOf('Left open: ') === 0 &&
   /^Mark ".*" complete\?/.test(fr.lines[1]) && C.pendingStage('u-marcus').taskId === fst.t.id);
@@ -202,15 +233,15 @@ C.clearStages();
 
 /* confirm with no stage pending: nothing acts */
 var cw0 = fresh(), cm0 = E.unitById(cw0, 'u-marcus');
-var ct0 = E.nextTaskFor(cw0, cm0);
+var ct0 = give(cw0, cm0);
 var c0Snap = JSON.stringify(cw0);
 ['yes', 'no', 'go ahead', 'cancel'].forEach(function (w) {
   check('no stage pending: "' + w + '" is unknown', intentOf(w) === 'unknown');
-  var r = C.workerTurn(E, cw0, cm0, C.matchIntent(w));
+  var r = C.workerTurn(E, cw0, cm0, M(w));
   check('no stage pending: "' + w + '" acts on nothing', !r.acted && JSON.stringify(cw0) === c0Snap && ct0.status === 'assigned');
 });
 check('no stage pending: a hand-built confirm acts on nothing', (function () {
-  var r = C.workerTurn(E, cw0, cm0, { intent: 'confirm', heard: 'yes' });
+  var r = C.workerTurn(E, cw0, cm0, { intent: 'confirm', heard: 'yes', model: { intent: 'confirm' } });
   return !r.acted && JSON.stringify(cw0) === c0Snap && /no action taken/.test(r.lines.join(' '));
 })());
 
@@ -218,7 +249,7 @@ check('no stage pending: a hand-built confirm acts on nothing', (function () {
 var ow = fresh(), ost = staged(ow, 'u-marcus');
 var odee = E.unitById(ow, 'u-dee');
 var oSnap = JSON.stringify(ow);
-var or1 = C.workerTurn(E, ow, odee, C.matchIntent('yes'));
+var or1 = C.workerTurn(E, ow, odee, M('yes'));
 check('another unit\'s yes closes nothing of Marcus\'s stage', !or1.acted && JSON.stringify(ow) === oSnap && ost.t.status === 'assigned');
 C.clearStages();
 
@@ -226,7 +257,7 @@ C.clearStages();
 var ew = fresh(), est = staged(ew, 'u-marcus');
 E.completeTask(ew, est.t.id); /* the desk closed it between the turns */
 var eDone = ew.tasks.filter(function (t) { return t.status === 'done'; }).length;
-var er = C.workerTurn(E, ew, est.u, C.matchIntent('yes'));
+var er = C.workerTurn(E, ew, est.u, M('yes'));
 check('closed elsewhere: yes refuses honestly, closes nothing more',
   !er.acted && !er.closed && ew.tasks.filter(function (t) { return t.status === 'done'; }).length === eDone &&
   er.lines[0] === 'Can\'t close "' + est.t.title + '" — it is no longer the task in your hand. Nothing was closed.');
@@ -239,11 +270,11 @@ var heldE = Object.create(E);
 var heldNow = false;
 heldE.blockedBy = function (st, t) { return heldNow ? 'Pallet P-9 is on hold — QA check.' : null; };
 var hw = fresh(), hm = E.unitById(hw, 'u-marcus');
-var ht = E.nextTaskFor(hw, hm);
-C.workerTurn(heldE, hw, hm, C.matchIntent('done'));
+var ht = give(hw, hm);
+C.workerTurn(heldE, hw, hm, M('done'));
 heldNow = true;
 var hSnap = JSON.stringify(hw);
-var hr = C.workerTurn(heldE, hw, hm, C.matchIntent('yes'));
+var hr = C.workerTurn(heldE, hw, hm, M('yes'));
 check('held by the time of the yes: today\'s held answer, nothing closes, stage cleared',
   !hr.acted && ht.status === 'assigned' && JSON.stringify(hw) === hSnap &&
   hr.lines[0] === 'Can\'t close "' + ht.title + '" — Pallet P-9 is on hold — QA check.' && C.pendingStage('u-marcus') === null);
@@ -252,26 +283,26 @@ check('held by the time of the yes: today\'s held answer, nothing closes, stage 
 var balE = Object.create(E);
 balE.completeTask = function () { return false; };
 var bw2 = fresh(), bm2 = E.unitById(bw2, 'u-marcus');
-var bt2 = E.nextTaskFor(bw2, bm2);
-C.workerTurn(balE, bw2, bm2, C.matchIntent('done'));
-var br2 = C.workerTurn(balE, bw2, bm2, C.matchIntent('yes'));
+var bt2 = give(bw2, bm2);
+C.workerTurn(balE, bw2, bm2, M('done'));
+var br2 = C.workerTurn(balE, bw2, bm2, M('yes'));
 check('counts off at the yes: today\'s refusal lines, stage cleared',
   !br2.acted && br2.lines[0] === 'Could not close "' + bt2.title + '" — the counts would not balance.' && C.pendingStage('u-marcus') === null);
 
 /* blocked task: never reaches the question, today's answer exactly */
 var kw = fresh(), km = E.unitById(kw, 'u-marcus');
-var kt = E.nextTaskFor(kw, km);
+var kt = give(kw, km);
 heldNow = true;
-var kr = C.workerTurn(heldE, kw, km, C.matchIntent('done'));
+var kr = C.workerTurn(heldE, kw, km, M('done'));
 check('blocked: done keeps today\'s answer, no question, no stage',
   !kr.staged && kr.lines[0] === 'Can\'t close "' + kt.title + '" — Pallet P-9 is on hold — QA check.' && kr.lines[1] === 'Leave it be. Tell your manager.' &&
   kr.lines.length === 2 && C.pendingStage('u-marcus') === null);
 
 /* the negation guard still stages nothing */
 var gw = fresh(), gm = E.unitById(gw, 'u-marcus');
-E.nextTaskFor(gw, gm);
+give(gw, gm);
 ['not done yet', 'almost done', "I haven't finished"].forEach(function (w) {
-  var r = C.workerTurn(E, gw, gm, C.matchIntent(w));
+  var r = C.workerTurn(E, gw, gm, M(w));
   check('negation: "' + w + '" stages nothing', !r.staged && C.pendingStage('u-marcus') === null);
 });
 
@@ -279,7 +310,7 @@ E.nextTaskFor(gw, gm);
 var lw = fresh(), lst = staged(lw, 'u-marcus');
 C.matchIntent('what am I looking at'); /* heard, routed to META, never reaches workerTurn */
 check('one utterance later a yes is no longer a confirm', intentOf('yes') === 'unknown' && C.pendingStage('u-marcus') === null);
-var lr = C.workerTurn(E, lw, lst.u, C.matchIntent('yes'));
+var lr = C.workerTurn(E, lw, lst.u, M('yes'));
 check('a yes two utterances later closes nothing', !lr.acted && lst.t.status === 'assigned');
 C.clearStages();
 

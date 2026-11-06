@@ -231,15 +231,17 @@ check('updates: the voice problem intent lands through addTaskUpdate',
 var w = fresh();
 var marcus = E.unitById(w, 'u-marcus');
 var dee = E.unitById(w, 'u-dee');
-C.workerTurn(E, w, marcus, C.matchIntent("what's next"));            /* Marcus takes the receive */
-C.workerTurn(E, w, marcus, C.matchIntent('done'));                    /* stages the close, asks */
-C.workerTurn(E, w, marcus, C.matchIntent('yes'));                     /* closes it, takes the next */
-C.workerTurn(E, w, marcus, C.matchIntent('done'));
-C.workerTurn(E, w, marcus, C.matchIntent('yes'));
-C.workerTurn(E, w, dee, C.matchIntent("what's next"));
-C.workerTurn(E, w, dee, C.matchIntent('done'));
-C.workerTurn(E, w, dee, C.matchIntent('yes'));
-C.workerTurn(E, w, dee, C.matchIntent('problem, shrink wrap torn'));
+/* The shift is worked at the desk (the engine's own paths): a receive
+   is a signed act and is never closed by voice (the converse model
+   step), and converse no longer pulls work — so the summary's input is
+   built here directly, the way the desk's Done/Next click builds it. */
+function deskDone(u) { var t = E.taskById(w, u.currentTaskId); E.completeTask(w, t.id); E.generateTasks(w); E.nextTaskFor(w, u); }
+E.nextTaskFor(w, marcus);                                             /* Marcus takes the receive */
+deskDone(marcus);                                                     /* closes it, takes the next */
+deskDone(marcus);
+E.nextTaskFor(w, dee);
+deskDone(dee);
+E.reportProblem(w, 'u-dee', 'problem, shrink wrap torn');
 var sum = E.shiftSummary(w);
 var doneTasks = w.tasks.filter(function (t) { return t.status === 'done'; });
 check('summary: tasks done = 3, computed from the tasks', sum.tasksDone === 3 && doneTasks.length === 3);
@@ -253,7 +255,7 @@ check('summary: shipment received is counted', sum.shipmentsReceived.length === 
 check('summary: open bottleneck is the engine\'s own call', JSON.stringify(sum.bottleneck) === JSON.stringify(E.bottleneck(w)));
 check('summary: shipped orders counted (from the outbound run above)',
   E.shiftSummary(o).ordersShipped.length === 1 && E.shiftSummary(o).ordersShipped[0].qty === 22);
-check('summary: worker voice turns stamp who did it', doneTasks.every(function (t) { return !!t.doneBy && !!t.doneAt; }));
+check('summary: completed tasks stamp who did it', doneTasks.every(function (t) { return !!t.doneBy && !!t.doneAt; }));
 
 /* ================= saved state from before this slice ============= */
 var old = E.seedWorld();
