@@ -29,7 +29,7 @@ var server = http.createServer(function (req, res) {
   fs.createReadStream(f).pipe(res);
 });
 
-var kv = null, gets = 0, posts = 0, chats = [], asrs = 0, describes = 0;
+var kv = null, gets = 0, posts = 0, chats = [], asrs = 0, describes = 0, chatDown = false;
 var asrText = 'I decided to keep it on hold until the carrier calls back.';
 function chatReply(body) {
   var sys = body.messages[0].content;
@@ -43,7 +43,12 @@ function chatReply(body) {
     /* Work by voice: META names the intent from the worker's words */
     var said = String(body.messages[1].content.split('THE WORKER SAID (verbatim):\n')[1] || '').toLowerCase();
     var intent = /next/.test(said) ? 'next' : /picked|done|put away|counted/.test(said) ? 'complete' : /leak|broken|crushed/.test(said) ? 'problem' : 'answer';
-    content = JSON.stringify({ intent: intent, about: 'current', say: intent === 'answer' ? 'I do not have that in front of me.' : 'On it.' });
+    /* the translation layer: a completion carries its claim (the
+       numbers the words say), a problem its place reading */
+    var reply = { intent: intent, about: 'current', say: intent === 'answer' ? 'I do not have that in front of me.' : 'On it.' };
+    if (intent === 'complete') { var nm = /\b(\d+)\b/.exec(said.replace(/\b[abc]-\d+\b/g, ' ')); reply.claim = { qty: nm ? parseInt(nm[1], 10) : null, bin: null, cartons: null }; }
+    if (intent === 'problem') { var pm = /\b([abc]-\d\d)\b/.exec(said); reply.place = pm ? pm[1].toUpperCase() : null; }
+    content = JSON.stringify(reply);
   } else if (/Witness agent on one warehouse item/.test(sys)) {
     content = 'Flagged at receipt: Tommy said "one sixteen cases, four crushed". It is on hold.';
   } else if (/spoken count into numbers/.test(sys)) {
@@ -76,6 +81,7 @@ server.listen(0, async function () {
       posts++; kv = req.postData(); return route.fulfill({ status: 200, headers: cors, body: '{"ok":true}' });
     }
     if (u.pathname === '/asr') { asrs++; return route.fulfill({ status: 200, headers: cors, body: JSON.stringify({ text: asrText }) }); }
+    if (u.pathname === '/chat' && chatDown) return route.fulfill({ status: 503, headers: cors, body: '{"error":"down"}' });
     if (u.pathname === '/chat') { var b = JSON.parse(req.postData()); chats.push(b); return route.fulfill({ status: 200, headers: cors, body: JSON.stringify(chatReply(b)) }); }
     return route.fulfill({ status: 404, headers: cors, body: '{}' });
   });
@@ -376,6 +382,13 @@ server.listen(0, async function () {
   var v5 = await say('oil leaking by B-03');
   var v6 = await say('no');
   check('voice: a spoken problem stages a flag; "no" files nothing', /^File a flag with your words/.test(v5.line) && /^Not filed/.test(v6.line) && posts === vp);
+  /* Interpretation instances (note 40): with the model down, the door
+     names the outage and stages nothing from the words alone. */
+  chatDown = true;
+  vp = posts;
+  var v7 = await say('oil leaking by B-03');
+  chatDown = false;
+  check('voice: model down → "AI is currently down." — nothing staged, nothing saved', v7.line === 'AI is currently down.' && !v7.staged && posts === vp);
   await go('#/putaway');
   check('Work by voice rides the flow views too (Putaway)', !!(await page.$('#wvTalk')));
 

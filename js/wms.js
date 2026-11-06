@@ -1399,8 +1399,10 @@
      touching either end ("Inbound Door 1" is not inside "Inbound
      Door 10"; a bare "B" is not a place). Every named place must sit
      in one zone; places in two zones resolve nothing (null) and the
-     caller falls back. */
-  function zoneFromWords(state, words) {
+     caller falls back. zonesFromWords is the same read, reporting
+     every zone the words touch (the voice door's cross-check needs
+     to tell "nothing named" from "two zones named"). */
+  function zonesFromWords(state, words) {
     var text = String(words || '').toLowerCase(), places = [];
     (state.bins || []).forEach(function (b) { places.push([b.id, b.zone]); });
     (state.staging || []).forEach(function (p) { places.push([p.id, doorZone(state, p.door)]); });
@@ -1416,17 +1418,27 @@
         at = text.indexOf(id, at + 1);
       }
     });
-    var zones = Object.keys(found);
+    return Object.keys(found).sort();
+  }
+  function zoneFromWords(state, words) {
+    var zones = zonesFromWords(state, words);
     return zones.length === 1 ? zones[0] : null;
   }
   api.zoneFromWords = zoneFromWords;
+  api.zonesFromWords = zonesFromWords;
 
   /* words are stored exactly as said (trimmed, nothing else). The
      label is short and comes from the model or the person; there are
      no category fields. Pinned to the task in hand (or the one named)
      through the engine, so the task's record carries it too. The
      zone: the words' place first, then the task's, then the
-     reporter's own. */
+     reporter's own. A caller that has already read the words' place
+     (the voice door: the AI's reading, cross-checked by code —
+     interpretation instance 2) passes it as f.zone; null there means
+     the words resolved nothing, so the fallback runs. A zone the
+     building does not have is ignored. f.zoneNote records a reading
+     the worker left unresolved. Callers without a reading (typed
+     flags, the game) pass no f.zone: zoneFromWords reads, as before. */
   api.flag = function (state, f) {
     f = f || {};
     var u = unit(state, f.unitId);
@@ -1444,8 +1456,11 @@
       taskId = r && r.task ? r.task.id : null;
     }
     var t = taskId ? task(state, taskId) : null;
+    var said = f.zone === undefined ? zoneFromWords(state, words)
+      : ((state.zones || []).indexOf(f.zone) !== -1 ? f.zone : null);
     var flag = { id: nextId(state, 'flag', 'FLG-', 3), label: label, words: words, by: u.id, taskId: taskId,
-      zone: zoneFromWords(state, words) || (t ? t.zone : u.zone), ts: api.now(), status: 'open', source: f.source || 'typed' };
+      zone: said || (t ? t.zone : u.zone), ts: api.now(), status: 'open', source: f.source || 'typed' };
+    if (f.zoneNote) flag.zoneNote = String(f.zoneNote);
     state.wms.flags.push(flag);
     return { ok: true, flag: flag };
   };

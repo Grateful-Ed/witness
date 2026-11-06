@@ -287,7 +287,18 @@
      live state, stages any act and asks, and runs it only on the
      next turn's yes. Nothing in this call mutates anything. "about"
      says whether a completion is about the task in hand — anything
-     but "current" makes the surface ask instead of act. */
+     but "current" makes the surface ask instead of act.
+
+     The translation layer (interpretation instances 1 + 2, notes 34
+     and 37): the model also renders the worker's words into the
+     code's shapes. For "complete" it returns the CLAIM — the count,
+     bin and cartons the words claim, null where they claim none
+     ("done with this one" claims no count). For "problem" it returns
+     the PLACE the words point at, a place id from the building's own
+     list. Code cross-checks both (js/wms-voice.js); neither is ever
+     acted on by its say-so alone. A completion without a well-formed
+     claim is refused here, so the door treats the turn as the model
+     not answering — and stages nothing. */
 
   var WORK_INTENTS = ['complete', 'next', 'repeat', 'problem', 'confirm', 'deny', 'answer', 'none'];
   var WORK_ABOUT = ['current', 'other', 'unclear'];
@@ -296,7 +307,7 @@
     'You are META, the voice of Witness — the same META a worker talks to through the warehouse glasses. You are on the warehouse console with one worker, working their real task queue. The context below says who the worker is, the task in their hands (if any), a question waiting for their yes or no (if any), and what is next on their assigned list (the WMS assigns work to each worker ahead of time).',
     '',
     'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
-    '{"intent":"answer","about":"current","say":"..."}',
+    '{"intent":"answer","about":"current","say":"...","claim":null,"place":null}',
     '',
     '"intent" is one of:',
     '- "complete": the worker says the task in their hands is done (including a spoken pick quantity, a bin they put it in, or a count). Only when their words mean it is finished.',
@@ -309,6 +320,11 @@
     '- "none": you cannot tell what the worker wants. "say" asks a short clarifying question.',
     '',
     '"about" (for "complete"): "current" when the words are about the task in hand; "other" when the words name a different task, bin, pallet or order; "unclear" when you cannot tell which task they mean. Use "current" for every other intent.',
+    '',
+    '"claim" (for "complete" — required then, null for every other intent): what the worker\'s words claim, as {"qty":<number|null>,"bin":<string|null>,"cartons":<number|null>}. "qty" is a count the worker SAID (picked, counted, moved); "bin" is a bin they SAID they put it in; "cartons" is a carton count they SAID. A field is null when the words claim nothing of that kind. Report only what the words claim, never the task\'s own numbers: "done", "all done", "picked them all" and "done with this one" claim no count (qty null) — "one" there is a pronoun, not a number.',
+    '"place" (for "problem" — null for every other intent): the place the worker\'s words point at, as one id copied exactly from PLACES IN THIS BUILDING (a bin, door, staged pallet or zone), or null when the words name no place you can find there. Never invent a place.',
+    'If a clarification is waiting (the context says so), read the worker\'s answer TOGETHER with the words that raised it: the claim or place is what both say together. An answer to a question about a completion is intent "complete" with that combined claim.',
+    'The building\'s settled vocabulary, when listed, is how this building talks: a settled meaning overrides any other reading of that word.',
     '',
     '"say" is what you say back: one or two short sentences, in your own voice, the way you talk to a worker on the floor.',
     '',
@@ -325,12 +341,26 @@
     var lines = ['WORK CONTEXT'];
     lines.push('Worker: ' + (c.worker || 'a worker') + (c.zone ? ' (Zone ' + c.zone + ')' : ''));
     lines.push(c.inHand ? 'Task in hand: ' + c.inHand : 'No task in hand.');
-    if (c.pending) lines.push('Waiting for the worker\'s yes or no: ' + c.pending);
+    if (c.taskNumbers) lines.push('Task numbers: ' + c.taskNumbers);
+    if (c.clarify) {
+      lines.push('A clarification is waiting. The worker first said: "' + c.clarify.words + '"');
+      lines.push('The console asked: ' + c.clarify.question);
+    } else if (c.pending) lines.push('Waiting for the worker\'s yes or no: ' + c.pending);
     if (c.nextUp && c.nextUp.length) {
       lines.push('Next on the worker\'s assigned list:');
       c.nextUp.forEach(function (o, i) { lines.push((i + 1) + '. ' + o); });
     } else {
       lines.push('Nothing else is assigned to the worker.');
+    }
+    if (c.vocabulary && c.vocabulary.length) {
+      lines.push('');
+      lines.push('SETTLED VOCABULARY (term — what it means here):');
+      c.vocabulary.forEach(function (v) { lines.push('- ' + v.term + ' — ' + v.means); });
+    }
+    if (c.places && c.places.length) {
+      lines.push('');
+      lines.push('PLACES IN THIS BUILDING (id — kind, zone):');
+      c.places.forEach(function (p) { lines.push('- ' + p.id + ' — ' + p.kind + ', Zone ' + p.zone); });
     }
     lines.push('');
     lines.push('THE WORKER SAID (verbatim):');
@@ -345,13 +375,45 @@
     if (!say) return null;
     if (say.length > 500) say = say.slice(0, 500);
     var about = WORK_ABOUT.indexOf(parsed.about) === -1 ? (parsed.intent === 'complete' ? 'unclear' : 'current') : parsed.about;
-    return { intent: parsed.intent, about: about, say: say };
+    var out = { intent: parsed.intent, about: about, say: say };
+    if (parsed.intent === 'complete') {
+      var claim = acceptClaim(parsed.claim);
+      if (!claim) return null;
+      out.claim = claim;
+    }
+    if (parsed.intent === 'problem') {
+      var pl = parsed.place;
+      out.place = typeof pl === 'string' && pl.trim() ? pl.trim().slice(0, 80) : null;
+    }
+    return out;
+  }
+
+  /* A claim's shape: each field present-or-null; numbers are whole
+     and not negative; a bin is a string. Anything else is no claim. */
+  function claimNum(v) {
+    if (v === null || v === undefined) return { ok: true, v: null };
+    var n = count(v);
+    return n == null ? { ok: false } : { ok: true, v: n };
+  }
+  function acceptClaim(c) {
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+    var q = claimNum(c.qty), k = claimNum(c.cartons);
+    if (!q.ok || !k.ok) return null;
+    var bin = c.bin;
+    if (bin !== null && bin !== undefined && typeof bin !== 'string') return null;
+    bin = typeof bin === 'string' && bin.trim() ? bin.trim() : null;
+    return { qty: q.v, bin: bin, cartons: k.v };
   }
 
   function workTurn(doFetch, context, words, url) {
     if (!String(words || '').trim()) return Promise.reject(Object.assign(new Error('empty'), { userMessage: 'Nothing was heard. Hold the button and say it again.' }));
     return B.sendRead(doFetch, url, workBody(context, words), acceptWork)
-      .then(function (r) { return { intent: r.value.intent, about: r.value.about, say: r.value.say, attempts: r.attempts }; });
+      .then(function (r) {
+        var o = { intent: r.value.intent, about: r.value.about, say: r.value.say, attempts: r.attempts };
+        if (r.value.claim) o.claim = r.value.claim;
+        if (r.value.intent === 'problem') o.place = r.value.place;
+        return o;
+      });
   }
 
   /* ---------- 7. ontology self-extension: describe a new shape ------- */
@@ -546,6 +608,7 @@
     WORK_INTENTS: WORK_INTENTS,
     workBody: workBody,
     acceptWork: acceptWork,
+    acceptClaim: acceptClaim,
     workTurn: workTurn,
     RECEIVE_PROMPT: RECEIVE_PROMPT,
     LABEL_PROMPT: LABEL_PROMPT,
