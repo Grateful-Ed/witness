@@ -119,49 +119,48 @@ glasses for one task. The whole warehouse runs through them, and
 ## Everything else
 
 (Still open — William was mid-dump at 07:59 ET.)
-## The pitch (written 2026-10-31 ~08:05 ET, for sharing with friends)
+## The pitch (current — reframed 2026-11-06 at William's word)
 
 ### Text-message version (copy-paste)
 
-Okay so you know the Meta glasses? Imagine them in a warehouse. A
-truck backs in, and the guy receiving the freight never touches a
-screen — he just looks at the pallet and talks. The glasses hear what
-he says about the load AND see what he's seeing, and the two have to
-agree. If he misses damage on one side, the glasses catch it, because
-the camera saw it even if he didn't. The report basically writes
-itself.
+Okay so you know the Meta glasses? Imagine them in a warehouse. The
+whole building runs by voice: a worker just talks — asks what's next,
+says he's done, reports a problem in his own words — and the system
+understands him, because it learns HIS language instead of making him
+learn its fields and screens. The work itself is assigned the way a
+real warehouse runs: jobs by department, dealt by the system, and
+when he says he's done the system reads it back and asks before
+anything closes.
 
-Then it gets bigger. A worker finishes a job and just says "what's
-next?" — done, here's your next task, hands never leave the freight.
-And the manager can ask the question that actually runs a warehouse:
-"what's ABOUT to jam up, and who do I move to stop it?" — and the
-glasses tell him which spot's about to back up and who to pull from
-where. Different people get different answers, because the system
-knows who's asking.
+Receiving is where it started: a receiver looks at a pallet and
+talks, the system reads the same load from photos, and the two
+accounts are compared — where they disagree becomes the exception
+report. That's module one. It's built and live, and since the
+hackathon the whole warehouse behind it got built too — doors,
+zones, inventory, orders, the manager's view of what's about to jam.
 
 The AI never makes the final call. It proposes, a human decides.
 
-That's the thing I'm building. The receiving part already works — I
-built it for a Meta hackathon, it's live right now. The glasses part
-is where it goes.
-
 ### 30-second spoken version
 
-"You know how Meta's betting the glasses are the next phone? I think
-the first place they actually earn it is a warehouse. I built an app
-where a receiver just looks at a pallet and talks — the system
-cross-checks what he says against what the camera sees, and catches
-what either one missed. Now put that on the glasses and run the whole
-building through it: workers get their next task by asking, managers
-ask where the next bottleneck's forming and get told who to move.
-The AI proposes, humans decide. The receiving part's already built
-and live — the rest is the dream I'm chasing."
+"Warehouse software makes the worker stop and translate himself into
+its language. Witness learns his instead. The building runs on the
+crew's own words — jobs assigned by department, completions confirmed
+out loud, a manager who can ask what's about to jam and get the
+numbers and a proposed move. The AI proposes; the human decides. It
+started at the receiving dock — a man's spoken read of a load,
+cross-checked against the camera's — and it's a whole warehouse now."
 
 ### One-liner
 
-Witness: two witnesses for every load — the worker's voice and the
-camera's eye — and someday soon, the whole warehouse talking back
-through a pair of glasses.
+Witness: the warehouse, in the worker's own words — the AI proposes,
+the human decides.
+
+> Superseded: the Oct 31, 2026 pitch (~~"two witnesses for every
+> load"~~) — retired 2026-11-06 at William's word. The cross-check
+> is module one, not the headline. The old text survives in git
+> history.
+
 ## The build list — whole scope (William's framing, 2026-10-31 08:09 ET)
 
 His words for the target: everything a warehouse management system
@@ -234,7 +233,7 @@ working piece of it.
 
 ### 7. The workflow engine (what's up next)
 - One queue per role; the next-task logic behind "what's up next?"
-- A completion spoken aloud closes the task and pulls the next.
+- A completion spoken aloud stages the close; the worker confirms, and the task closes. Work is assigned as jobs — nothing is pulled. (Line updated 2026-11-06; the original described the pre-assignment model.)
 - Problems reported mid-task (his incident update) re-route the work.
 
 ### 8. The AI layer, by role (the glasses product)
