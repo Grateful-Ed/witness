@@ -45,6 +45,7 @@
 
   var DEFAULT_BOOT = ['js/glasses.js', 'js/recorder.js', 'js/glasses-help.js'];
   var STATE_SRC = 'js/state.js';
+  var GATE_SRC = 'js/gate.js';
 
   var STOP_HEAD = 'The shared warehouse record could not be reached, so the glasses view did not open.';
   var LOADING_LINE = 'Loading the shared warehouse record…';
@@ -171,6 +172,19 @@
 
   var me = document.currentScript;
   var list = bootList(me && me.getAttribute('data-boot'));
+
+  /* The gate (js/gate.js, the gate build): converse routes every act
+     through it and reads it lazily, at the first turn. glasses.html is
+     frozen, so the gate rides in here: fetched now, while the page is
+     still loading, in both worlds. Its tag leaves the document once the
+     gate is loaded, so the pinned boot sequence of script tags is
+     exactly what it was. */
+  if (!root.WitnessGate) {
+    var gateTag = document.createElement('script');
+    gateTag.src = GATE_SRC;
+    gateTag.onload = function () { if (gateTag.parentNode) gateTag.parentNode.removeChild(gateTag); };
+    (document.head || document.documentElement).appendChild(gateTag);
+  }
   var W = root.WitnessWorlds;
 
   /* ---------- kitchen: exactly as before ---------------------------- */

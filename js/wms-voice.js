@@ -44,6 +44,16 @@
   if (!W && typeof require === 'function') {
     try { W = require('./wms.js'); } catch (e) { W = null; }
   }
+  /* The gate (js/gate.js): every act this door stages or runs goes
+     through it — the checks, the run and the attribution live there.
+     Read lazily: the page may load the gate after this file. */
+  function gate() {
+    var g = root.WitnessGate || null;
+    if (!g && typeof require === 'function') {
+      try { g = require('./gate.js'); } catch (e) { g = null; }
+    }
+    return g;
+  }
   var O = root.WitnessOntology || null;
   if (!O && typeof require === 'function') {
     try { O = require('./ontology.js'); } catch (e) { O = null; }
@@ -280,82 +290,18 @@
     for (var i = 0; i < w.length; i++) add(W.parseQty(w.slice(i).join(' ')));
     return out;
   }
-  function normBin(b) {
-    if (b == null) return null;
-    return (W.parseBin(b) || String(b).trim().toUpperCase()) || null;
-  }
+  function normBin(b) { return gate().normBin(b); }
   var NO_CLAIM = { qty: null, bin: null, cartons: null };
 
-  /* completionPlan(state, t, words, claim) consumes the AI's CLAIM —
-     what the worker's words claim — and cross-checks it with the
-     code's own read of the same words (parseQty / parseBin):
-       - claim and parser agree → the plan (the confirmation law
-         still owns the close);
-       - nothing claimed and nothing read → the words translated
-         cleanly (a known completion phrase, note 33): the FULL task
-         is assumed complete (note 39) — except a count, where the
-         number is the work product and the count is asked;
-       - any disagreement — including the pronoun case, nothing
-         claimed but the parser reads "one" — → { clarify }, nothing
-         staged; the parser's number is never named and never staged;
-       - a claim above the task's quantity → today's guard (an ask).
-     Returns { plan, detail } | { ask } | { clarify: { field,
-     question } }. No model decides a quantity alone; neither does
-     the parser. */
-  function completionPlan(state, t, words, claim) {
-    claim = claim || NO_CLAIM;
-    var plan = { intent: 'confirm', task: t, heard: String(words || '').trim() };
-    if (t.type === 'pick') {
-      var q = W.parseQty(words), cq = claim.qty;
-      if (cq != null && cq > t.qty) return { ask: 'That is more than the order line wants (' + t.qty + '). Say the count you picked. Nothing was closed.' };
-      if (cq == null && q == null) return pickPlan(plan, t, t.qty);
-      if (cq != null && q === cq) return pickPlan(plan, t, cq);
-      return { clarify: { field: 'qty', question: PF } };
-    }
-    if (t.type === 'putaway') {
-      var b = W.parseBin(words), cb = normBin(claim.bin);
-      if (b !== cb) return { clarify: { field: 'bin', question: binAsk(t) } };
-      return putawayPlan(plan, t, b || t.toBinId);
-    }
-    if (t.type === 'count') {
-      var bin = find(state.bins, function (x) { return x.id === t.binId; });
-      if (bin && bin.contents.length > 1) return { ask: 'Bin ' + t.binId + ' holds more than one item — enter each count on the Cycle Counts screen. Nothing was posted.' };
-      var c = W.parseQty(words), cc = claim.qty;
-      if (c == null && cc == null) return { ask: 'Say the count for Bin ' + t.binId + ' — the number you see. Nothing was posted.' };
-      if (c !== cc) return { clarify: { field: 'count', question: countAsk(t) } };
-      return countPlan(state, plan, t, c);
-    }
-    if (t.type === 'pack') {
-      var ct = W.parseQty(words), ck = claim.cartons;
-      if (ct !== ck) return { clarify: { field: 'cartons', question: cartonsAsk(t) } };
-      return cartonsPlan(plan, ct);
-    }
-    return { plan: plan, detail: null };
-  }
-
-  function pickPlan(plan, t, q) {
-    plan.qty = q;
-    return { plan: plan, detail: q === t.qty ? q + ' picked' : q + ' of ' + t.qty + ' picked — ' + (t.qty - q) + ' short' };
-  }
-  function putawayPlan(plan, t, binId) {
-    plan.binId = binId;
-    return { plan: plan, detail: binId === t.toBinId ? 'in Bin ' + binId : 'in Bin ' + binId + ' (suggested ' + t.toBinId + ')' };
-  }
-  function countPlan(state, plan, t, c) {
-    var bin = find(state.bins, function (x) { return x.id === t.binId; });
-    var counts = {};
-    if (bin && bin.contents.length) counts[bin.contents[0].desc] = c;
-    else if (c > 0) return { ask: 'Bin ' + t.binId + ' should be empty by the system — enter what you found on the Cycle Counts screen. Nothing was posted.' };
-    plan.counts = counts;
-    return { plan: plan, detail: 'count ' + c + (bin && bin.contents.length ? ' × ' + bin.contents[0].desc : '') };
-  }
-  function cartonsPlan(plan, ct) {
-    if (ct != null) plan.cartons = ct;
-    return { plan: plan, detail: ct != null ? ct + ' carton' + (ct === 1 ? '' : 's') : null };
-  }
-  function binAsk(t) { return 'Which bin did it go in? Say just the bin — for example "in Bin ' + t.toBinId + '". Nothing was closed.'; }
-  function countAsk(t) { return 'Say the count for Bin ' + t.binId + ' — just the number you see. Nothing was posted.'; }
-  function cartonsAsk() { return 'How many cartons? Say just the number. Nothing was closed.'; }
+  /* The claim's cross-check is gate check 1 now (js/gate.js
+     completionPlan — the same adjudication, moved there so every
+     door's act is checked in one place). Kept here as the same name
+     for the door's own readers. */
+  function completionPlan(state, t, words, claim) { return gate().completionPlan(state, t, words, claim); }
+  function pickPlan(plan, t, q) { return gate().plans.pick(plan, t, q); }
+  function putawayPlan(plan, t, binId) { return gate().plans.putaway(plan, t, binId); }
+  function countPlan(state, plan, t, c) { return gate().plans.count(state, plan, t, c); }
+  function cartonsPlan(plan, ct) { return gate().plans.cartons(plan, ct); }
   function pickCountAsk(t) { return 'How many did you pick? Say just the number, ' + t.qty + ' or fewer. Nothing was closed.'; }
   function giveUp(t) { return 'I still can\'t tell. Close "' + t.title + '" on the RF screen, or say it again from the start. Nothing was closed.'; }
 
@@ -411,7 +357,7 @@
       var b1 = W.parseBin(a), cb1 = normBin(claim1.bin);
       if (b1 && b1 === cb1) r = putawayPlan(plan, t, b1);
     }
-    if (r && r.plan) return stagePlan(cur, u, both, r, out);
+    if (r && r.plan) return stagePlan(state, cur, u, both, r, out);
     if (r && r.ask) { out.say = r.ask; out.asked = true; return out; }
     if (r && r.clarify) {
       out.stage = clarifyStage(u, cur, pending.words, r, pending.claim, pending.level + 1);
@@ -478,7 +424,7 @@
     } else if (pending && pending.kind === 'flagzone') {
       if (loc === 'deny') { out.say = pending.leftOpen; out.denied = true; return out; }
       var zA = answeredZone(state, words, env, opts);
-      if (zA) return stageFlagAt(u, cur, pending.words, zA, null, out);
+      if (zA) return stageFlagAt(state, u, cur, pending.words, zA, null, out);
       if (intent === 'problem' || intent === 'complete') {
         out.note = pending.leftOpen;   /* the new turn stages its own act: one stage at a time */
       } else {
@@ -522,49 +468,62 @@
     return cur ? 'In hand: ' + offerLine(state, cur) : nextLine(state, unitId, null);
   }
 
-  function stagePlan(cur, u, words, r, out) {
-    var q = 'Mark "' + cur.title + '" complete' + (r.detail ? ' — ' + r.detail : '') + '? Say yes to close it, or no to leave it open.';
+  /* A plan the door's clarification loop settled goes to the gate
+     unconfirmed: checks 2–4 run (signature, the confirmation law,
+     ownership) and the gate hands back the act to hold as the stage. */
+  function stagePlan(state, cur, u, words, r, out) {
+    var g = gate().act(state, { who: u.id, via: 'voice', intent: 'complete', target: cur.id, confirmed: false,
+      params: { model: true, words: String(words || '').trim(), title: cur.title,
+        plan: { qty: r.plan.qty, binId: r.plan.binId, counts: r.plan.counts, cartons: r.plan.cartons }, detail: r.detail } });
+    if (!g.ok) return refused(g, out);
+    return holdComplete(cur, u, g.result.act, out);
+  }
+
+  function holdComplete(cur, u, a, out) {
+    var q = 'Mark "' + cur.title + '" complete' + (a.detail ? ' — ' + a.detail : '') + '? Say yes to close it, or no to leave it open.';
     out.stage = {
-      kind: 'complete', unitId: u.id, taskId: cur.id, title: cur.title, words: String(words || '').trim(),
-      plan: { qty: r.plan.qty, binId: r.plan.binId, counts: r.plan.counts, cartons: r.plan.cartons },
+      kind: 'complete', unitId: u.id, taskId: cur.id, title: cur.title, words: a.words,
+      plan: { qty: a.plan.qty, binId: a.plan.binId, counts: a.plan.counts, cartons: a.plan.cartons },
       question: q, leftOpen: 'Left open: "' + cur.title + '".'
     };
     out.say = q;
     return out;
   }
 
+  /* The gate's answer, said: a refusal in its own words (with the
+     signature guide when it gives one), or a clarification asked. */
+  function refused(g, out) {
+    out.say = g.clarify || g.reason;
+    if (g.guide) out.guide = g.guide;
+    if (g.clarify || g.asked) out.asked = true;
+    return out;
+  }
+
+  /* A spoken completion: the door resolves WHICH task (the one in
+     hand; words naming another place ask), then the gate checks the
+     act — the claim's cross-check (check 1), the signature (check 2),
+     the confirmation law (check 3: staged, not run), ownership and
+     the engine's own block (checks 4–5). */
   function stageComplete(state, u, cur, words, env, out) {
     if (!cur) {
       out.say = 'Nothing is in your hands to complete. Nothing was done.';
       return out;
     }
-    if (cur.type === 'receive') {
-      var sh = cur.shipmentId;
-      out.say = 'Receiving is a signed act — count ' + sh + ' against the BOL and post it on the Receiving screen. Voice does not post it. Nothing was done.';
-      out.guide = { href: '#/receiving', label: 'Open Receiving for ' + sh, shipmentId: sh };
-      return out;
-    }
-    if (cur.type === 'load') {
-      out.say = 'Loading is a signed act — confirm ' + cur.orderId + ' loaded on the Pack & Ship screen. Voice does not sign it. Nothing was done.';
-      out.guide = { href: '#/ship', label: 'Open Pack & Ship' };
-      return out;
-    }
-    var why = W.blocked(state, cur);
-    if (why) { out.say = 'That task is blocked: ' + why + ' Nothing was closed.'; return out; }
     if ((env && env.about && env.about !== 'current') || namesOther(state, cur, words)) {
       out.say = 'Which task do you mean? In your hands: ' + offerLine(state, cur) + ' Say "done" for that one. Nothing was closed.';
       out.asked = true;
       return out;
     }
-    var r = completionPlan(state, cur, words, env.claim);
-    if (r.ask) { out.say = r.ask; out.asked = true; return out; }
-    if (r.clarify) {
-      out.stage = clarifyStage(u, cur, words, r, env.claim, 1);
-      out.say = r.clarify.question;
+    var g = gate().act(state, { who: u.id, via: 'voice', intent: 'complete', target: cur.id, confirmed: false,
+      params: { model: true, words: String(words || '').trim(), title: cur.title, claim: env.claim } });
+    if (g.clarify) {
+      out.stage = clarifyStage(u, cur, words, { clarify: { field: g.field, question: g.clarify } }, env.claim, 1);
+      out.say = g.clarify;
       out.asked = true;
       return out;
     }
-    return stagePlan(cur, u, words, r, out);
+    if (!g.ok) return refused(g, out);
+    return holdComplete(cur, u, g.result.act, out);
   }
 
   /* "What's next" is a question (William, 2026-11-05): a pure answer
@@ -616,13 +575,16 @@
       out.asked = true;
       return out;
     }
-    return stageFlagAt(u, cur, w, said, null, out);
+    return stageFlagAt(state, u, cur, w, said, null, out);
   }
 
   /* said: the words' zone (null → W.flag falls back to the task's,
      then the reporter's). zoneNote: a reading left unresolved. */
-  function stageFlagAt(u, cur, w, said, zoneNote, out, prefix) {
+  function stageFlagAt(state, u, cur, w, said, zoneNote, out, prefix) {
     var zone = said || (cur ? cur.zone : u.zone);
+    var g = gate().act(state, { who: u.id, via: 'voice', intent: 'flag', confirmed: false,
+      params: { model: true, words: w } });
+    if (!g.ok) return refused(g, out);
     var q = (prefix || '') + 'File a flag with your words: "' + w + '"? Say yes to file it, or no to drop it.';
     out.stage = { kind: 'flag', unitId: u.id, words: w, taskId: cur ? cur.id : null, zone: zone, said: said || null,
       question: q, leftOpen: 'Not filed: "' + w + '".' };
@@ -661,58 +623,40 @@
       : intent === 'repeat' ? repeatLine(state, u.id, cur) + ' '
       : (intent === 'answer' || intent === 'none') && env.say ? env.say + ' ' : '';
     var fz = cur ? cur.zone : u.zone;
-    return stageFlagAt(u, cur, pending.words, null, note, out,
+    return stageFlagAt(state, u, cur, pending.words, null, note, out,
       lead + 'The zone is still unclear — it would file at Zone ' + fz + ', with both readings noted. ');
   }
 
   /* ---------- running a confirmed act --------------------------------- */
   /* run(state, stage, opts) on the FRESH state (inside the store's
-     mutate): re-checks the stage still holds, then acts through the
-     WMS layer's own paths. opts.label is the flag label (fetched by
-     the caller before the run, the console's flag path). Returns
-     { ok, text, next } or { ok:false, reason } — reason is the honest
-     note; on a refusal nothing has changed. */
+     mutate): the worker said yes, so the stage's facts go to the gate
+     CONFIRMED. The gate re-checks everything on this fresh state —
+     a forged or stale stage is refused there — then runs the act
+     through the WMS layer's own paths (W.complete, the click's path,
+     with no pull afterwards; W.flag) and writes the attribution (via
+     'voice' + the words heard). opts.label is the flag label (fetched
+     by the caller before the run). Returns { ok, text, next } or
+     { ok:false, reason } — on a refusal nothing has changed. */
   function run(state, stage, opts) {
     opts = opts || {};
-    if (!stage || !W) return { ok: false, reason: 'Nothing is waiting to run.' };
+    if (!stage || !W || !gate()) return { ok: false, reason: 'Nothing is waiting to run.' };
     var uid = stage.unitId;
     if (stage.kind === 'complete') {
-      var cur = W.currentOf(state, uid);
-      if (!cur || cur.id !== stage.taskId) return { ok: false, reason: '"' + stage.title + '" is no longer in your hands — nothing was closed.' };
-      if (cur.type === 'receive' || cur.type === 'load') return { ok: false, reason: 'That is a signed act — voice does not perform it. Nothing was closed.' };
-      var mark = state.records.length;
-      var p = stage.plan || {};
-      /* the click's own path: W.complete, with the same engine
-         validation — and no pull afterwards (tasks are assigned, not
-         pulled; what is next is only named, from the assigned list) */
-      var r = W.complete(state, cur.id, { by: uid, qty: p.qty, binId: p.binId, counts: p.counts, cartons: p.cartons, words: stage.words });
-      if (!r.ok) return { ok: false, reason: r.reason + ' Nothing was closed.' };
-      attribute(state, stage.taskId, mark, stage.words);
+      var g = gate().act(state, { who: uid, via: 'voice', intent: 'complete', target: stage.taskId, confirmed: true,
+        params: { model: true, words: stage.words, title: stage.title, plan: stage.plan || {} } });
+      if (!g.ok) return { ok: false, reason: g.reason };
       var nx = nextAssigned(state, uid);
-      return { ok: true, text: r.text + (nx ? ' Next on your list: ' + offerLine(state, nx) : ' Nothing else is assigned to you.'), next: nx };
+      return { ok: true, text: g.result.text + (nx ? ' Next on your list: ' + offerLine(state, nx) : ' Nothing else is assigned to you.'), next: nx };
     }
     if (stage.kind === 'flag') {
-      var fo = { unitId: uid, words: stage.words, label: opts.label, source: 'voice' };
-      if ('said' in stage) fo.zone = stage.said;
-      if (stage.zoneNote) fo.zoneNote = stage.zoneNote;
-      var f = W.flag(state, fo);
-      if (!f.ok) return { ok: false, reason: f.reason + ' Nothing was filed.' };
-      return { ok: true, text: 'Flagged "' + f.flag.label + '" with your words (Zone ' + f.flag.zone + '). Nothing was closed.', flag: f.flag };
+      var fp = { model: true, words: stage.words, label: opts.label };
+      if ('said' in stage) fp.zone = stage.said;
+      if (stage.zoneNote) fp.zoneNote = stage.zoneNote;
+      var f = gate().act(state, { who: uid, via: 'voice', intent: 'flag', confirmed: true, params: fp });
+      if (!f.ok) return { ok: false, reason: f.reason };
+      return { ok: true, text: 'Flagged "' + f.result.flag.label + '" with your words (Zone ' + f.result.flag.zone + '). Nothing was closed.', flag: f.result.flag };
     }
     return { ok: false, reason: 'Nothing is waiting to run.' };
-  }
-
-  /* A spoken completion is attributed exactly as a clicked one (the
-     WMS layer writes who and when), plus that it arrived by voice and
-     the words that confirmed it — on the task and on the completion
-     records this act wrote. */
-  function attribute(state, taskId, mark, words) {
-    var t = taskById(state, taskId);
-    if (t) { t.via = 'voice'; if (words) t.heard = words; }
-    for (var i = mark; i < state.records.length; i++) {
-      var r = state.records[i];
-      if (r.taskId === taskId && r.kind === 'complete') { r.via = 'voice'; if (words) r.heard = words; }
-    }
   }
 
   var api = {

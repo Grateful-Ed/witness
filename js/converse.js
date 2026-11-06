@@ -30,6 +30,28 @@
      is short, but the reasoning over a building isn't: 6,000. */
   var MANAGER_MAX_TOKENS = 6000;
 
+  /* The gate (js/gate.js, the gate build 2026-11-06): every act this
+     door takes on the building — a close, a problem note, a start, a
+     pull — goes through gate.act, which owns the checks (signature,
+     the confirmation law, ownership), the run through the engine, and
+     the attribution. This door keeps its own conversation and its own
+     stage, exactly as before. Read lazily: a page may load the gate
+     after this file. */
+  function gate() {
+    var g = root.WitnessGate || null;
+    if (!g && typeof require === 'function') {
+      try { g = require('./gate.js'); } catch (e) { g = null; }
+    }
+    return g;
+  }
+  function gateAct(E, state, unit, intent, target, words, extra) {
+    var G = gate();
+    if (!G) return { ok: false, reason: 'The gate is not loaded. Nothing was done.' };
+    var params = { words: words };
+    if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) params[k] = extra[k];
+    return G.act(state, { who: unit.id, via: 'converse', intent: intent, target: target, params: params, confirmed: intent === 'complete' ? !!(extra && extra.confirmed) : undefined }, { engine: E });
+  }
+
   /* ---------- worker: what did they say? ---------------------------- */
 
   /* Wake words are stripped so "Hey Muse, what's next" reads the same
@@ -248,10 +270,8 @@
      no "assign this one" call, and the start intent must honor the
      product the wearer named, so the assignment is made here, in
      exactly the engine's shape. */
-  function takeInHand(state, unit, task) {
-    task.status = 'assigned';
-    task.assignee = unit.id;
-    unit.currentTaskId = task.id;
+  function takeInHand(E, state, unit, task, words) {
+    return gateAct(E, state, unit, 'take', task.id, words);
   }
 
   function inHand(E, state, unit) {
@@ -307,8 +327,9 @@
     }
 
     if (match.intent === 'problem') {
-      var rep = E.reportProblem(state, unit.id, match.heard);
-      if (!rep) { out.lines.push('Nothing to note. No action taken.'); return out; }
+      var pg = gateAct(E, state, unit, 'note-problem', null, match.heard);
+      if (!pg.ok) { out.lines.push(pg.reason); return out; }
+      var rep = pg.result.report;
       out.acted = true;
       out.problem = rep.entry;
       if (rep.task) {
@@ -357,8 +378,8 @@
         }
         if (!chosen && open.length) chosen = open[0];
       }
+      if (chosen && !takeInHand(E, state, unit, chosen, match.heard).ok) chosen = null;
       if (chosen) {
-        takeInHand(state, unit, chosen);
         out.acted = true;
         out.next = chosen;
         out.lines.push('Next: ' + taskLine(chosen));
@@ -372,10 +393,26 @@
 
     if (match.intent === 'done' || confirming) {
       if (current) {
-        var held = E.blockedBy ? E.blockedBy(state, current) : null;
-        if (held) {
-          out.lines.push('Can\'t close "' + current.title + '" — ' + held);
+        /* The gate checks the close: signature (a receiving or a load
+           is signed at the desk, never by voice), the confirmation law
+           (unconfirmed, it is only staged), ownership, the engine's
+           hold. Confirmed, it runs the close and writes the record's
+           attribution. */
+        if (confirming) closedRun = runOfTask(state, current); /* before the close takes its pallet out of staging */
+        var cg = gateAct(E, state, unit, 'complete', current.id, match.heard, { confirmed: confirming, title: current.title });
+        if (!cg.ok && cg.held) {
+          out.lines.push('Can\'t close "' + current.title + '" — ' + cg.held);
           out.lines.push('Leave it be. Tell your manager.');
+          return out;
+        }
+        if (!cg.ok && cg.unbalanced) {
+          out.lines.push('Could not close "' + current.title + '" — the counts would not balance.');
+          out.lines.push('It stays with you. Tell your manager.');
+          return out;
+        }
+        if (!cg.ok) {
+          out.lines.push(cg.reason);
+          out.lines.push('Still yours: ' + taskLine(current));
           return out;
         }
         if (!confirming) {
@@ -387,12 +424,6 @@
           out.spoken = ['Mark it complete?'];
           return out;
         }
-        closedRun = runOfTask(state, current); /* before the close takes its pallet out of staging */
-        if (!E.completeTask(state, current.id)) {
-          out.lines.push('Could not close "' + current.title + '" — the counts would not balance.');
-          out.lines.push('It stays with you. Tell your manager.');
-          return out;
-        }
         out.acted = true;
         out.closed = current;
         out.lines.push('Closed: ' + current.title + '.');
@@ -402,7 +433,8 @@
     }
 
     E.generateTasks(state); /* what this turn made possible (putaway after receiving, a load after the last pick) */
-    var next = E.nextTaskFor(state, unit);
+    var pg2 = gateAct(E, state, unit, 'pull', null, match.heard);
+    var next = pg2.ok ? pg2.result.task : null;
     /* The voice's version of this advance: no "Closed:" line at all,
        the next task named by its product only, and the job's own
        completion, in its name, when the close finished it. */

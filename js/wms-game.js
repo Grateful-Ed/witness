@@ -94,6 +94,36 @@
     try { if (!W) W = require('./wms.js'); } catch (e) { /* browser */ }
   }
 
+  /* The gate (js/gate.js, the gate build 2026-11-06): every act this
+     game's VOICE door takes — start, a step, a count — goes through
+     gate.act against the game's own building (via 'game'). The gate
+     owns the checks (an act from the game door lands only in the game
+     world; a load is a signed act — voice never signs it; an act must
+     be model-formed, note 40) and writes the attribution (via 'game'
+     + the words heard). The panel's buttons and the map click are
+     desk clicks — they route through the gate in the follow-on build,
+     not this one. Read lazily: the page may load the gate later. */
+  function gateMod() {
+    var g = root.WitnessGate || null;
+    if (!g && typeof require === 'function') {
+      try { g = require('./gate.js'); } catch (e) { g = null; }
+    }
+    return g;
+  }
+  var STEPS = null;   /* the game's own step functions, handed to the gate as its engine */
+  /* The mutation a step makes: direct for a click (heard == null),
+     through the gate for a voice act (heard = the words). */
+  function through(heard, intent, chain, idx, role, direct) {
+    return function (s) {
+      if (heard == null) return direct(s);
+      var G = gateMod();
+      if (!G) return no('The gate is not loaded. Nothing was done.');
+      var g = G.act(s, { who: null, via: 'game', intent: intent, target: idx,
+        params: { model: true, chain: chain, role: role, words: heard } }, { engine: STEPS });
+      return g.ok ? g.result : { ok: false, reason: g.reason, signed: !!g.signed, outage: !!g.outage };
+    };
+  }
+
   var TOTAL = 5;
   var GLIDE_MS = 600;     /* the circle's walk between cells */
   var PAUSE_MS = 300;     /* a beat on arrival — auto-run's cadence is ~900 ms a leg */
@@ -651,7 +681,7 @@
      mutate through the console's own act() (which re-renders; the
      circle's landing glide happens in mount() via glideTo), then
      settle and, under auto-run, queue the next step. */
-  function doStep() {
+  function doStep(heard) {
     if (!session || session.busy || session.done || !CTX) return Promise.resolve();
     var step = cur();
     if (!step) return Promise.resolve();
@@ -668,7 +698,7 @@
       if (step.kind === 'count' && !session.countArmed) {
         session.glideTo = step.target;
         session.glidePx = cellPx(step.target.place, step.target.id);
-        return CTX.act(function (s) { return armCount(s, chain, idx); }, null).then(function (r) {
+        return CTX.act(through(heard, 'count-arm', chain, idx, null, function (s) { return armCount(s, chain, idx); }), null).then(function (r) {
           session.busy = false;
           if (r && r.ok) {
             session.countArmed = true;
@@ -676,41 +706,44 @@
             if (CTX.render) CTX.render(); else mount(); /* re-render: the panel now shows the count to confirm */
             if (session.auto) scheduleAuto();
           }
+          return r;
         });
       }
-      if (step.kind === 'count') return confirm().then(function () { session.busy = false; });
+      if (step.kind === 'count') return confirm(heard).then(function (r) { session.busy = false; return r; });
       session.glideTo = step.target;
       session.glidePx = cellPx(step.target.place, step.target.id);
-      return CTX.act(function (s) { return performStep(s, chain, idx); }, null).then(function (r) {
+      return CTX.act(through(heard, 'step', chain, idx, null, function (s) { return performStep(s, chain, idx); }), null).then(function (r) {
         session.busy = false;
         if (r && r.ok) {
           session.i++;
           session.at = step.target;
-          if (session.i >= chain.steps.length) { finish(); return; }
+          if (session.i >= chain.steps.length) { finish(); return r; }
           /* act() rendered while the session still pointed at the
              finished step; render again so the panel names the NEXT
              task (afterRender re-places the circle and the pulse). */
           if (CTX.render) CTX.render(); else mount();
           if (session.auto) scheduleAuto();
         }
+        return r;
       });
     }).catch(function () { sess.busy = false; });
   }
 
-  function confirm() {
+  function confirm(heard) {
     if (!session || !session.countArmed || !CTX) return Promise.resolve();
     var chain = session.chain, idx = session.i, step = chain.steps[idx];
-    return CTX.act(function (s) { return confirmCount(s, chain, idx); }, null).then(function (r) {
+    return CTX.act(through(heard, 'count-confirm', chain, idx, null, function (s) { return confirmCount(s, chain, idx); }), null).then(function (r) {
       if (r && r.ok) {
         session.countArmed = false;
         session.i = idx + 1;
         session.at = step.target;
-        if (session.i >= chain.steps.length) { finish(); return; }
+        if (session.i >= chain.steps.length) { finish(); return r; }
         /* a mid-chain count (the Cycle counter's whole shift): the
            panel now offers the next count */
         if (CTX.render) CTX.render(); else mount();
         if (session.auto) scheduleAuto();
       }
+      return r;
     });
   }
 
@@ -766,7 +799,7 @@
   }
 
   /* The panel's buttons, by name. */
-  function ui(name, value) {
+  function ui(name, value, heard) {
     if (!CTX) return;
     if (name === 'role') {
       var next = find(ROLES, function (x) { return x.id === value; }) ? value : 'inbound';
@@ -802,7 +835,8 @@
     if (name === 'start') {
       if (session && session.busy) return Promise.resolve();
       var wasAuto = session ? session.auto : autoWanted;
-      return CTX.act(function (s) { return begin(s, roleWanted); }, null).then(function (r) {
+      var want = roleWanted;
+      return CTX.act(through(heard, 'start', null, null, want, function (s) { return begin(s, want); }), null).then(function (r) {
         if (r && r.ok && r.chain) {
           session = { chain: r.chain, i: 0, at: r.chain.startAt || { place: 'dock', id: r.chain.door }, px: null,
             auto: wasAuto, busy: false, countArmed: false, done: false, startedAt: Date.now(), finishedAt: 0, glideTo: null };
@@ -812,9 +846,9 @@
         return r;
       });
     }
-    if (name === 'doit') { doStep(); return; }
+    if (name === 'doit') { return doStep(heard); }
     if (name === 'confirm') {
-      if (session && !session.busy) { session.busy = true; return confirm().then(function () { session.busy = false; }); }
+      if (session && !session.busy) { session.busy = true; return confirm(heard).then(function (r) { session.busy = false; return r; }); }
       return Promise.resolve();
     }
   }
@@ -876,6 +910,11 @@
     if (CTX && CTX.render) CTX.render();
   }
 
+  /* The outage rule (note 40): an act reaches the gate only as a
+     model-formed intent. When META cannot be reached, the door says
+     exactly so and does nothing — the old keyword fallback no longer
+     works the shift (voiceCommand stays, pure, but acts on nothing). */
+  var OUTAGE = 'AI is currently down.';
   function hear(text) {
     if (!CTX || !CTX.practice || CTX.base !== 'dashboard') return;
     if (CTX.talk) {
@@ -885,12 +924,12 @@
       if (p && typeof p.then === 'function') {
         p.then(function (reply) {
           if (reply && reply.intent) applyReply(text, reply);
-          else hearFallback(text);
-        }, function () { hearFallback(text); });
+          else outage(text);
+        }, function () { outage(text); });
         return;
       }
     }
-    hearFallback(text);
+    outage(text);
   }
 
   /* META's reply, applied. 'answer' / 'none' touch nothing — her
@@ -902,9 +941,9 @@
     actOn(reply.intent, text, reply.say);
   }
 
-  /* The offline fallback: the keyword matcher hears the words. */
-  function hearFallback(text) {
-    actOn(voiceCommand(text), text, null);
+  /* META not reached: nothing is worked. */
+  function outage(text) {
+    note(text, OUTAGE + ' Nothing was done.');
   }
 
   /* One command, from META's intent or the matcher, worked through
@@ -915,7 +954,7 @@
     if (cmd === 'start') {
       if (session && !session.done) { note(text, 'the shift is already under way — nothing changed.'); return; }
       var before = session;
-      ui('start').then(function (r) {
+      ui('start', null, text).then(function (r) {
         /* started only when a NEW chain was dealt — a finished shift
            still on the panel is not the one starting */
         if (session && session !== before) note(text, roleLabel(session.chain.role) + ' shift started — the first task is offered below.', say);
@@ -932,7 +971,7 @@
     if (cmd === 'confirm') {
       var st = cur();
       if (session && !session.done && st && st.kind === 'count' && session.countArmed) {
-        ui('confirm').then(function () {
+        ui('confirm', null, text).then(function () {
           if (session && (session.done || !session.countArmed)) note(text, 'count confirmed and posted.', say);
           else note(text, 'the count did not post — nothing was done.');
         });
@@ -947,17 +986,18 @@
       if (session.done) { note(text, 'the shift is already complete. Nothing was done.'); return; }
       if (session.busy) { note(text, 'the current task is still being worked. Nothing was done.'); return; }
       if (step && step.kind === 'count' && session.countArmed) {
-        ui('confirm').then(function () {
+        ui('confirm', null, text).then(function () {
           if (session && (session.done || !session.countArmed)) note(text, 'count confirmed and posted.', say);
           else note(text, 'the count did not post — nothing was done.');
         });
         return;
       }
       var n = session.i + 1, wasArmed = session.countArmed;
-      doStep().then(function () {
+      doStep(text).then(function (r) {
         if (session && session.done) note(text, 'task ' + n + ' of ' + total() + ' worked — that finishes the shift.', say);
         else if (session && session.countArmed && !wasArmed) note(text, 'count queued for ' + ((cur() && cur().bin) || '') + ' — count what is there, then say "confirm".', say);
         else if (session && session.i >= n) note(text, 'task ' + n + ' of ' + total() + ' worked.', say);
+        else if (r && r.signed) note(text, r.reason);
         else note(text, 'that step did not go through — nothing was done.');
       });
       return;
@@ -1064,6 +1104,8 @@
     }
     return panel('Walk the shift', body, 'task ' + (session.i + 1) + ' of ' + total());
   }
+
+  STEPS = { begin: begin, performStep: performStep, armCount: armCount, confirmCount: confirmCount };
 
   var api = {
     buildChain: buildChain, buildShift: buildShift, ROLES: ROLES, roleLabel: roleLabel,
