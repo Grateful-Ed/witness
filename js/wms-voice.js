@@ -645,6 +645,9 @@
       var g = gate().act(state, { who: uid, via: 'voice', intent: 'complete', target: stage.taskId, confirmed: true,
         params: { model: true, words: stage.words, title: stage.title, plan: stage.plan || {} } });
       if (!g.ok) return { ok: false, reason: g.reason };
+      /* An async host (the adapter seam): the act is SENT, not landed —
+         the worker hears "sent", and the task stays in hand. */
+      if (g.result.sent) return { ok: true, sent: true, key: g.result.key, text: 'Sent — waiting on the host to confirm "' + stage.title + '". It stays in your hands until then.' };
       var nx = nextAssigned(state, uid);
       return { ok: true, text: g.result.text + (nx ? ' Next on your list: ' + offerLine(state, nx) : ' Nothing else is assigned to you.'), next: nx };
     }
@@ -654,6 +657,7 @@
       if (stage.zoneNote) fp.zoneNote = stage.zoneNote;
       var f = gate().act(state, { who: uid, via: 'voice', intent: 'flag', confirmed: true, params: fp });
       if (!f.ok) return { ok: false, reason: f.reason };
+      if (f.result.sent) return { ok: true, sent: true, key: f.result.key, text: 'Sent — waiting on the host to confirm the flag with your words: "' + stage.words + '". Nothing was closed.' };
       return { ok: true, text: 'Flagged "' + f.result.flag.label + '" with your words (Zone ' + f.result.flag.zone + '). Nothing was closed.', flag: f.result.flag };
     }
     return { ok: false, reason: 'Nothing is waiting to run.' };

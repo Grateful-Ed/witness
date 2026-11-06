@@ -532,6 +532,57 @@ exception).
 Desk clicks — including the game panel's buttons — route through the
 gate in the follow-on build.
 
+## The host adapter — the write seam under the gate (js/adapter.js)
+
+Witness is not a WMS: it sits on the customer's own WMS (the host),
+and its acts go through the host's own published interfaces, never
+its database (note 38). `js/adapter.js` is that seam. The gate keeps
+the laws; an adapter only carries already-signed acts.
+
+**The contract.** An adapter has a `profile` — `id`, `hostLabel`
+(the host's name in plain words), `transport` (`'sync'` | `'async'`),
+`keyed`, and `verbs` (which of `complete`, `flag`, `post-receiving`,
+`confirm-load` it takes) — plus `submit(state, act)` and, on an async
+transport, `confirm(state, key, verdict)`. `act` is plain data:
+`{ key, via, who, intent, target, params, words }`.
+
+**What the gate does with it** (the WMS world — the console voice
+door — only; the engine and game worlds are the demo building's own
+and stay built-in):
+- Check 1 reads the current adapter's declared verbs. An undeclared
+  verb is refused before anything is staged or sent, naming the host:
+  "The host system (simulated) doesn't take that from Witness — it has
+  to be done there directly. Nothing was done." (capability honesty).
+- Check 5 submits through the adapter instead of calling the engine.
+  The gate stays synchronous.
+  - **Sync** (the dummy, the default on every surface): the act lands
+    now. Live behavior is unchanged — no new state, no key (the dummy
+    is in-process; its landing is the record's transaction).
+  - **Async**: the act is **SENT**. It is recorded in `state.sentActs`
+    (`{ key, via, who, intent, target, params, words, ts, status:
+    'sent' }`), keyed `door-counter` from `state.adapterSeq`. The task
+    stays open and in hand; the worker hears "Sent — waiting on the
+    host to confirm …", never "landed". A new act on the same task
+    while it is SENT is refused ("already sent"); a retry of the same
+    act object reuses its key.
+- The host's verdict arrives through `adapter.confirm(state, key,
+  verdict)`: `'landed'` runs the act's effect once through the one
+  land path (`W.complete` / `W.flag`) and the gate's check-6 writer
+  attributes it (`gate.settle`); `{ status: 'refused', reason }` marks
+  the entry refused with the host's reason and leaves the task open. A
+  verdict for an unknown or already-settled key is ignored.
+- `sentActs` and `adapterSeq` (and the entry fields) are registered in
+  the ontology's `KNOWN_SCHEMA`.
+
+**The simulated host** (`A.simulatedHost()`) is a test double, labeled
+"the host system (simulated)": async, its own shadow record (`ledger`),
+an inbox worked by `beat()` / `deliver(state)`, drops duplicates by
+key, refuses acts on a task it holds (`hold(taskId)`) with a
+`HOST-409` reason, and does not declare `flag`. It is not wired to any
+page; only `test/adapter-test.js` runs it. No listener or poller for
+live verdicts exists yet — that is the real host's build. The read side
+(the ontology mirror) is its own brief.
+
 ## Tests
 
 ```
@@ -543,6 +594,7 @@ node test/wms-witness-test.js # 43 — the Witness page: events, transcript, emp
 node test/wms-agent-test.js  # 59  — the Witness page's agent: ask dispatched through the central agent (verbatim out, fallback), desk entries, teachings learned
 node test/wms-flow-test.js   # 42  — flow-sliced task views (inbound / outbound), the practice banner's exit
 node test/wms-flags-test.js  # 29  — flags on the map: urgent only, each opens its own item
+node test/adapter-test.js    # 58  — the host adapter: the dummy unchanged, the simulated host's SENT → landed / refused arcs, idempotency, capability honesty
 node test/ontology-test.js   # 48  — the dynamic ontology: digest correctness, incremental == rebuilt, prep, vocabulary/learnTerm, no network
 node test/central-agent-test.js # 61 — the central agent: dispatch not relay, three simulated workers, single writer, LIVE (the agent surface its one importer), slang in context and prompts
 node test/wms-game-test.js   # 67  — Walk the shift: the dealt chains (all four shift types), the offers, the map's own cells, the voice commands, real putaways, the posted count, undealable buildings, the practice dressing, hear() with META stubbed
