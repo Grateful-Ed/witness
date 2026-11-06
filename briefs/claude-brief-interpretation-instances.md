@@ -25,6 +25,19 @@ and demote the code to the double checker.
   numbers-from-speech (MISALIGNED), #21 flag's zone
   (resolution directed by William 2026-11-06).
 
+## Host consideration (standing — William, 2026-11-06)
+
+Witness ships as a third-party layer on the customer's own
+WMS; the built-in WMS is **host zero**, the proving stand-in.
+Both instances therefore read and validate against the
+**ontology digest's shapes** — the places, vocabulary, and
+task context the door already composes — the same surface a
+host adapter will one day supply. Do not reach past those
+surfaces into engine internals for new behavior, and do not
+bake in anything that only makes sense inside Witness's own
+WMS. Where host-zero's state and the digest agree, the
+digest is the source, so the layer ports.
+
 ## Instance 1 — numbers claimed in speech (console voice door)
 
 Today: the workTurn envelope (js/wms-ai.js) names the intent
@@ -93,9 +106,10 @@ The change:
    ontology's own list, nicknames and settled meanings
    included via the vocabulary (instance 1, step 2).
 2. Code validates the reading before it is used: the place
-   must exist in the live state; its zone is read from the
-   state, never from the AI's say-so. An unknown or invented
-   place is discarded to the fallback.
+   must exist in the digest's places — the same list the AI
+   read against; its zone is read from that list, never
+   from the AI's say-so. An unknown or invented place is
+   discarded to the fallback.
 3. `zoneFromWords` becomes the cross-check, exactly as
    parseQty does above:
    - AI place and token read agree (or the token read
