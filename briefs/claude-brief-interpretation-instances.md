@@ -35,13 +35,14 @@ and demote the code to the double checker.
 ## Host consideration (standing — William, 2026-11-06)
 
 Witness ships as a third-party layer on the customer's own
-WMS; the built-in WMS is **host zero**, the proving stand-in.
+WMS; the WMS in this repo is a **dummy**, present only to
+demonstrate the layer — Witness is not a WMS.
 Both instances therefore read and validate against the
 **ontology digest's shapes** — the places, vocabulary, and
 task context the door already composes — the same surface a
 host adapter will one day supply. Do not reach past those
 surfaces into engine internals for new behavior, and do not
-bake in anything that only makes sense inside Witness's own
+bake in anything that only makes sense inside the dummy
 WMS. Where host-zero's state and the digest agree, the
 digest is the source, so the layer ports.
 
