@@ -81,6 +81,11 @@ The change:
      named in it and never staged silently.
    - Claim above the task's quantity → today's guard
      stands (an ask, nothing staged).
+   - The same adjudication covers the claim's other
+     fields: a claimed **bin** that parseBin reads
+     differently (or does not read) → clarification,
+     nothing staged; **cartons** follow the number rules
+     above.
    **The clarification's shape (William, decided
    2026-11-06).** For a quantity ambiguity the door asks
    exactly: "Is this a partial or full completion?" —
@@ -133,9 +138,14 @@ The change:
      nothing (today's honesty), whatever the AI read.
    - AI place and token read point at different zones →
      **clarification before filing**: one short question
-     naming both readings; the flag files only on the
-     worker's answer (or, unanswered, at the fallback with
-     the disagreement noted in the flag's record).
+     naming both readings. The pending clarification is
+     carried exactly one turn, by the same module-memory
+     pattern as instance 1's — the next utterance is read
+     against the pending flag's words and both readings
+     together. If it answers, the flag files at the
+     answered zone; if the next utterance is anything
+     else, that is "unanswered": the flag files at the
+     fallback with the disagreement noted in its record.
 4. `api.flag`'s precedence otherwise stands: the words'
    place first, then the task's zone, then the reporter's.
    Callers without an AI reading (typed flags, the game)
@@ -158,7 +168,7 @@ The change:
 ## Acceptance
 
 - New tests pin, at minimum: "done with this one" stages
-  nothing and asks the count; "picked all 10" stages the
+  nothing and asks partial-or-full; "picked all 10" stages the
   full count (claim and parser agree); a claimed short
   count stages the short close with its detail line; a
   claim/parser disagreement asks and stages nothing; a
