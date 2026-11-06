@@ -36,6 +36,9 @@
         and every write goes through the ontology's pure
         learnConcept, applied by the caller's store path. The
         ontology module itself stays pure: no call lives there.
+     8. converseTurn  — the glasses / phone door (js/converse.js):
+        the model names the converse intent; converse's matchIntent
+        is the cross-check. Null on failure — the door's outage.
 
    The request/retry/error plumbing is bol.js's readBody + sendRead —
    reused, never forked. Pure: the caller hands in fetch. Loads in the
@@ -416,6 +419,81 @@
       });
   }
 
+  /* ---------- 8. converse: the glasses / phone door ------------------ */
+  /* The converse model step (interpretation instance 3; notes 34, 37,
+     40). The glasses' and the phone's worker turn is read HERE first:
+     the model names the converse intent; js/converse.js computes its
+     own deterministic read (matchIntent) as the cross-check and
+     adjudicates — agreement proceeds, a stark disagreement becomes one
+     clarification, no reading is the outage. For "start" the model
+     also returns the job words as heard. Nothing in this call mutates
+     anything; a failure or an unusable reply returns null (the door's
+     outage), never a guess. */
+
+  var CONVERSE_INTENTS = ['done', 'problem', 'start', 'next', 'confirm', 'deny', 'unknown'];
+
+  var CONVERSE_PROMPT = [
+    'You read what a warehouse worker said to their glasses or phone, and name what they mean. The context below says the task in their hands (if any), the tasks assigned to them, and whether a yes-or-no question is waiting for them.',
+    '',
+    'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
+    '{"intent":"unknown","startText":""}',
+    '',
+    '"intent" is one of:',
+    '- "done": the worker says the task in their hands is finished.',
+    '- "problem": the worker reports something wrong — damage, a shortage, a spill, a wrong pallet, anything broken or unsafe. A task with a problem is not finished: never "done", even if they also say done or yes.',
+    '- "start": the worker asks to start (begin) a job, possibly naming the job or a product to start with.',
+    '- "next": the worker asks what their next task is, or asks for work. It is a question: work is assigned, never pulled.',
+    '- "confirm": the worker says yes to the question waiting for them. Only when a question is waiting.',
+    '- "deny": the worker says no, wait, not yet or cancel to the question waiting for them. Only when a question is waiting.',
+    '- "unknown": anything else — a question about the world, small talk, or words you cannot place. Most questions are this.',
+    '',
+    '"startText" (for "start" only, "" otherwise): the words after start or begin, exactly as heard ("start with the milk" → "with the milk").',
+    'If a clarification is waiting (the context says so), read the worker\'s answer TOGETHER with the words that raised it, and name what both mean together.',
+    'Never invent state. Never name an intent the words do not say.'
+  ].join('\n');
+
+  /* The context is composed by js/converse.js from the live state;
+     this builder only frames it. */
+  function converseBody(context, words) {
+    var c = context || {};
+    var lines = ['WORKER CONTEXT'];
+    lines.push(c.inHand ? 'Task in hand: ' + c.inHand.title + (c.inHand.type ? ' (' + c.inHand.type + ')' : '') : 'No task in hand.');
+    if (c.assigned && c.assigned.length) {
+      lines.push('Assigned to the worker:');
+      c.assigned.forEach(function (o, i) { lines.push((i + 1) + '. ' + o); });
+    } else {
+      lines.push('Nothing else is assigned to the worker.');
+    }
+    if (c.clarify) {
+      lines.push('A clarification is waiting. The worker first said: "' + c.clarify.words + '"');
+      lines.push('The glasses asked: ' + c.clarify.question);
+    } else if (c.pending) {
+      lines.push('A question is waiting for the worker\'s yes or no: mark "' + c.pending + '" complete?');
+    } else {
+      lines.push('No question is waiting.');
+    }
+    lines.push('');
+    lines.push('THE WORKER SAID (verbatim):');
+    lines.push(words);
+    return textBody(CONVERSE_PROMPT, lines.join('\n'));
+  }
+
+  function acceptConverse(parsed) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    if (CONVERSE_INTENTS.indexOf(parsed.intent) === -1) return null;
+    var st = parsed.intent === 'start' ? str(parsed.startText).slice(0, 200) : '';
+    return { intent: parsed.intent, startText: st };
+  }
+
+  /* Resolves { intent, startText, attempts } — or null when the model
+     could not be reached or did not answer in the envelope. */
+  function converseTurn(doFetch, context, words, url) {
+    if (!B || typeof doFetch !== 'function' || !String(words || '').trim()) return Promise.resolve(null);
+    return B.sendRead(doFetch, url, converseBody(context, words), acceptConverse)
+      .then(function (r) { return { intent: r.value.intent, startText: r.value.startText, attempts: r.attempts }; },
+        function () { return null; });
+  }
+
   /* ---------- 7. ontology self-extension: describe a new shape ------- */
   /* Detection is the ontology's (deterministic, js/ontology.js).
      Description is this call's: Spark reads the samples and writes
@@ -604,6 +682,11 @@
     buildingNames: buildingNames,
     refreshConcepts: refreshConcepts,
     redescribe: redescribe,
+    CONVERSE_PROMPT: CONVERSE_PROMPT,
+    CONVERSE_INTENTS: CONVERSE_INTENTS,
+    converseBody: converseBody,
+    acceptConverse: acceptConverse,
+    converseTurn: converseTurn,
     WORK_PROMPT: WORK_PROMPT,
     WORK_INTENTS: WORK_INTENTS,
     workBody: workBody,

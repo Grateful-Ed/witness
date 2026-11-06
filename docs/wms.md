@@ -510,12 +510,25 @@ unconfirmed act is only staged — the door keeps the stage); ownership;
 the run through the engine's public paths; and one attribution writer
 (who, via, the words heard). The rules live in one `POLICY` object.
 
-Scope (William, 2026-11-06): converse routes through the gate with
-today's behavior. Its pull retirement, its translation-layer move
-(instance 3), the outage line and the signature refusal for converse
-wait for their own brief — js/glasses.js (frozen) reads words in code
-and uses the turn synchronously. The policy says so
-(`modelFormed.converse`, `signatureEnforced.converse`, `pull.converse`).
+Converse (the converse model step, 2026-11-06): converse's reader is
+now the model. `js/wms-ai.js` `converseTurn` reads every glasses /
+phone / warehouse-page worker turn first (the intent set done /
+problem / start / next / confirm / deny / unknown, plus the start
+words); `converse.js` `matchIntent` is the cross-check, and
+`readWorker` adjudicates: agreement (or a code-unknown the model
+reads) proceeds; a stark disagreement is one clarification, weighed
+with the first words on the answer and never asked twice; no model
+reading is "AI is currently down." and a pending stage dies unrun.
+The kitchen's spoken correction gets the same step
+(`kitchen.js` `readCorrection` + `settleCorrection`; `parseCorrection`
+is the cross-check, the run and the kitchen's spots the validator).
+The gate's declared exceptions are closed: `modelFormed.converse` and
+`signatureEnforced.converse` are true, and pull is gone — no
+`POLICY.pull`, no pull intent. An ask for work with nothing assigned
+answers "Nothing is assigned to you right now."; a close inside the
+worker's own created job moves to that job's next task (the take
+path). The glasses.js change is onSpeech only (William's enumerated
+exception).
 Desk clicks — including the game panel's buttons — route through the
 gate in the follow-on build.
 

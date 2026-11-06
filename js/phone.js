@@ -299,18 +299,28 @@
   function queueTurn(text, how) {
     if (busy) { msg('Still saving the last one — say it again in a moment.'); return; }
     var unitId = meId;
-    var match = C.matchIntent(text);
+    var heardLine = '“' + text + '”' + (how ? ' ' + how : '');
     busy = true;
     msg('');
-    store.mutate(function (s) {
-      var turn = C.workerTurn(E, s, E.unitById(s, unitId), match);
-      if (turn.acted) E.generateTasks(s);
-      return { ok: !!turn.acted, turn: turn };
-    }).then(function (out) {
-      state = out.state;
-      showTurn('“' + text + '”' + (how ? ' ' + how : ''), out.result.turn.lines.join(' '));
-      render();
-    }, function (e) {
+    /* The converse model step: META reads the words first, matchIntent
+       cross-checks (C.readWorker adjudicates) — the same reading path
+       the glasses take. Only an adjudicated act reaches the store. */
+    C.readWorker(E, state, E.unitById(state, unitId), text, { fetch: doFetch, url: C.CHAT_URL }).then(function (d) {
+      if (d.kind !== 'turn') {
+        showTurn(heardLine, d.turn.lines.join(' '));
+        render();
+        return;
+      }
+      return store.mutate(function (s) {
+        var turn = C.workerTurn(E, s, E.unitById(s, unitId), d.match);
+        if (turn.acted) E.generateTasks(s);
+        return { ok: !!turn.acted, turn: turn };
+      }).then(function (out) {
+        state = out.state;
+        showTurn(heardLine, out.result.turn.lines.join(' '));
+        render();
+      });
+    }).then(null, function (e) {
       msg((e && e.userMessage) || 'That did not save. Nothing was done.', true);
     }).then(function () { busy = false; });
   }

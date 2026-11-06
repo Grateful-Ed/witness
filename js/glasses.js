@@ -628,30 +628,43 @@
       return;
     }
     employee(null);
-    /* Kitchen: "coffee goes in Cabinet B" retargets that item's task. */
-    var corr = K && K.isKitchen(state) ? K.parseCorrection(text) : null;
-    if (corr) {
-      state = Store.load(); /* fresh before acting */
-      var cr = K.applyCorrection(E, state, corr, wearerId, text);
-      if (cr.ok) Store.save(state);
-      say(cr.lines);
-      renderChips();
+    var doFetch = fetch.bind(window);
+    /* The worker turn (the converse model step): META reads the words
+       first, matchIntent cross-checks (C.readWorker adjudicates). */
+    function workTurn() {
+      state = Store.load(); /* fresh for the reading's context */
+      C.readWorker(E, state, wearer(), text, { fetch: doFetch, url: C.CHAT_URL }).then(function (d) {
+        if (d.kind === 'ask') {
+          /* Kitchen, no run yet: the words may be a TELL — the wearer
+             naming what they have — which is intake, not a question.
+             spokenIntake decides by META's read of the words; when they
+             hold no items it hands them to the free ask untouched. */
+          if (K && K.isKitchen(state) && K.isIntakeMode(state)) { spokenIntake(text); return; }
+          askFree(text); return; /* not a command: let META answer */
+        }
+        if (d.kind === 'say') { say(d.turn.lines, d.turn.spoken); renderChips(); return; }
+        state = Store.load(); /* fresh before acting */
+        var turn = C.workerTurn(E, state, wearer(), d.match);
+        if (turn.acted) Store.save(state);
+        say(turn.lines, turn.spoken);
+        renderChips();
+      });
+    }
+    /* Kitchen: "coffee goes in Cabinet B" retargets that item's task —
+       on META's validated reading (K.settleCorrection), never the
+       code's parse alone. */
+    if (K && K.isKitchen(state) && K.mightBeCorrection(text)) {
+      K.readCorrection(B, doFetch, C.CHAT_URL, text, K.runItems(state)).then(function (reading) {
+        state = Store.load(); /* fresh before acting */
+        var cr = K.settleCorrection(E, state, reading, text, wearerId);
+        if (!cr) { workTurn(); return; } /* not a correction by either reading */
+        if (cr.ok) Store.save(state);
+        say(cr.lines);
+        renderChips();
+      });
       return;
     }
-    var match = C.matchIntent(text);
-    if (match.intent === 'unknown') {
-      /* Kitchen, no run yet: the words may be a TELL — the wearer
-         naming what they have — which is intake, not a question.
-         spokenIntake decides by META's read of the words; when they
-         hold no items it hands them to the free ask untouched. */
-      if (K && K.isKitchen(state) && K.isIntakeMode(state)) { spokenIntake(text); return; }
-      askFree(text); return; /* not a command: let META answer */
-    }
-    state = Store.load(); /* fresh before acting */
-    var turn = C.workerTurn(E, state, wearer(), match);
-    if (turn.acted) Store.save(state);
-    say(turn.lines, turn.spoken);
-    renderChips();
+    workTurn();
   }
 
   /* ---------- camera -------------------------------------------------- */

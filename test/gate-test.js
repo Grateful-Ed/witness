@@ -13,8 +13,8 @@
      - the gate is stateless (no stage store of its own);
      - the game door lands only in the game world: the live state is
        byte-identical after any game exchange;
-     - converse's acts run through the gate with today's behavior
-       (William's ruling for this build, 2026-11-06).
+     - converse's acts run through the gate, model-formed, signature
+       enforced, no pull (the converse model step, 2026-11-06).
    Run: node test/gate-test.js   (exit 0 = all pass) */
 'use strict';
 
@@ -44,8 +44,12 @@ check('policy: one object holds the signature and confirmation rules',
   P.signedTaskTypes.receive === 'post-receiving' && P.signedTaskTypes.load === 'confirm-load' &&
   P.confirm.voice.complete === true && P.confirm.voice.flag === true && P.confirm.converse.complete === true);
 check('policy: the outage line is exactly "AI is currently down."', Gt.OUTAGE === 'AI is currently down.' && P.outage === Gt.OUTAGE);
-check('policy: model-formed acts on console voice and the game; converse waits for its own brief (the ruling, named)',
-  P.modelFormed.voice === true && P.modelFormed.game === true && P.modelFormed.converse === false);
+check('policy (the converse model step): model-formed acts on every door — modelFormed.converse is true',
+  P.modelFormed.voice === true && P.modelFormed.game === true && P.modelFormed.converse === true);
+check('policy (the converse model step): the signature is enforced on every door — signatureEnforced.converse is true',
+  P.signatureEnforced.voice === true && P.signatureEnforced.game === true && P.signatureEnforced.converse === true);
+check('policy (the pull retirement): no pull entry anywhere in the policy',
+  !('pull' in P) && JSON.stringify(P).indexOf('pull') === -1);
 
 /* ---------- check 1: unknown acts, the outage, the cross-check ---- */
 var s = W.seed();
@@ -118,17 +122,32 @@ var es = E.seedWorld(); E.generateTasks(es);
 var marcus = E.unitById(es, 'u-marcus');
 E.nextTaskFor(es, marcus);
 before = snap(es);
-r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'confirm-load', params: { words: 'load it' } }, { engine: E });
+r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'confirm-load', params: { model: true, words: 'load it' } }, { engine: E });
 check('signature (converse): confirming a load is refused with the desk guidance, nothing changed',
   r.ok === false && r.signed && /desk screen/.test(r.reason) && snap(es) === before);
-r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'post-receiving', params: { words: 'post it' } }, { engine: E });
+r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'post-receiving', params: { model: true, words: 'post it' } }, { engine: E });
 check('signature (converse): posting a receiving is refused with the guidance to the Receiving screen',
   r.ok === false && r.signed && /Receiving screen/.test(r.reason) && snap(es) === before);
 /* converse: a forged confirmed close of a task not in hand */
 var other = es.tasks.filter(function (x) { return x.status === 'open'; })[0];
-r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'complete', target: other.id, params: { words: 'yes' }, confirmed: true }, { engine: E });
+r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'complete', target: other.id, params: { model: true, words: 'yes' }, confirmed: true }, { engine: E });
 check('converse: a forged confirmed close of a task not in hand is refused at run time, nothing changed',
   r.ok === false && /no longer the task in your hand/.test(r.reason) && snap(es) === before);
+/* converse: the signature on a receive task in hand — at stage time and at run time */
+var recv = E.taskById(es, marcus.currentTaskId);
+r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'complete', target: recv.id, params: { model: true, words: 'done' } }, { engine: E });
+check('signature (converse): a spoken close of the receive task in hand is refused at stage time, with the Receiving guidance',
+  recv.type === 'receive' && r.ok === false && r.signed && /Receiving is a signed act/.test(r.reason) && snap(es) === before);
+r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'complete', target: recv.id, params: { model: true, words: 'yes' }, confirmed: true }, { engine: E });
+check('signature (converse): a forged confirmed close of the receive task is refused at run time, the task stays open',
+  r.ok === false && r.signed && recv.status === 'assigned' && snap(es) === before);
+/* converse: no pull intent, and no act without the model */
+r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'pull', params: { model: true, words: "what's next" } }, { engine: E });
+check('pull (converse): the gate refuses a pull intent outright — it is not an act any more, nothing changed',
+  r.ok === false && r.unknown === true && snap(es) === before);
+r = Gt.act(es, { who: 'u-marcus', via: 'converse', intent: 'note-problem', params: { words: 'pallet crushed' } }, { engine: E });
+check('converse (note 40): an act with no model reading is the outage — "AI is currently down.", nothing changed',
+  r.ok === false && r.outage === true && r.reason === 'AI is currently down.' && snap(es) === before);
 
 /* game: a load step by voice is refused; clicks are untouched */
 function outboundChain(gs) { return G.buildShift(gs, 'outbound'); }
@@ -161,20 +180,22 @@ check('game: attribution is the same shape — via "game" and the words heard on
 r = Gt.act(gs, { who: null, via: 'game', intent: 'step', target: 1, params: { chain: chain, words: 'Complete task.' } }, { engine: STEPS });
 check('game (note 40): an act without the model is the outage, nothing worked', r.ok === false && r.outage === true && r.reason === 'AI is currently down.');
 
-/* ---------- converse: through the gate, today's behavior ---------- */
+/* ---------- converse: through the gate, model-formed ---------------- */
+function M(t) { var m = C.matchIntent(t); m.model = { intent: m.intent }; return m; }
 es = E.seedWorld(); E.generateTasks(es);
-marcus = E.unitById(es, 'u-marcus');
-var first = E.nextTaskFor(es, marcus);
+marcus = E.unitById(es, 'u-chris');
+var first = es.tasks.filter(function (x) { return x.type === 'putaway' && x.status === 'open' && !E.blockedBy(es, x); })[0];
+first.status = 'assigned'; first.assignee = marcus.id; marcus.currentTaskId = first.id; /* the desk assigns a putaway: an unsigned close */
 C.clearStages();
 before = snap(es);
-var ask = C.workerTurn(E, es, marcus, C.matchIntent('done'));
+var ask = C.workerTurn(E, es, marcus, M('done'));
 check('converse: "done" still stages and asks; the state is byte-identical (the gate staged, the door holds the stage)',
   ask.acted === false && ask.staged && ask.staged.id === first.id && snap(es) === before);
-var yes = C.workerTurn(E, es, marcus, C.matchIntent('yes'));
+var yes = C.workerTurn(E, es, marcus, M('yes'));
 check('converse: the yes closes through the gate and the close is attributed — via "converse", the words heard',
   first.status === 'done' && yes.closed && first.via === 'converse' && first.heard === 'yes' &&
   es.records.some(function (x) { return x.via === 'converse' && x.heard === 'yes'; }));
-var pr = C.workerTurn(E, es, marcus, C.matchIntent('this pallet is damaged'));
+var pr = C.workerTurn(E, es, marcus, M('this pallet is damaged'));
 check('converse: a problem is noted through the gate, attributed with the words heard',
   pr.acted === true && es.records.some(function (x) { return x.via === 'converse' && x.heard === 'this pallet is damaged'; }));
 

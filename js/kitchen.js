@@ -367,13 +367,116 @@
     return { ok: true, lines: [name + ' now goes to ' + corr.spot + '.'] };
   }
 
+  /* ---------- the correction's model step (the converse model step) ---
+     A spoken correction is an act (it retargets a task), so the model
+     reads it first (the translation layer, note 37): META returns the
+     item and the destination from the words. parseCorrection is the
+     cross-check and the validator is the kitchen itself — the item
+     must be on the run, the place must be one of the kitchen's spots.
+     No model reading retargets nothing: "AI is currently down." */
+
+  var KITCHEN_SPOTS = ['Cabinet A', 'Cabinet B', 'Pantry', 'Fridge', 'Freezer'];
+  var OUTAGE = 'AI is currently down.';
+
+  var CORRECTION_PROMPT = [
+    'The wearer of kitchen glasses may be correcting where a grocery item should be put away ("the coffee goes in Cabinet B"). You are given the items on the current run and the kitchen\'s storage spots.',
+    '',
+    'Return ONLY a JSON object in exactly this shape, no prose, no code fences:',
+    '{"correction":true,"item":"...","spot":"..."}',
+    '',
+    '- "correction": true only when the words say where an item should go (or ask to move or put an item somewhere). Anything else — a question, a completion, a problem, small talk — is false, with "item" and "spot" "".',
+    '- "item": the item the words name, copied from the RUN ITEMS list when one matches; otherwise the words as heard.',
+    '- "spot": the storage spot the words name, copied exactly from the KITCHEN SPOTS list; "" when the words name no spot on it. Never invent a spot.'
+  ].join('\n');
+
+  function correctionBody(text, items) {
+    var lines = ['RUN ITEMS:'];
+    (items || []).forEach(function (n) { lines.push('- ' + n); });
+    if (!items || !items.length) lines.push('(none)');
+    lines.push('', 'KITCHEN SPOTS: ' + KITCHEN_SPOTS.join(', '), '', 'THE WEARER SAID (verbatim):', String(text || ''));
+    return JSON.stringify({
+      messages: [
+        { role: 'system', content: CORRECTION_PROMPT },
+        { role: 'user', content: [{ type: 'text', text: lines.join('\n') }] }
+      ],
+      temperature: 0.1,
+      max_tokens: 2000
+    });
+  }
+
+  function acceptCorrection(parsed) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    if (typeof parsed.correction !== 'boolean') return null;
+    var item = typeof parsed.item === 'string' ? parsed.item.trim() : '';
+    var spot = typeof parsed.spot === 'string' ? parsed.spot.trim() : '';
+    return { correction: parsed.correction, item: item, spot: spot };
+  }
+
+  /* Resolves { correction, item, spot } — or null when META could not
+     be reached or did not answer in the envelope (the outage). */
+  function readCorrection(B, doFetch, url, text, items) {
+    if (!B || typeof doFetch !== 'function') return Promise.resolve(null);
+    return B.sendRead(doFetch, url, correctionBody(text, items), acceptCorrection)
+      .then(function (res) { return res ? res.value : null; }, function () { return null; });
+  }
+
+  /* The run's items still to put away — what the model may name. */
+  function runItems(state) {
+    return (state.tasks || []).filter(function (t) { return t.type === 'putaway' && t.status !== 'done'; })
+      .map(function (t) { return t.item || String(t.title || '').replace(/^Put away \d+ × /, ''); });
+  }
+
+  /* Whether the words could be a correction at all — the code's own
+     look, used only to decide whether the correction read is asked:
+     a parse, or a kitchen spot named beside a placing verb. */
+  var PLACING = /\b(goes|go|belongs?|should|needs?|lives?|put|move|store|is)\b/;
+  var SPOT_NAME = /\b(cabinet|pantry|fridge|refrigerator|frig|freezer)\b/;
+  function mightBeCorrection(text) {
+    if (parseCorrection(text)) return true;
+    var t = norm(text);
+    return SPOT_NAME.test(t) && PLACING.test(t);
+  }
+
+  function spotOf(said) {
+    if (!said) return null;
+    for (var i = 0; i < KITCHEN_SPOTS.length; i++) if (KITCHEN_SPOTS[i].toLowerCase() === String(said).trim().toLowerCase()) return KITCHEN_SPOTS[i];
+    return spotFromWords(said);
+  }
+
+  /* Settle a spoken correction: the model reading against the code's
+     parse, then the kitchen's validator (applyCorrection — the item on
+     the run, the spot in the kitchen). Returns null when neither
+     reading is a correction (the words go on to the worker turn), or
+     { ok, lines } — ok only when a validated reading landed. */
+  function settleCorrection(E, state, reading, text, byUnit) {
+    var code = parseCorrection(text);
+    if (!reading) return { ok: false, outage: true, lines: [OUTAGE] };
+    if (!reading.correction) {
+      if (!code) return null;
+      return { ok: false, lines: ['I couldn\'t tell if you meant to move ' + code.item + ' to ' + code.spot + '. Nothing changed.'] };
+    }
+    var spot = spotOf(reading.spot);
+    if (!spot) return { ok: false, lines: ['I didn\'t catch a spot in this kitchen for ' + (reading.item || 'that') + '. Nothing changed.'] };
+    var item = reading.item || (code && code.item) || '';
+    if (!item) return { ok: false, lines: ['I didn\'t catch which item. Nothing changed.'] };
+    if (code && (code.spot !== spot || !(itemMatches(item, code.item) || itemMatches(code.item, item)))) {
+      return { ok: false, lines: ['I heard two things: ' + code.item + ' to ' + code.spot + ', or ' + item + ' to ' + spot + '. Say it again. Nothing changed.'] };
+    }
+    /* Agreement — or a model reading the code could not parse but the
+       kitchen can validate: applyCorrection is the validator. */
+    return applyCorrection(E, state, { item: item, spot: spot }, byUnit, text);
+  }
+
   var api = {
     COUNTER: COUNTER, JOB_DESC: JOB_DESC, JOB_NAME: JOB_NAME, RECEIPT_STEPS: RECEIPT_STEPS, RECEIPT_CAP: RECEIPT_CAP,
     META_TYPES: META_TYPES, RECEIPT_PROMPT: RECEIPT_PROMPT,
     spotFor: spotFor, receiptBody: receiptBody, parseReceipt: parseReceipt, acceptReceipt: acceptReceipt, readReceipt: readReceipt,
     isKitchen: isKitchen, isIntakeMode: isIntakeMode, createRun: createRun, intakeLines: intakeLines,
     SPOKEN_PROMPT: SPOKEN_PROMPT, spokenBody: spokenBody, readSpoken: readSpoken,
-    parseCorrection: parseCorrection, applyCorrection: applyCorrection
+    parseCorrection: parseCorrection, applyCorrection: applyCorrection,
+    KITCHEN_SPOTS: KITCHEN_SPOTS, CORRECTION_PROMPT: CORRECTION_PROMPT, correctionBody: correctionBody,
+    acceptCorrection: acceptCorrection, readCorrection: readCorrection, runItems: runItems,
+    mightBeCorrection: mightBeCorrection, settleCorrection: settleCorrection
   };
 
   root.WitnessKitchen = api;
