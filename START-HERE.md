@@ -45,10 +45,9 @@ file is the working agreement.
 - **The glasses are live**, not on hold. One fix remains owed in
   the glasses free-ask path: a 413 fallback to words-only must
   tell the wearer the frame wasn't sent.
-- **Known production breakage (found 2026-11-05):** the desk
-  photo scan sends its sheet by public URL and Meta's service
-  refuses it. The data-URL fix is briefed
-  (briefs/claude-brief-photo-scan-data-url.md) and queued.
+- **Photo scan:** healed in production (PR #46, 2026-11-06) —
+  askPhoto sends the sheet as a data URL; never send it by
+  public URL (the model service refuses hosted URLs).
 - **Demo video:** being rebuilt from Faye's script v2
   (~/workspace/witness/claude-demo-video/) — the cross-check is
   module one in it, not the headline.
